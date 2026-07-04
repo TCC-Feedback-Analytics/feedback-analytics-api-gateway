@@ -7,8 +7,8 @@ export default defineConfig({
     include: ['src/tests/**/*.test.ts'],
     env: {
       VERCEL: '1',
-      VITE_SUPABASE_URL: 'http://localhost:54321',
-      VITE_SUPABASE_ANON_KEY: 'test-anon-key',
+      SUPABASE_URL: 'http://localhost:54321',
+      SUPABASE_ANON_KEY: 'test-anon-key',
       NODE_ENV: 'test',
     },
     coverage: {

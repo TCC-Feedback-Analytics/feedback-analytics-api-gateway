@@ -28,9 +28,16 @@ export function createSupabaseServerClient(
   const sameSite: 'lax' | 'none' =
     isProd && crossSiteCookie ? 'none' : 'lax';
 
+  // Preferimos os nomes limpos (SUPABASE_*) neste backend; o fallback VITE_* é
+  // transitório (herança do deploy combinado web+api) e pode sair depois que as
+  // envs forem renomeadas na Vercel para SUPABASE_URL / SUPABASE_ANON_KEY.
+  const supabaseUrl = (process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL) as string;
+  const supabaseAnonKey = (process.env.SUPABASE_ANON_KEY ??
+    process.env.VITE_SUPABASE_ANON_KEY) as string;
+
   return createServerClient(
-    process.env.VITE_SUPABASE_URL as string,
-    process.env.VITE_SUPABASE_ANON_KEY as string,
+    supabaseUrl,
+    supabaseAnonKey,
     {
       cookies: {
         getAll() {
