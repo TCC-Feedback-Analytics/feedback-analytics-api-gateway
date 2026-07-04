@@ -5,4 +5,6 @@
 - [Endpoints](endpoints.md)
 - [Migrations (Drizzle)](migrations-drizzle.md)
 
-Concepção, decisões e produto vivem no [repo central de docs](https://github.com/TCC-Feedback-Analytics/feedback-analytics).
+Como rodar e variáveis de ambiente: [README do repositório](../README.md). CI/CD e deploy: [`.github/CI_SETUP.md`](../.github/CI_SETUP.md).
+
+Concepção, decisões e produto vivem no [repositório central de documentação](https://github.com/TCC-Feedback-Analytics/feedback-analytics).

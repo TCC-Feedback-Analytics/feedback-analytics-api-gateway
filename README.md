@@ -1,37 +1,46 @@
-# API Gateway BFF (Express)
+# feedback-analytics-api-gateway
 
-Camada responsável por autenticação, sessão, segurança, orquestração de domínio e integração entre frontend, banco e serviços externos.
+**Backend-for-Frontend (BFF)** do [Feedback Analytics](https://github.com/TCC-Feedback-Analytics/feedback-analytics) — o **único ponto de entrada** do backend. O frontend nunca acessa o banco ou o serviço de IA diretamente: tudo passa por aqui (autenticação, sessão, regras de negócio, estatísticas e orquestração da IA).
 
-## Arquitetura BFF com 4 camadas
+- **Runtime:** Node.js 20+ · TypeScript (ESM) · Express 5
+- **Auth:** Supabase Auth via `@supabase/ssr` — sessão em **cookie httpOnly** (sem `Authorization: Bearer`)
+- **Dados:** dois caminhos — cliente **Supabase** (`@supabase/ssr`, sujeito à RLS) e **Drizzle ORM** (via `DATABASE_URL`, para as agregações de estatística, com isolamento por `enterprise_id` forçado na aplicação)
+- **Contratos:** tipos e schemas Zod de [`@feedback/lib-shared`](https://github.com/TCC-Feedback-Analytics/feedback-analytics-contracts) (git tag `v1.0.0`)
+- **Deploy:** Vercel serverless (bundle esbuild `index.ts → _bundle.cjs`, `maxDuration` 300s)
 
-1. Endpoints HTTP: expõem rotas públicas e protegidas para o frontend.
-2. Middlewares e Segurança: aplicam CORS, autenticação, sessão e contexto da requisição.
-3. Orquestração e Regras de Negócio (Controllers): aplicam regras de negócio e coordenam fluxos.
-4. Contratos e Respostas Tipadas: padronizam payloads, erros e respostas entre domínios.
+## Rodar localmente
 
-### Componentes da camada de orquestração
+Este repositório **é** o serviço — os comandos rodam na raiz dele:
 
-1. Repositories: conversam com o banco de dados (Supabase RLS).
-2. Services: conversam com serviços externos.
+```bash
+npm install
+cp .env.example .env    # preencha SUPABASE_URL/ANON_KEY, DATABASE_URL, IA_ANALYZE_*
+npm run dev             # http://localhost:3000
+```
 
-## Responsabilidades do API Gateway
+```bash
+npm test                # testes (Vitest)
+npm run lint
+```
 
-1. Camada 1 (Endpoints HTTP): receber chamadas do frontend e entregar contratos estáveis de API.
-2. Camada 2 (Middlewares e Segurança): validar autenticação e autorização antes de acessar rotas protegidas e montar contexto da requisição.
-3. Camada 3 (Controllers): orquestrar regras de negócio sem acoplar a interface web ao banco.
-4. Camada 3a (Repositories): integrar com Supabase respeitando políticas de RLS e contexto de usuário.
-5. Camada 3b (Services): delegar processamento especializado para serviços externos de domínio quando necessário.
-6. Camada 4 (Contratos e Respostas Tipadas): retornar respostas padronizadas, com tratamento consistente de erro e status HTTP.
+Migrations do banco (Drizzle): ver [`docs/migrations-drizzle.md`](docs/migrations-drizzle.md).
 
-## Fluxo de requisição
+## Superfície HTTP
 
-1. Frontend chama um endpoint HTTP (camada 1).
-2. Endpoint aplica middlewares de segurança e contexto (camada 2).
-3. Controller orquestra o caso de uso e as regras de negócio (camada 3).
-4. Repository consulta o Supabase com RLS e Service chama integração externa quando necessário (camada 3).
-5. Controller monta o contrato tipado de sucesso ou erro (camada 4).
-6. Endpoint devolve a resposta final ao frontend.
+Todas as rotas são montadas sob **`/api`** (`app.use('/api', ...)` em `index.ts`), com sub-superfícies **pública** (`/api/public/...`) e **protegida** (`/api/protected/...`, exige sessão via cookie). Referência completa em [`docs/endpoints.md`](docs/endpoints.md).
 
-## Resumo arquitetural
+## Arquitetura BFF em camadas
 
-O API Gateway funciona como BFF em 4 camadas: expõe endpoints HTTP, aplica segurança e contexto de requisição, orquestra regras de negócio por Controllers (com Repositories e Services), e devolve contratos tipados com respostas consistentes para o frontend.
+1. **Endpoints HTTP (`routes/`)** — expõem rotas públicas e protegidas para o frontend.
+2. **Middlewares e segurança (`middlewares/`)** — CORS (allowlist manual) e autenticação: `requireAuth` valida a sessão do cookie via `supabase.auth.getUser()` e injeta `req.user`/`req.supabase` nas rotas protegidas (os endpoints públicos não passam por `requireAuth`).
+3. **Orquestração / regras de negócio (`controllers/`)** — coordenam o caso de uso; nos fluxos mais complexos delegam para:
+   - **Services (`services/`)** — regras de negócio e orquestração. Hoje o único Service é a **análise de IA** (`iaAnalyze.service.ts`): monta lotes por escopo, aplica regras e persiste.
+   - **Providers (`providers/`)** — adaptadores de rede para serviços externos (ex.: `iaAnalyze.provider.ts`, o ponto que faz a chamada HTTP ao serviço `ia-analyze`).
+   - **Repositories (`repositories/`)** — acesso a dados por **dois caminhos**: cliente **Supabase** (sujeito à RLS) e **Drizzle** (`DATABASE_URL`) para as agregações de estatística, com isolamento por `enterprise_id` na aplicação. Detalhes em [Arquitetura e estrutura](docs/arquitetura-estrutura.md).
+4. **Contratos e respostas tipadas** — payloads e erros padronizados (`sendTypedError`), com schemas Zod de `@feedback/lib-shared`.
+
+## Documentação
+
+- [Visão geral](docs/visao-geral.md) · [Arquitetura e estrutura](docs/arquitetura-estrutura.md) · [Endpoints](docs/endpoints.md) · [Migrations (Drizzle)](docs/migrations-drizzle.md)
+- CI/CD e deploy: [`.github/CI_SETUP.md`](.github/CI_SETUP.md)
+- Decisão **ORM × RLS**, concepção, decisões e produto: [repositório central de documentação](https://github.com/TCC-Feedback-Analytics/feedback-analytics)
