@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { IaAnalyzeFeedbackInput } from '../../../../shared/interfaces/contracts/ia-analyze/input.contract.js';
+import type { IaAnalyzeFeedbackInput } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/input.contract';
 import {
   countAnalyzedByScope,
   hasFeedbackNewerThanReports,

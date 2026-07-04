@@ -16,14 +16,14 @@ import {
   scopeKey,
 } from '../libs/iaAnalyze/insightsCache.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { IaAnalyzeRemoteRunRequest } from '../../../../shared/interfaces/contracts/ia-analyze/remote.contract.js';
+import type { IaAnalyzeRemoteRunRequest } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/remote.contract';
 import type {
   IaAnalyzeRawRunRequest,
   IaAnalyzeRawRunResponse,
   IaAnalyzeRegenerateInsightsRequest,
   IaAnalyzeRegenerateInsightsResponse,
-} from '../../../../shared/interfaces/contracts/ia-analyze/run.contract.js';
-import type { IaAnalyzeSentiment } from '../../../../shared/interfaces/contracts/ia-analyze/scope.contract.js';
+} from '@feedback/lib-shared/interfaces/contracts/ia-analyze/run.contract';
+import type { IaAnalyzeSentiment } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/scope.contract';
 import { buildEnterpriseContext, buildAnalysisBatches } from '../libs/iaAnalyze/build.js';
 import { hasRequiredEnterpriseInfoForAnalysis, MIN_FEEDBACKS_FOR_RELEVANT_ANALYSIS } from '../libs/iaAnalyze/rules.js';
 import { applyExecutionFilter } from '../libs/iaAnalyze/filter.js';

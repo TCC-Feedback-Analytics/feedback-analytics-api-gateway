@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import type { Request, Response } from 'express';
-import { qrcodeFeedbackSchema } from '../../../../../shared/schemas/public/feedbackSchema.js';
+import { qrcodeFeedbackSchema } from '@feedback/lib-shared/schemas/public/feedbackSchema';
 import { createSupabaseServerClient } from '../../config/supabase.js';
 import {
   API_ERROR_COLLECTION_POINT_ERROR,

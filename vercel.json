@@ -2,7 +2,7 @@
   "version": 2,
   "builds": [
     {
-      "src": "backends/api-gateway/_bundle.cjs",
+      "src": "_bundle.cjs",
       "use": "@vercel/node",
       "config": {
         "maxDuration": 300
@@ -16,7 +16,7 @@
     },
     {
       "source": "/api/(.*)",
-      "destination": "/backends/api-gateway/_bundle.cjs"
+      "destination": "/_bundle.cjs"
     }
   ]
 }

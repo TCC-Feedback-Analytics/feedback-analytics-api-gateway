@@ -1,15 +1,15 @@
 import type {
   IaAnalyzeFeedbackInput,
-} from '../../../../shared/interfaces/contracts/ia-analyze/input.contract.js';
+} from '@feedback/lib-shared/interfaces/contracts/ia-analyze/input.contract';
 import type {
   IaAnalyzeScopeType,
-} from '../../../../shared/interfaces/contracts/ia-analyze/scope.contract.js';
+} from '@feedback/lib-shared/interfaces/contracts/ia-analyze/scope.contract';
 import type {
   IaAnalyzeSentiment,
-} from '../../../../shared/interfaces/contracts/ia-analyze/scope.contract.js';
+} from '@feedback/lib-shared/interfaces/contracts/ia-analyze/scope.contract';
 import type {
   AspectAnalysis,
-} from '../../../../shared/interfaces/contracts/ia-analyze/remote.contract.js';
+} from '@feedback/lib-shared/interfaces/contracts/ia-analyze/remote.contract';
 
 /**
  * Define o modo de execução da análise IA.

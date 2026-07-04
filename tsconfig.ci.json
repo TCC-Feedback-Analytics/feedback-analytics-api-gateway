@@ -2,9 +2,7 @@
   "extends": "./tsconfig.json",
   "include": [
     "src/**/*.ts",
-    "src/**/*.d.ts",
-    "../../shared/interfaces/**/*.ts",
-    "../../shared/schemas/**/*.ts"
+    "src/**/*.d.ts"
   ],
-  "exclude": ["src/tests/**", "../../shared/**/tests/**"]
+  "exclude": ["src/tests/**"]
 }

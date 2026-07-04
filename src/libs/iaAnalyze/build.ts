@@ -1,6 +1,6 @@
-import type { IaAnalyzeFeedbackInput } from '../../../../../shared/interfaces/contracts/ia-analyze/input.contract.js';
+import type { IaAnalyzeFeedbackInput } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/input.contract';
 import type { AnalysisBatch, CollectingDataContext } from '../../types/iaAnalyze.types.js';
-import type { IaAnalyzeRunRequest } from '../../../../../shared/interfaces/contracts/ia-analyze/run.contract.js';
+import type { IaAnalyzeRunRequest } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/run.contract';
 import { normalizeScopeType } from './normalize.js';
 
 /**

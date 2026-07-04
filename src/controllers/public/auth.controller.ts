@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { loginSchema } from '../../../../../shared/schemas/public/loginSchema.js';
+import { loginSchema } from '@feedback/lib-shared/schemas/public/loginSchema';
 import { createSupabaseServerClient } from '../../config/supabase.js';
 import {
   API_ERROR_INTERNAL_ERROR,

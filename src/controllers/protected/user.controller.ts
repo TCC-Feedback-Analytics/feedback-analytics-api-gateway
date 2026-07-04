@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
-import { emailUpdateSchema } from '../../../../../shared/schemas/user/emailUpdateSchema.js';
-import { metadadosUpdateSchema } from '../../../../../shared/schemas/user/metadadosUpdateSchema.js';
-import { resetPasswordSchema } from '../../../../../shared/schemas/user/resetPasswordSchema.js';
+import { emailUpdateSchema } from '@feedback/lib-shared/schemas/user/emailUpdateSchema';
+import { metadadosUpdateSchema } from '@feedback/lib-shared/schemas/user/metadadosUpdateSchema';
+import { resetPasswordSchema } from '@feedback/lib-shared/schemas/user/resetPasswordSchema';
 import {
   API_ERROR_INVALID_PAYLOAD,
   API_ERROR_RESET_PASSWORD_FAILED,

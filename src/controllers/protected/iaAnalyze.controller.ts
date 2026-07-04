@@ -6,7 +6,7 @@ import type {
   IaAnalyzeRawRunResponse,
   IaAnalyzeRegenerateInsightsRequest,
   IaAnalyzeRegenerateInsightsResponse,
-} from '../../../../../shared/interfaces/contracts/ia-analyze/run.contract.js';
+} from '@feedback/lib-shared/interfaces/contracts/ia-analyze/run.contract';
 import {
   analyzeRawFeedbacks,
   regenerateFeedbackInsights,

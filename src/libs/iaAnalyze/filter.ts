@@ -1,6 +1,6 @@
 import { normalizeScopeType } from './normalize.js';
-import type { IaAnalyzeFeedbackInput } from '../../../../../shared/interfaces/contracts/ia-analyze/input.contract.js';
-import type { IaAnalyzeRunRequest } from '../../../../../shared/interfaces/contracts/ia-analyze/run.contract.js';
+import type { IaAnalyzeFeedbackInput } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/input.contract';
+import type { IaAnalyzeRunRequest } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/run.contract';
 
 /**
  * Filtra a lista de feedbacks conforme o escopo e item de catálogo informados nas opções.

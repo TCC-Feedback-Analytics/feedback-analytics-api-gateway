@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { enterpriseUpdateSchema } from '../../../../../shared/schemas/user/enterpriseUpdateSchema.js';
+import { enterpriseUpdateSchema } from '@feedback/lib-shared/schemas/user/enterpriseUpdateSchema';
 import {
   API_ERROR_COLLECTING_DATA_NOT_FOUND,
   API_ERROR_EMPTY_PAYLOAD,

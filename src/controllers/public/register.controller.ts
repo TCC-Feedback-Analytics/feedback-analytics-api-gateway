@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { registerSchema } from '../../../../../shared/schemas/public/registerSchema.js';
+import { registerSchema } from '@feedback/lib-shared/schemas/public/registerSchema';
 import { createSupabaseServerClient } from '../../config/supabase.js';
 import {
   API_ERROR_DATABASE_ERROR,
