@@ -14,6 +14,9 @@
     "db:migrate": "drizzle-kit migrate",
     "db:check": "drizzle-kit check",
     "db:studio": "drizzle-kit studio",
+    "db:local:up": "docker compose up -d",
+    "db:local:down": "docker compose down",
+    "db:reset": "node scripts/db-local.mjs",
     "verify:stats": "tsx scripts/verify-stats-drizzle.ts"
   },
   "dependencies": {
