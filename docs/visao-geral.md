@@ -7,22 +7,16 @@ O `api-gateway` é o **Backend-for-Frontend (BFF)** do sistema. Ele é o único 
 ## Por Que Existe
 
 Centralizar o backend permite:
-- **Autenticação uniforme** — um único middleware valida a sessão Supabase (cookie HttpOnly) para todos os endpoints
+- **Autenticação uniforme** — um único middleware valida a sessão Supabase (cookie HttpOnly) para todos os endpoints **protegidos** (os públicos não passam por `requireAuth`)
 - **Isolamento do banco** — as queries ficam no backend; o frontend não precisa de acesso direto ao Supabase
 - **Orquestração da IA** — o Gateway prepara os dados, chama o `ia-analyze` e persiste os resultados sem expor a complexidade ao cliente
 
 ## Responsabilidades
 
-1. **Validar autenticação** via Supabase JWT (middleware `requireAuth`)
+1. **Validar autenticação** lendo a sessão do cookie httpOnly via `@supabase/ssr` e `supabase.auth.getUser()` (middleware `requireAuth`)
 2. **Expor endpoints REST** para o frontend React
 3. **Ler e escrever** no banco de dados Supabase
 4. **Orquestrar serviços** — busca feedbacks, monta batches, chama `ia-analyze`, persiste resultados
-
-## Localização no Monorepo
-
-```
-backends/api-gateway/
-```
 
 ## Endpoints Disponíveis
 
@@ -72,8 +66,9 @@ backends/api-gateway/
 ## Tecnologias
 
 - **Runtime:** Node.js 20+ com TypeScript (ESM)
-- **Framework:** Express
-- **Auth:** Supabase JS Client v2 (validação de JWT)
+- **Framework:** Express 5
+- **Auth:** Supabase Auth via `@supabase/ssr` (`createServerClient`) — sessão em cookie httpOnly, validada por `supabase.auth.getUser()` em `requireAuth`; não há `Authorization: Bearer`
+- **Dados:** cliente Supabase (`@supabase/ssr`, sujeito à RLS) + **Drizzle ORM** (`DATABASE_URL`) para as agregações de estatística, com isolamento por `enterprise_id` na aplicação
 - **Deploy:** Vercel (serverless)
 
 ## Veja Também

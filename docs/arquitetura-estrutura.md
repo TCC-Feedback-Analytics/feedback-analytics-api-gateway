@@ -1,7 +1,7 @@
 # Backend (API Gateway) — Arquitetura e Estrutura 
 
 O backend utiliza uma combinação de padrões arquiteturais para garantir segurança, organização e escalabilidade.
-Podemos a arquitetura em duas visões:
+Podemos dividir a arquitetura em duas visões:
 
 - **Visão Macro:** Como o backend se encaixa no sistema inteiro
 - **Visão Micro:** Como o código está organizado por dentro
@@ -26,9 +26,9 @@ Internamente, o API Gateway adota uma **Arquitetura em Camadas** como padrão de
 2. **Middlewares (`middlewares/`):** A segurança. Validam a autenticação (o `requireAuth` valida a sessão/JWT via Supabase Auth) antes de deixar a requisição prosseguir, injetando `req.user` e `req.supabase` na request.
 3. **Controllers (`controllers/`):** Os "gerentes". Recebem a requisição validada, extraem os parâmetros ou o corpo (body) e resolvem a resposta.
 4. **Services (`services/`):** O "cérebro". Concentram as regras de negócio mais complexas, validam requisitos (ex: verificar se há feedbacks suficientes para analisar) e orquestram o fluxo de dados.
-5. **Repositories (`repositories/`):** Os "arquivistas". Encapsulam as queries ao banco de dados (Supabase) para ler, inserir ou atualizar dados.
+5. **Repositories (`repositories/`):** Os "arquivistas". Encapsulam as queries ao banco de dados por **dois caminhos**: a maioria usa o cliente **Supabase** (sujeito à RLS); as **agregações de estatística** (`feedbackStats.repository.ts`) usam **Drizzle** (via `DATABASE_URL`), cujo role ignora a RLS — o isolamento por `enterprise_id` é forçado na aplicação (`src/db/tenantScope.ts`), com a RLS mantida no banco como defesa em profundidade. Ver [Migrations (Drizzle)](./migrations-drizzle.md).
 
-> **Estado atual da implementação:** o padrão completo Controller → Service → Repository está aplicado nos fluxos mais complexos — em especial a **análise de IA** (`iaAnalyze.service.ts` + `iaAnalyze.repository.ts`) e, parcialmente, os **pontos de coleta/QR** (`collectionPointsQr.repository.ts`). Nos demais fluxos (autenticação, cadastro, empresa, feedbacks públicos, usuário), os **Controllers acessam o banco diretamente** pelo cliente Supabase (`req.supabase.from(...)`), sem passar por Services/Repositories. Migrar progressivamente esses fluxos para o padrão em camadas é um trabalho em aberto.
+> **Estado atual da implementação:** o padrão **completo** Controller → Service → Repository só existe na **análise de IA** (`iaAnalyze.service.ts` + `iaAnalyze.repository.ts`) — é o único fluxo com camada de Service. Vários fluxos usam **Controller → Repository** (sem Service): os **pontos de coleta/QR** (`collectionPointsQr.repository.ts`), o **feedback público** (`publicQuestions.repository.ts`) e as **estatísticas/análise** (`feedbackStats.repository.ts` — via Drizzle — + `scope.repository.ts`). Os fluxos de **empresa** ainda acessam tabelas diretamente no controller via `req.supabase.from(...)`; já **usuário/autenticação/cadastro** usam o **Supabase Auth** (`supabase.auth.*`), sem acesso direto a tabelas. Migrar progressivamente esses fluxos para o padrão em camadas é um trabalho em aberto.
 
 Há também pastas de apoio estrutural, como a `libs/`, que contém funções puras de domínio (sem efeitos colaterais) para ajudar em lógicas específicas (como montar lotes de análise para a IA), e os `providers/`, que fazem a comunicação HTTP com outros serviços
 

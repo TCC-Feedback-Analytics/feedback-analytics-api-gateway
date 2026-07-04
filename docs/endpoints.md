@@ -277,7 +277,7 @@ Retorna estatísticas agregadas dos feedbacks da empresa.
 
 | Parâmetro | Tipo | Descrição |
 |---|---|---|
-| `scope_type` | `COMPANY \| PRODUCT \| SERVICE \| DEPARTMENT` | Segmenta as estatísticas por escopo (padrão: `COMPANY`) |
+| `scope_type` | `COMPANY \| PRODUCT \| SERVICE \| DEPARTMENT` | Segmenta as estatísticas por escopo. **Omitido = todos os escopos** (sem filtro); envie `COMPANY` explicitamente para o QR geral |
 | `catalog_item_id` | `string` | Segmenta por item de catálogo específico |
 
 **Response 200**
@@ -553,14 +553,16 @@ Lista os itens de catálogo de um tipo, com o status do QR Code e o snapshot de 
 
 ### `POST /api/protected/user/collection-points/qr/catalog/questions/upsert`
 
-Cria/atualiza as perguntas dinâmicas de um item de catálogo. O gestor preenche **1 a 3 perguntas efetivas** (20–150 caracteres cada; slots vazios são ignorados — **não** é exigido "exatamente 3") e até 3 subperguntas por pergunta. Esvaziar um slot faz **soft-delete** (`is_active = false`), preservando o histórico de respostas; o editor lê apenas registros `is_active = true`.
+Cria/atualiza as perguntas dinâmicas de um item de catálogo. O array `questions` deve conter **sempre os 3 slots** (`question_order` 1, 2 e 3); desses, **1 a 3 podem ter texto** (20–150 caracteres cada) e os demais ficam vazios. Cada slot aceita até 3 subperguntas. Esvaziar um slot faz **soft-delete** (`is_active = false`), preservando o histórico de respostas; o editor lê apenas registros `is_active = true`.
 
 **Body**
 ```json
 {
   "catalog_item_id": "uuid",
   "questions": [
-    { "question_order": 1, "question_text": "...", "subquestions": [] }
+    { "question_order": 1, "question_text": "Como você avalia o atendimento?", "subquestions": [] },
+    { "question_order": 2, "question_text": "", "subquestions": [] },
+    { "question_order": 3, "question_text": "", "subquestions": [] }
   ]
 }
 ```
@@ -570,7 +572,7 @@ Cria/atualiza as perguntas dinâmicas de um item de catálogo. O gestor preenche
 { "catalog_item_id": "uuid", "questions": [] }
 ```
 
-**Response 400** `invalid_payload` — contagem/tamanho de perguntas inválido.
+**Response 400** `invalid_payload` — o array `questions` não tem os 3 slots (`questions_must_have_3_slots`) ou o texto está fora de 20–150 caracteres.
 
 ---
 
@@ -728,8 +730,10 @@ Autentica e cria a sessão (cookie).
 |---|---|---|
 | `400` | `invalid_payload` | Dados de login inválidos |
 | `401` | `invalid_credentials` | E-mail ou senha incorretos **— também retornado quando o e-mail não foi confirmado (RNE-014, anti-enumeração)** |
+| `401` | `login_failed` | Falha genérica de login (fallback) |
 | `429` | `rate_limited` | Muitas tentativas em pouco tempo |
 | `503` | `service_unavailable` | Serviço de login indisponível |
+| `500` | `internal_error` | Exceção não tratada |
 
 ---
 
@@ -931,7 +935,7 @@ Submete um feedback via formulário público. Não requer autenticação. O `dev
 
 | Sintoma | Causa Provável | O Que Verificar |
 |---|---|---|
-| `401` em qualquer endpoint protegido | JWT expirado ou ausente | Faça login novamente; verifique o header `Authorization` |
+| `401` em qualquer endpoint protegido | Sessão expirada ou ausente | Refaça o login; garanta que as requisições vão com `credentials: 'include'` (a sessão é cookie HttpOnly — **não** há header `Authorization`) |
 | `422 collecting_data_required` | Empresa sem dados de contexto | Preencha os três campos obrigatórios (`company_objective`, `analytics_goal` e `business_summary`) em Configurações da empresa |
 | `422 insufficient_feedbacks_for_analysis` | Base de feedbacks pequena | Colete pelo menos 10 feedbacks antes de analisar |
 | `502` nos endpoints de IA | Serviço `ia-analyze` offline ou provedor LLM com erro | Verifique se o serviço `ia-analyze` está rodando e se `IA_ANALYZE_REMOTE_URL` / `IA_ANALYZE_REMOTE_TOKEN` estão configurados no gateway (a `GEMINI_API_KEY` é do serviço `ia-analyze`, não do gateway) |
