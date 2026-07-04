@@ -1,10 +1,10 @@
 # Migrations com Drizzle (convenção)
 
-> **Em uma frase:** o schema em [`drizzle/schema.ts`](../drizzle/schema.ts) é a fonte da verdade; mudanças nascem como **migrations versionadas** geradas por `drizzle-kit generate` e aplicadas por `drizzle-kit migrate`. Os dumps em `database/sql/` viram **legado**.
+> **Em uma frase:** o schema em [`drizzle/schema.ts`](../drizzle/schema.ts) é a fonte da verdade; mudanças nascem como **migrations versionadas** geradas por `drizzle-kit generate` e aplicadas por `drizzle-kit migrate`. Os dumps SQL antigos (no [repositório central](https://github.com/TCC-Feedback-Analytics/feedback-analytics), pasta `database/sql/`) viram **legado**.
 
 Relacionado: [ORM × RLS: nossa decisão](https://github.com/TCC-Feedback-Analytics/feedback-analytics/blob/main/docs/arquitetura/orm-rls-decisao.md).
 
-## Estrutura da pasta `backends/api-gateway/drizzle/`
+## Estrutura da pasta `drizzle/`
 
 | Arquivo | Papel |
 |---|---|
@@ -14,7 +14,7 @@ Relacionado: [ORM × RLS: nossa decisão](https://github.com/TCC-Feedback-Analyt
 | `0001_*.sql` | Primeira migration incremental de exemplo: cria o índice `idx_feedback_enterprise_created_at` (fundação da Etapa 02). |
 | `meta/_journal.json` + `meta/*_snapshot.json` | Histórico e snapshots usados pelo `generate` para fazer o diff. |
 
-## Scripts (em `backends/api-gateway`)
+## Scripts (`package.json` da raiz)
 
 | Comando | O que faz | Precisa do banco? |
 |---|---|---|
@@ -23,6 +23,7 @@ Relacionado: [ORM × RLS: nossa decisão](https://github.com/TCC-Feedback-Analyt
 | `npm run db:migrate` | Aplica as migrations pendentes no banco | sim |
 | `npm run db:check` | Valida consistência das migrations | não |
 | `npm run db:studio` | Abre o Drizzle Studio | sim |
+| `npm run verify:stats` | Confere as agregações de estatística servidas via Drizzle | sim (leitura) |
 
 ## Fluxo de uma mudança de schema (daqui pra frente)
 
@@ -55,7 +56,7 @@ VALUES ('44d4e84d8f77652c511524a620d4ee97f43b2e049c379e532ff9e53b11e5d81f', 1782
 Depois do baseline:
 
 ```bash
-npm --prefix backends/api-gateway run db:migrate   # aplica o 0001 (o índice)
+npm run db:migrate   # aplica o 0001 (o índice)
 ```
 
 **Atalho para a demo:** o `0001` é uma linha só; dá para aplicar direto no SQL Editor sem baseline:
@@ -70,7 +71,7 @@ CREATE INDEX "idx_feedback_enterprise_created_at"
 - **`auth.users` no baseline:** o `0000` inclui um `CREATE TABLE "auth"."users"` mínimo. É só representação para resolver as FKs cruzadas (`enterprise.auth_user_id`, `tracked_devices.blocked_by`); como o `0000` **nunca é aplicado** e o `schemaFilter` é `['public']`, as migrations **nunca tocam** o schema `auth` (gerenciado pelo Supabase).
 - **Baseline foi resetado:** o `db:pull` com `schemaFilter:['public']` gerou um baseline inconsistente (registrava a FK para `auth.users` sem a tabela), o que fazia o `generate` querer **criar `auth.users`** numa migration. Resetamos o baseline (`0000`) para que schema e snapshot concordem; assim o `0001` sai limpo (só o índice).
 - **Imperfeições da introspecção:** o baseline carrega pequenas imperfeições do `db:pull` (CHECKs com `NOT VALID`, e o `uq_feedback_insights_context` sem `NULLS NOT DISTINCT`). Como o `0000` não é aplicado, **não afetam o banco atual**; só seriam relevantes num rebuild do zero — reconciliar nesse caso.
-- **`database/sql/` é legado:** os dumps SQL antigos param de ser a fonte da verdade do schema. Mantenha-os como referência/histórico ou regenere a partir do banco; mudanças novas nascem como migration Drizzle.
+- **Dumps SQL legados:** os dumps SQL antigos (no repositório central de docs, `database/sql/`) param de ser a fonte da verdade do schema. Ficam como referência/histórico; mudanças novas de schema nascem como migration Drizzle **neste repositório**.
 
 ## O que isso demonstra no TCC
 

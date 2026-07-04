@@ -1,7 +1,7 @@
 # CI / Deploy — API Gateway
 
 Consome os contratos de `@feedback/lib-shared` (repositório **público**
-`feedback-analytics-contracts`, via git tag). O `npm ci` clona **sem token**;
+`feedback-analytics-contracts`, via git tag `v1.0.0`). O `npm ci` clona **sem token**;
 os workflows só reescrevem `ssh→https` antes do install (o npm canonicaliza a
 dep do GitHub para `git+ssh`, e os runners não têm chave SSH):
 
@@ -21,14 +21,18 @@ O **CI** (lint/typecheck/unit) **não precisa de secret** — os testes são moc
 
 ## Env de runtime (no projeto Vercel, NÃO como GitHub secret)
 
-`DATABASE_URL`, URL/token do serviço `ia-analyze`, chaves do Supabase (service
-role), etc. são variáveis de ambiente configuradas nas **Settings do projeto
-Vercel** da API — não entram no CI.
+`DATABASE_URL` (Drizzle), URL/token do serviço `ia-analyze`
+(`IA_ANALYZE_REMOTE_URL`/`IA_ANALYZE_REMOTE_TOKEN`) e as chaves do Supabase
+(**anon key**: `SUPABASE_URL`/`SUPABASE_ANON_KEY` — a autorização vem do JWT da
+sessão do usuário via RLS, **não** há service role) são variáveis de ambiente
+configuradas nas **Settings do projeto Vercel** da API — não entram no CI.
 
 ## Deploy
 
 `workflow_dispatch` (manual, pede `confirm_deploy=ok`). Bundla com esbuild
 (`index.ts → _bundle.cjs`) e sobe via `npx vercel deploy --local-config vercel.json`.
-Reusa o mesmo projeto Vercel (`VERCEL_PROJECT_ID_API_GATEWAY`) → a **URL da API
-não muda**, então o frontend continua apontando pra ela. Branch de staging:
-`developer` (deploya no alias `feedback-analytics-api-homolog.vercel.app`).
+Reusa o mesmo projeto Vercel (`VERCEL_PROJECT_ID_API_GATEWAY`), mantendo estáveis
+o **domínio de produção** (`main`, `--prod`) e o **alias fixo de homologação** — o
+deploy de preview em si gera uma URL nova a cada run, por isso o alias é fixado. O
+frontend aponta para o alias/domínio, não para a URL de preview. Branch de staging:
+`developer` (deploya e fixa o alias `feedback-analytics-api-homolog.vercel.app`).
