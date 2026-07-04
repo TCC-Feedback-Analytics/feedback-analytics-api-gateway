@@ -1,0 +1,34 @@
+# Ambiente de desenvolvimento local do api-gateway.
+# Sobe um Postgres próprio + Mailpit (captura de e-mail local).
+# Uso: docker compose up -d  →  npm run db:reset  →  npm run dev
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: feedback-api-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: feedback
+    ports:
+      # host 5433 → container 5432 (evita conflito com outro Postgres na 5432)
+      - "5433:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d feedback"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
+  # Servidor SMTP local que captura os e-mails transacionais (confirmação,
+  # recuperação de senha) — UI em http://localhost:8025. Usado na Fase 1
+  # (Better Auth aponta o envio de e-mail para 127.0.0.1:1025 em dev).
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: feedback-api-mail
+    ports:
+      - "8025:8025" # UI web
+      - "1025:1025" # SMTP
+
+volumes:
+  db_data:
