@@ -1,17 +1,20 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
 import app from '../../index.js';
-import { createSupabaseServerClient } from '../config/supabase.js';
 import { fetchActiveQuestionsForScope } from '../repositories/publicQuestions.repository.js';
 import {
   getPublicEnterpriseById,
   resolveQrCollectionPoint,
 } from '../repositories/publicEnterprise.repository.js';
-import { makeMockSupabase } from './helpers/supabase-mock.js';
-
-vi.mock('../config/supabase.js', () => ({
-  createSupabaseServerClient: vi.fn(),
-}));
+import {
+  QrFeedbackWriteError,
+  findCustomerByEmail,
+  findTrackedDevice,
+  hasFeedbackSince,
+  insertCustomer,
+  persistQrFeedback,
+  updateTrackedDeviceCounters,
+} from '../repositories/qrFeedback.repository.js';
 
 // fetchActiveQuestionsForScope virou Drizzle (coberto por integração) — mockado.
 vi.mock('../repositories/publicQuestions.repository.js', () => ({
@@ -25,10 +28,30 @@ vi.mock('../repositories/publicEnterprise.repository.js', () => ({
   resolveQrCollectionPoint: vi.fn(),
 }));
 
-const mockCreateClient = vi.mocked(createSupabaseServerClient);
+// Submit (qrcode.controller) virou Drizzle+transação via qrFeedback.repository —
+// coberto por integração; aqui só mockamos as funções (mantendo o QrFeedbackWriteError real).
+vi.mock('../repositories/qrFeedback.repository.js', async (importActual) => {
+  const actual = await importActual<typeof import('../repositories/qrFeedback.repository.js')>();
+  return {
+    ...actual,
+    findTrackedDevice: vi.fn(),
+    hasFeedbackSince: vi.fn(),
+    findCustomerByEmail: vi.fn(),
+    insertCustomer: vi.fn(),
+    persistQrFeedback: vi.fn(),
+    updateTrackedDeviceCounters: vi.fn(),
+  };
+});
+
 const mockFetchQuestions = vi.mocked(fetchActiveQuestionsForScope);
 const mockGetPublicEnterprise = vi.mocked(getPublicEnterpriseById);
 const mockResolveQrCollectionPoint = vi.mocked(resolveQrCollectionPoint);
+const mockFindTrackedDevice = vi.mocked(findTrackedDevice);
+const mockHasFeedbackSince = vi.mocked(hasFeedbackSince);
+const mockFindCustomerByEmail = vi.mocked(findCustomerByEmail);
+const mockInsertCustomer = vi.mocked(insertCustomer);
+const mockPersistQrFeedback = vi.mocked(persistQrFeedback);
+const mockUpdateCounters = vi.mocked(updateTrackedDeviceCounters);
 
 const ENTERPRISE_ID = '550e8400-e29b-41d4-a716-446655440001';
 const COLLECTION_POINT_ID = '550e8400-e29b-41d4-a716-446655440002';
@@ -68,14 +91,24 @@ const SINGLE_QUESTION = {
 };
 
 describe('[Integração] POST /api/public/qrcode/feedback', () => {
-  let mockSupabase: ReturnType<typeof makeMockSupabase>;
-
   beforeEach(() => {
     vi.clearAllMocks();
-    mockSupabase = makeMockSupabase();
-    mockCreateClient.mockReturnValue(mockSupabase as never);
-    // default: nenhuma pergunta; testes específicos sobrescrevem com mockResolvedValueOnce.
+    // Defaults do caminho feliz "empresa Geral, dispositivo novo"; cada teste sobrescreve o que precisa.
     mockFetchQuestions.mockResolvedValue({ data: [], error: null } as never);
+    mockGetPublicEnterprise.mockResolvedValue({ id: ENTERPRISE_ID, name: 'Empresa Teste' });
+    mockResolveQrCollectionPoint.mockResolvedValue({
+      id: COLLECTION_POINT_ID,
+      name: 'QR Geral',
+      catalogItemId: null,
+      catalogItemName: null,
+      catalogItemKind: null,
+    });
+    mockFindTrackedDevice.mockResolvedValue(null);
+    mockHasFeedbackSince.mockResolvedValue(false);
+    mockFindCustomerByEmail.mockResolvedValue(null);
+    mockInsertCustomer.mockResolvedValue({ id: 'customer-id' });
+    mockPersistQrFeedback.mockResolvedValue({ trackedDeviceId: 'new-device-id', priorFeedbackCount: 0 });
+    mockUpdateCounters.mockResolvedValue(undefined);
   });
 
   it('[CT-UC04-02] retorna 400 com payload inválido (sem enterprise_id e channel)', async () => {
@@ -88,10 +121,7 @@ describe('[Integração] POST /api/public/qrcode/feedback', () => {
   });
 
   it('[CT-UC04-02] retorna 404 quando empresa não encontrada', async () => {
-    mockSupabase.queryBuilder.single.mockResolvedValueOnce({
-      data: null,
-      error: { message: 'No rows found' },
-    });
+    mockGetPublicEnterprise.mockResolvedValueOnce(null);
 
     const res = await request(app)
       .post('/api/public/qrcode/feedback')
@@ -99,46 +129,19 @@ describe('[Integração] POST /api/public/qrcode/feedback', () => {
 
     expect(res.status).toBe(404);
     expect(res.body.error).toBe('enterprise_not_found');
+    expect(mockPersistQrFeedback).not.toHaveBeenCalled();
   });
 
   it('[CT-UC04-03] retorna 409 quando dispositivo já enviou feedback hoje', async () => {
-    // enterprise encontrada
-    mockSupabase.queryBuilder.single.mockResolvedValueOnce({
-      data: { id: ENTERPRISE_ID },
-      error: null,
-    });
-
-    // collection_point encontrado
-    mockSupabase.queryBuilder.maybeSingle.mockResolvedValueOnce({
-      data: {
-        id: COLLECTION_POINT_ID,
-        name: 'QR Geral',
-        catalog_item_id: null,
-        catalog_items: null,
-      },
-      error: null,
-    });
-
-    // questions (3) via fetchActiveQuestionsForScope (Drizzle, mockado)
     mockFetchQuestions.mockResolvedValueOnce({ data: VALID_QUESTIONS, error: null } as never);
-
-    // device existente
-    mockSupabase.queryBuilder.maybeSingle.mockResolvedValueOnce({
-      data: {
-        id: 'device-id-1',
-        last_feedback_at: new Date().toISOString(),
-        is_blocked: false,
-        feedback_count: 1,
-        customer_id: null,
-      },
-      error: null,
+    mockFindTrackedDevice.mockResolvedValueOnce({
+      id: 'device-id-1',
+      lastFeedbackAt: new Date().toISOString(),
+      isBlocked: false,
+      feedbackCount: 1,
+      customerId: null,
     });
-
-    // feedback duplicado encontrado (hoje)
-    mockSupabase.queryBuilder.maybeSingle.mockResolvedValueOnce({
-      data: { id: 'feedback-existente' },
-      error: null,
-    });
+    mockHasFeedbackSince.mockResolvedValueOnce(true);
 
     const res = await request(app)
       .post('/api/public/qrcode/feedback')
@@ -146,64 +149,31 @@ describe('[Integração] POST /api/public/qrcode/feedback', () => {
 
     expect(res.status).toBe(409);
     expect(res.body.error).toBe('DEVICE_ALREADY_SUBMITTED');
+    // Nada é gravado quando o dispositivo já enviou hoje.
+    expect(mockPersistQrFeedback).not.toHaveBeenCalled();
+  });
+
+  it('[CT-UC04-07] retorna 403 quando dispositivo está bloqueado', async () => {
+    mockFetchQuestions.mockResolvedValueOnce({ data: VALID_QUESTIONS, error: null } as never);
+    mockFindTrackedDevice.mockResolvedValueOnce({
+      id: 'device-blocked',
+      lastFeedbackAt: null,
+      isBlocked: true,
+      feedbackCount: 0,
+      customerId: null,
+    });
+
+    const res = await request(app)
+      .post('/api/public/qrcode/feedback')
+      .send(VALID_PAYLOAD);
+
+    expect(res.status).toBe(403);
+    expect(mockHasFeedbackSince).not.toHaveBeenCalled();
+    expect(mockPersistQrFeedback).not.toHaveBeenCalled();
   });
 
   it('[CT-UC04-01] retorna 200 no caminho feliz (novo dispositivo)', async () => {
-    // enterprise encontrada
-    mockSupabase.queryBuilder.single.mockResolvedValueOnce({
-      data: { id: ENTERPRISE_ID },
-      error: null,
-    });
-
-    // collection_point encontrado
-    mockSupabase.queryBuilder.maybeSingle.mockResolvedValueOnce({
-      data: {
-        id: COLLECTION_POINT_ID,
-        name: 'QR Geral',
-        catalog_item_id: null,
-        catalog_items: null,
-      },
-      error: null,
-    });
-
-    // questions (3) via fetchActiveQuestionsForScope (Drizzle, mockado)
     mockFetchQuestions.mockResolvedValueOnce({ data: VALID_QUESTIONS, error: null } as never);
-
-    // device não encontrado (novo)
-    mockSupabase.queryBuilder.maybeSingle.mockResolvedValueOnce({
-      data: null,
-      error: null,
-    });
-
-    // criação do novo device
-    mockSupabase.queryBuilder.single.mockResolvedValueOnce({
-      data: {
-        id: 'new-device-id',
-        feedback_count: 0,
-        last_feedback_at: null,
-        is_blocked: false,
-        customer_id: null,
-      },
-      error: null,
-    });
-
-    // inserção do feedback
-    mockSupabase.queryBuilder.then.mockImplementationOnce((resolve: (v: unknown) => void) => {
-      resolve({ data: null, error: null });
-      return Promise.resolve({ data: null, error: null });
-    });
-
-    // inserção das respostas
-    mockSupabase.queryBuilder.then.mockImplementationOnce((resolve: (v: unknown) => void) => {
-      resolve({ data: null, error: null });
-      return Promise.resolve({ data: null, error: null });
-    });
-
-    // atualização do device (last_feedback_at, feedback_count)
-    mockSupabase.queryBuilder.then.mockImplementationOnce((resolve: (v: unknown) => void) => {
-      resolve({ data: null, error: null });
-      return Promise.resolve({ data: null, error: null });
-    });
 
     const res = await request(app)
       .post('/api/public/qrcode/feedback')
@@ -211,55 +181,26 @@ describe('[Integração] POST /api/public/qrcode/feedback', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
+    expect(mockPersistQrFeedback).toHaveBeenCalledTimes(1);
+    const arg = mockPersistQrFeedback.mock.calls[0][0];
+    expect(arg.trackedDevice).toBeNull();
+    expect(arg.answerRows).toHaveLength(3);
+    expect(arg.subanswerRows).toHaveLength(0);
+    // contadores best-effort atualizados após a transação.
+    expect(mockUpdateCounters).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'new-device-id', feedbackCount: 1 }),
+    );
   });
 
   it('[CT-UC04-05] aceita 1 pergunta no escopo do item (sem fallback para Geral)', async () => {
-    // enterprise encontrada
-    mockSupabase.queryBuilder.single.mockResolvedValueOnce({
-      data: { id: ENTERPRISE_ID },
-      error: null,
+    mockResolveQrCollectionPoint.mockResolvedValueOnce({
+      id: COLLECTION_POINT_ID,
+      name: 'QR Produto',
+      catalogItemId: CATALOG_ITEM_ID,
+      catalogItemName: 'Produto X',
+      catalogItemKind: 'PRODUCT',
     });
-
-    // collection_point de PRODUTO encontrado
-    mockSupabase.queryBuilder.maybeSingle.mockResolvedValueOnce({
-      data: {
-        id: COLLECTION_POINT_ID,
-        name: 'QR Produto',
-        catalog_item_id: CATALOG_ITEM_ID,
-        catalog_items: { kind: 'PRODUCT' },
-      },
-      error: null,
-    });
-
-    // apenas 1 pergunta ativa (via fetchActiveQuestionsForScope, mockado)
     mockFetchQuestions.mockResolvedValueOnce({ data: [SINGLE_QUESTION], error: null } as never);
-
-    // device novo
-    mockSupabase.queryBuilder.maybeSingle.mockResolvedValueOnce({
-      data: null,
-      error: null,
-    });
-
-    // criação do device
-    mockSupabase.queryBuilder.single.mockResolvedValueOnce({
-      data: {
-        id: 'new-device-id',
-        feedback_count: 0,
-        last_feedback_at: null,
-        is_blocked: false,
-        customer_id: null,
-      },
-      error: null,
-    });
-
-    // feedback insert + answers insert + device update
-    for (let i = 0; i < 3; i += 1) {
-      mockSupabase.queryBuilder.then.mockImplementationOnce((resolve: (v: unknown) => void) => {
-        const result = { data: null, error: null };
-        resolve(result);
-        return Promise.resolve(result);
-      });
-    }
 
     const res = await request(app)
       .post('/api/public/qrcode/feedback')
@@ -276,55 +217,11 @@ describe('[Integração] POST /api/public/qrcode/feedback', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
+    expect(mockPersistQrFeedback.mock.calls[0][0].answerRows).toHaveLength(1);
   });
 
   it('[CT-UC04-06] aceita 0 perguntas (apenas nota + mensagem)', async () => {
-    // enterprise encontrada
-    mockSupabase.queryBuilder.single.mockResolvedValueOnce({
-      data: { id: ENTERPRISE_ID },
-      error: null,
-    });
-
-    // collection_point Geral (sem item) encontrado
-    mockSupabase.queryBuilder.maybeSingle.mockResolvedValueOnce({
-      data: {
-        id: COLLECTION_POINT_ID,
-        name: 'QR Geral',
-        catalog_item_id: null,
-        catalog_items: null,
-      },
-      error: null,
-    });
-
-    // nenhuma pergunta configurada (default do mockFetchQuestions)
-
-    // device novo
-    mockSupabase.queryBuilder.maybeSingle.mockResolvedValueOnce({
-      data: null,
-      error: null,
-    });
-
-    // criação do device
-    mockSupabase.queryBuilder.single.mockResolvedValueOnce({
-      data: {
-        id: 'new-device-id',
-        feedback_count: 0,
-        last_feedback_at: null,
-        is_blocked: false,
-        customer_id: null,
-      },
-      error: null,
-    });
-
-    // feedback insert + device update (sem insert de respostas, pois não há respostas)
-    for (let i = 0; i < 2; i += 1) {
-      mockSupabase.queryBuilder.then.mockImplementationOnce((resolve: (v: unknown) => void) => {
-        const result = { data: null, error: null };
-        resolve(result);
-        return Promise.resolve(result);
-      });
-    }
-
+    // mockFetchQuestions default = [] (nenhuma pergunta ativa)
     const res = await request(app)
       .post('/api/public/qrcode/feedback')
       .send({
@@ -339,6 +236,90 @@ describe('[Integração] POST /api/public/qrcode/feedback', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
+    expect(mockPersistQrFeedback.mock.calls[0][0].answerRows).toHaveLength(0);
+  });
+
+  // ---- Contrato dos erros 500 (mapeamento erro-de-repo → código HTTP tipado) ----
+
+  it('[500] collection_point_error quando resolveQrCollectionPoint falha', async () => {
+    mockResolveQrCollectionPoint.mockRejectedValueOnce(new Error('db down'));
+
+    const res = await request(app)
+      .post('/api/public/qrcode/feedback')
+      .send(VALID_PAYLOAD);
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe('collection_point_error');
+    expect(mockPersistQrFeedback).not.toHaveBeenCalled();
+  });
+
+  it('[500] device_check_failed quando findTrackedDevice falha', async () => {
+    mockFetchQuestions.mockResolvedValueOnce({ data: VALID_QUESTIONS, error: null } as never);
+    mockFindTrackedDevice.mockRejectedValueOnce(new Error('db down'));
+
+    const res = await request(app)
+      .post('/api/public/qrcode/feedback')
+      .send(VALID_PAYLOAD);
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe('device_check_failed');
+    expect(mockPersistQrFeedback).not.toHaveBeenCalled();
+  });
+
+  it('[500] device_check_failed quando hasFeedbackSince falha', async () => {
+    mockFetchQuestions.mockResolvedValueOnce({ data: VALID_QUESTIONS, error: null } as never);
+    mockFindTrackedDevice.mockResolvedValueOnce({
+      id: 'device-existente',
+      lastFeedbackAt: null,
+      isBlocked: false,
+      feedbackCount: 0,
+      customerId: null,
+    });
+    mockHasFeedbackSince.mockRejectedValueOnce(new Error('db down'));
+
+    const res = await request(app)
+      .post('/api/public/qrcode/feedback')
+      .send(VALID_PAYLOAD);
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe('device_check_failed');
+    expect(mockPersistQrFeedback).not.toHaveBeenCalled();
+  });
+
+  it('[500] device_creation_failed quando persist lança QrFeedbackWriteError(device_creation)', async () => {
+    mockFetchQuestions.mockResolvedValueOnce({ data: VALID_QUESTIONS, error: null } as never);
+    mockPersistQrFeedback.mockRejectedValueOnce(new QrFeedbackWriteError('device_creation'));
+
+    const res = await request(app)
+      .post('/api/public/qrcode/feedback')
+      .send(VALID_PAYLOAD);
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe('device_creation_failed');
+  });
+
+  it('[500] feedback_insert_failed quando persist lança QrFeedbackWriteError(feedback_insert)', async () => {
+    mockFetchQuestions.mockResolvedValueOnce({ data: VALID_QUESTIONS, error: null } as never);
+    mockPersistQrFeedback.mockRejectedValueOnce(new QrFeedbackWriteError('feedback_insert'));
+
+    const res = await request(app)
+      .post('/api/public/qrcode/feedback')
+      .send(VALID_PAYLOAD);
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe('feedback_insert_failed');
+  });
+
+  it('[500] feedback_insert_failed no fallback (erro genérico do persist)', async () => {
+    mockFetchQuestions.mockResolvedValueOnce({ data: VALID_QUESTIONS, error: null } as never);
+    mockPersistQrFeedback.mockRejectedValueOnce(new Error('erro inesperado'));
+
+    const res = await request(app)
+      .post('/api/public/qrcode/feedback')
+      .send(VALID_PAYLOAD);
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe('feedback_insert_failed');
   });
 });
 
