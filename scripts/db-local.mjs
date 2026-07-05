@@ -27,6 +27,9 @@ const sql = postgres(url, { max: 1, onnotice: () => {} });
 // Ordem de aplicação das tabelas respeitando as FKs.
 const TABLE_ORDER = [
   'auth.users',
+  // Tabelas do Better Auth (AUTH_PROVIDER=betterauth). Antes de enterprise —
+  // enterprise.auth_user_id passa a apontar para public.user.id.
+  'public.better_auth',
   'public.enterprise',
   'public.catalog_items',
   'public.collecting_data_enterprise',

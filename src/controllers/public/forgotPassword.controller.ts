@@ -7,6 +7,8 @@ import {
   API_ERROR_INVALID_PAYLOAD,
   API_ERROR_RESET_PASSWORD_FAILED,
 } from '../../config/errors.js';
+import { isBetterAuth } from '../../config/authProvider.js';
+import { getAuth } from '../../auth/auth.js';
 
 const forgotPasswordSchema = z.object({
   email: z.email({ error: 'E-mail inválido' }),
@@ -69,6 +71,27 @@ export async function forgotPasswordController(req: Request, res: Response) {
   }
 
   const { email } = parsed.data;
+
+  // --- Better Auth (gated) ---
+  if (isBetterAuth()) {
+    const apiBase = process.env.BETTER_AUTH_URL ?? `${req.protocol}://${req.get('host')}`;
+    try {
+      await getAuth().api.requestPasswordReset({
+        body: {
+          email,
+          redirectTo: `${apiBase}/api/public/auth/callback?type=recovery&next=/auth/reset-password`,
+        },
+      });
+    } catch (err) {
+      // Anti-enumeração: nunca revela se o e-mail existe; apenas registra.
+      console.warn('[forgot-password:betterauth]', (err as { message?: string })?.message ?? err);
+    }
+    return res.json({
+      ok: true,
+      message: 'Se este e-mail estiver cadastrado, você receberá as instruções em breve.',
+    });
+  }
+
   const supabase = createSupabaseServerClient(req, res);
 
   const origin = req.get('origin');

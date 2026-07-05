@@ -10,6 +10,9 @@ export default defineConfig({
       SUPABASE_URL: 'http://localhost:54321',
       SUPABASE_ANON_KEY: 'test-anon-key',
       NODE_ENV: 'test',
+      // Suíte atual mocka o Supabase — fixa o provedor para não herdar o
+      // AUTH_PROVIDER do .env local (que pode estar em betterauth).
+      AUTH_PROVIDER: 'supabase',
     },
     coverage: {
       provider: 'v8',
