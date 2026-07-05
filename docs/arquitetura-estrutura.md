@@ -12,23 +12,23 @@ O backend principal (o `api-gateway`) atua como um **Backend-for-Frontend (BFF)*
 
 Ele segue uma topologia **Hub-and-Spoke**, onde o API Gateway é o centro (hub) que orquestra a comunicação com:
 
-- O banco de dados (Supabase / PostgreSQL).
-- O serviço de autenticação (Supabase Auth).
+- O banco de dados (Postgres do Supabase), acessado via **Drizzle ORM** (`DATABASE_URL`).
+- A autenticação (**Better Auth**), que roda **dentro** do próprio Gateway.
 - Outros serviços Serverless.
 
-**Vantagens disso:** Centraliza a validação de segurança (tokens JWT) e isola lógicas complexas, deixando o Frontend mais leve.
+**Vantagens disso:** Centraliza a validação de segurança (sessão em cookie httpOnly) e isola lógicas complexas, deixando o Frontend mais leve.
 
 ## Visão Micro: Arquitetura em Camadas (Layered Architecture)
 
 Internamente, o API Gateway adota uma **Arquitetura em Camadas** como padrão de referência. O fluxo ideal segue um caminho de *ida e volta* entre as camadas:
 
 1. **Rotas (`routes/`):** A porta de entrada. Recebem a requisição HTTP e direcionam para o controller correto.
-2. **Middlewares (`middlewares/`):** A segurança. Validam a autenticação (o `requireAuth` valida a sessão/JWT via Supabase Auth) antes de deixar a requisição prosseguir, injetando `req.user` e `req.supabase` na request.
+2. **Middlewares (`middlewares/`):** A segurança. Validam a autenticação (o `requireAuth` valida a sessão via **Better Auth**) antes de deixar a requisição prosseguir, injetando `req.user` na request.
 3. **Controllers (`controllers/`):** Os "gerentes". Recebem a requisição validada, extraem os parâmetros ou o corpo (body) e resolvem a resposta.
 4. **Services (`services/`):** O "cérebro". Concentram as regras de negócio mais complexas, validam requisitos (ex: verificar se há feedbacks suficientes para analisar) e orquestram o fluxo de dados.
-5. **Repositories (`repositories/`):** Os "arquivistas". Encapsulam as queries ao banco de dados por **dois caminhos**: a maioria usa o cliente **Supabase** (sujeito à RLS); as **agregações de estatística** (`feedbackStats.repository.ts`) usam **Drizzle** (via `DATABASE_URL`), cujo role ignora a RLS — o isolamento por `enterprise_id` é forçado na aplicação (`src/db/tenantScope.ts`), com a RLS mantida no banco como defesa em profundidade. Ver [Migrations (Drizzle)](./migrations-drizzle.md).
+5. **Repositories (`repositories/`):** Os "arquivistas". Encapsulam as queries ao banco de dados via **Drizzle** (`DATABASE_URL`), cujo role ignora a RLS — o isolamento por `enterprise_id` é forçado na aplicação (`src/db/tenantScope.ts`), com a RLS mantida no banco como defesa em profundidade. Ver [Migrations (Drizzle)](./migrations-drizzle.md).
 
-> **Estado atual da implementação:** o padrão **completo** Controller → Service → Repository só existe na **análise de IA** (`iaAnalyze.service.ts` + `iaAnalyze.repository.ts`) — é o único fluxo com camada de Service. Vários fluxos usam **Controller → Repository** (sem Service): os **pontos de coleta/QR** (`collectionPointsQr.repository.ts`), o **feedback público** (`publicQuestions.repository.ts`) e as **estatísticas/análise** (`feedbackStats.repository.ts` — via Drizzle — + `scope.repository.ts`). Os fluxos de **empresa** ainda acessam tabelas diretamente no controller via `req.supabase.from(...)`; já **usuário/autenticação/cadastro** usam o **Supabase Auth** (`supabase.auth.*`), sem acesso direto a tabelas. Migrar progressivamente esses fluxos para o padrão em camadas é um trabalho em aberto.
+> **Estado atual da implementação:** o padrão **completo** Controller → Service → Repository só existe na **análise de IA** (`iaAnalyze.service.ts` + `iaAnalyze.repository.ts`) — é o único fluxo com camada de Service. Vários fluxos usam **Controller → Repository** (sem Service): os **pontos de coleta/QR** (`collectionPointsQr.repository.ts`), o **feedback público** (`publicQuestions.repository.ts`) e as **estatísticas/análise** (`feedbackStats.repository.ts` — via Drizzle — + `scope.repository.ts`). Os fluxos de **autenticação/cadastro** delegam ao **Better Auth** (as tabelas `user`/`session`/`account`/`verification` são gerenciadas por ele). Migrar progressivamente os demais fluxos para o padrão em camadas é um trabalho em aberto.
 
 Há também pastas de apoio estrutural, como a `libs/`, que contém funções puras de domínio (sem efeitos colaterais) para ajudar em lógicas específicas (como montar lotes de análise para a IA), e os `providers/`, que fazem a comunicação HTTP com outros serviços
 

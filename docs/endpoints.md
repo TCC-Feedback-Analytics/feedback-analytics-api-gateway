@@ -2,7 +2,7 @@
 
 > **Base URL (desenvolvimento):** `http://localhost:3000`
 
-Todos os endpoints protegidos usam a sessão que trafega por **cookies HttpOnly** (gerenciada via `@supabase/ssr`). O cliente deve enviar as requisições com `credentials: 'include'`. **Não** há header `Authorization: Bearer`.
+Todos os endpoints protegidos usam a sessão que trafega por **cookies HttpOnly** (gerenciada pelo **Better Auth**). O cliente deve enviar as requisições com `credentials: 'include'`. **Não** há header `Authorization: Bearer`.
 
 > **Nota:** todas as rotas são prefixadas com `/api` (ex.: `GET /api/health`).
 
@@ -29,7 +29,7 @@ curl http://localhost:3000/api/health
 
 ### `GET /api/protected/user/auth_user`
 
-Retorna o usuário autenticado, extraído do JWT (injetado por `requireAuth`).
+Retorna o usuário autenticado, obtido da sessão do Better Auth (injetado por `requireAuth`).
 
 **Response 200**
 ```json
@@ -40,7 +40,7 @@ Retorna o usuário autenticado, extraído do JWT (injetado por `requireAuth`).
 
 ### `PATCH /api/protected/user/email`
 
-Inicia a troca de e-mail. O Supabase envia um link de confirmação para o novo endereço; a mudança só é efetivada após o callback.
+Inicia a troca de e-mail. O gateway envia (via SMTP) um link de confirmação para o novo endereço; a mudança só é efetivada após o callback.
 
 **Body**
 ```json
@@ -71,7 +71,7 @@ Atualiza metadados do usuário (ex.: `full_name`).
 
 ### `POST /api/protected/user/phone/start`
 
-Inicia a verificação de telefone — o Supabase envia um código por SMS.
+Registra o telefone do usuário. **Não há provedor de SMS** no momento: o telefone é salvo direto (a verificação por OTP em `/phone/verify` vira no-op). Contrato preservado.
 
 **Body**
 ```json
@@ -89,7 +89,7 @@ Inicia a verificação de telefone — o Supabase envia um código por SMS.
 
 ### `POST /api/protected/user/phone/verify`
 
-Confirma o código SMS recebido, efetivando a troca de telefone.
+Confirmaria o código SMS do telefone. Como **não há provedor de SMS**, este endpoint é **no-op** (o telefone já foi salvo em `/phone/start`). Contrato preservado.
 
 **Body**
 ```json
@@ -157,7 +157,7 @@ Retorna os dados cadastrais da empresa associada ao usuário autenticado, inclui
 }
 ```
 
-> `full_name` não é retornado por este endpoint — vem do campo `phone` e `email` de `auth.users`, e de `user_metadata.full_name` retornados no objeto `user`.
+> `full_name` não é retornado por este endpoint — `phone`, `email` e `full_name` vêm da tabela `user` do Better Auth, retornados no objeto `user`.
 
 ---
 
@@ -656,7 +656,7 @@ Analisa feedbacks **ainda não analisados** e persiste os resultados.
 
 | Status | Código | Descrição |
 |---|---|---|
-| `401` | `unauthorized` | JWT ausente ou inválido |
+| `401` | `unauthorized` | Sessão ausente ou inválida (cookie do Better Auth) |
 | `422` | `collecting_data_required_for_analysis` | Dados de contexto da empresa não preenchidos |
 | `422` | `insufficient_feedbacks_for_analysis` | Menos de 10 feedbacks disponíveis no escopo |
 | `500` | `missing_ia_analyze_remote_url` | Em runtime serverless (`VERCEL=1`) sem `IA_ANALYZE_REMOTE_URL` configurada |
@@ -708,7 +708,7 @@ Regenera os insights globais com base nos feedbacks **já analisados**.
 
 ## Autenticação (Pública)
 
-Endpoints sem JWT. A sessão é gerenciada por **cookie HttpOnly** (use `credentials: 'include'`).
+Endpoints sem sessão prévia. A autenticação é feita pelo **Better Auth**; a sessão é gerenciada por **cookie HttpOnly** (use `credentials: 'include'`). Estes endpoints `/api/public/auth/*` são wrappers do gateway (com payloads e regras próprias) que chamam o Better Auth por baixo; o handler nativo do Better Auth fica montado em **`/api/auth/*splat`** (via `toNodeHandler`).
 
 ### `POST /api/public/auth/login`
 

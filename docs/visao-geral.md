@@ -7,16 +7,17 @@ O `api-gateway` é o **Backend-for-Frontend (BFF)** do sistema. Ele é o único 
 ## Por Que Existe
 
 Centralizar o backend permite:
-- **Autenticação uniforme** — um único middleware valida a sessão Supabase (cookie HttpOnly) para todos os endpoints **protegidos** (os públicos não passam por `requireAuth`)
-- **Isolamento do banco** — as queries ficam no backend; o frontend não precisa de acesso direto ao Supabase
+- **Autenticação uniforme** — um único middleware valida a sessão do **Better Auth** (cookie HttpOnly) para todos os endpoints **protegidos** (os públicos não passam por `requireAuth`)
+- **Isolamento do banco** — as queries ficam no backend; o frontend não acessa o banco diretamente
 - **Orquestração da IA** — o Gateway prepara os dados, chama o `ia-analyze` e persiste os resultados sem expor a complexidade ao cliente
 
 ## Responsabilidades
 
-1. **Validar autenticação** lendo a sessão do cookie httpOnly via `@supabase/ssr` e `supabase.auth.getUser()` (middleware `requireAuth`)
+1. **Validar autenticação** lendo a sessão do cookie httpOnly via **Better Auth** (middleware `requireAuth`)
 2. **Expor endpoints REST** para o frontend React
-3. **Ler e escrever** no banco de dados Supabase
+3. **Ler e escrever** no banco de dados (Postgres do Supabase) via **Drizzle ORM**
 4. **Orquestrar serviços** — busca feedbacks, monta batches, chama `ia-analyze`, persiste resultados
+5. **Enviar e-mails** de confirmação de cadastro e recuperação de senha via **SMTP** (SendGrid em produção, Mailpit no local)
 
 ## Endpoints Disponíveis
 
@@ -24,7 +25,7 @@ Centralizar o backend permite:
 
 | Método | Caminho | Descrição |
 |---|---|---|
-| `GET` | `/api/protected/user/auth_user` | Dados do usuário autenticado (do JWT) |
+| `GET` | `/api/protected/user/auth_user` | Dados do usuário autenticado (da sessão) |
 | `PATCH` | `/api/protected/user/email` | Atualiza e-mail (envia confirmação) |
 | `PATCH` | `/api/protected/user/metadados` | Atualiza metadados do usuário (ex.: nome) |
 | `POST` | `/api/protected/user/phone/start` | Inicia verificação de telefone (envia SMS) |
@@ -60,15 +61,19 @@ Centralizar o backend permite:
 | `POST` | `/api/public/auth/forgot-password` | Solicita e-mail de redefinição de senha |
 | `POST` | `/api/public/auth/resend-confirmation` | Reenvia o e-mail de confirmação de cadastro |
 | `GET` | `/api/public/auth/callback` | Callback de confirmação/recuperação (redireciona) |
+| `ALL` | `/api/auth/*splat` | Rotas nativas do **Better Auth** (montadas via `toNodeHandler`) |
 | `GET` | `/api/public/enterprise/:id` | Dados públicos da empresa + perguntas para o formulário |
 | `POST` | `/api/public/qrcode/feedback` | Submissão de feedback via QR Code |
+
+> Os endpoints `/api/public/auth/*` são wrappers do gateway (payloads e regras próprias) que chamam o **Better Auth** por baixo; o handler nativo do Better Auth fica montado em `/api/auth/*splat`.
 
 ## Tecnologias
 
 - **Runtime:** Node.js 20+ com TypeScript (ESM)
 - **Framework:** Express 5
-- **Auth:** Supabase Auth via `@supabase/ssr` (`createServerClient`) — sessão em cookie httpOnly, validada por `supabase.auth.getUser()` em `requireAuth`; não há `Authorization: Bearer`
-- **Dados:** cliente Supabase (`@supabase/ssr`, sujeito à RLS) + **Drizzle ORM** (`DATABASE_URL`) para as agregações de estatística, com isolamento por `enterprise_id` na aplicação
+- **Auth:** **Better Auth** (único provedor) — sessão em cookie httpOnly, validada em `requireAuth`; não há `Authorization: Bearer`. As tabelas do Better Auth (`user`/`session`/`account`/`verification`) ficam no Postgres
+- **Dados:** **Drizzle ORM** (`DATABASE_URL`) sobre o **Postgres do Supabase** (acesso direto por connection string, sem SDK do Supabase), com isolamento por `enterprise_id` na aplicação (o role do Drizzle ignora a RLS)
+- **E-mail:** SMTP (SendGrid em produção, Mailpit no local)
 - **Deploy:** Vercel (serverless)
 
 ## Veja Também
