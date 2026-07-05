@@ -55,7 +55,13 @@ describe('[Integração] POST /api/protected/ia-analyze/analyze-raw', () => {
 
     mockAnalyzeRawFeedbacks.mockResolvedValueOnce({
       analyzedCount: 5,
-      feedbacksAnalyzed: ['id-1', 'id-2', 'id-3', 'id-4', 'id-5'],
+      feedbacksAnalyzed: Array.from({ length: 5 }, (_, i) => ({
+        id: `analysis-${i + 1}`,
+        feedback_id: `feedback-${i + 1}`,
+        sentiment: 'positive',
+        categories: ['atendimento'],
+        keywords: ['rápido'],
+      })),
     });
 
     const res = await request(app)
@@ -119,8 +125,24 @@ describe('[Integração] POST /api/protected/ia-analyze/regenerate-insights', ()
     setupAuthenticatedMock();
 
     mockRegenerateFeedbackInsights.mockResolvedValueOnce({
-      regeneratedCount: 3,
-      insightsGenerated: ['scope-1', 'scope-2', 'scope-3'],
+      globalInsights: {
+        summary: 'Clientes satisfeitos com o atendimento.',
+        recommendations: ['Manter tempo de resposta'],
+      },
+      contexts: [
+        {
+          scope_type: 'COMPANY',
+          catalog_item_id: null,
+          catalog_item_name: null,
+          analyzedCount: 3,
+          globalInsights: {
+            summary: 'Clientes satisfeitos com o atendimento.',
+            recommendations: ['Manter tempo de resposta'],
+          },
+        },
+      ],
+      reportGenerated: true,
+      fromCache: false,
     });
 
     const res = await request(app)
@@ -128,6 +150,7 @@ describe('[Integração] POST /api/protected/ia-analyze/regenerate-insights', ()
       .send({});
 
     expect(res.status).toBe(200);
-    expect(res.body.regeneratedCount).toBe(3);
+    expect(res.body.reportGenerated).toBe(true);
+    expect(res.body.contexts).toHaveLength(1);
   });
 });
