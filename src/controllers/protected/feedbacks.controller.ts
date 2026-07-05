@@ -25,6 +25,18 @@ import {
   fetchScopedRatingAggregates,
   fetchScopedAnalysisAggregates,
 } from '../../repositories/feedbackStats.repository.js';
+import {
+  fetchQuestionDefsScoped,
+  fetchSubquestionDefsScoped,
+} from '../../repositories/feedbackQuestions.repository.js';
+import { inArray } from 'drizzle-orm';
+import { getDb } from '../../db/client.js';
+import {
+  feedback,
+  feedbackQuestionAnswers,
+  feedbackSubquestionAnswers,
+} from '../../../drizzle/schema.js';
+import { scopedFeedbackWhere } from '../../db/tenantScope.js';
 
 type FeedbackQuestionAnswerRow = {
   feedback_id: string;
@@ -720,25 +732,19 @@ function aggToMetricFields(agg: QuestionAnswerAgg) {
  * pior→melhor (menor nota no topo).
  */
 export async function getFeedbacksQuestionsController(req: Request, res: Response) {
-  const supabase = req.supabase!;
   const user = req.user!;
 
   const scopeType = parseInsightScopeType(req.query.scope_type);
   const catalogItemId = String(req.query.catalog_item_id ?? '').trim() || null;
 
   try {
-    const { data: enterprise, error: enterpriseError } = await supabase
-      .from('enterprise')
-      .select('id')
-      .eq('auth_user_id', user.id)
-      .single();
-
-    if (enterpriseError || !enterprise) {
+    const enterpriseId = req.enterpriseId ?? (await resolveEnterpriseIdByUser(user.id));
+    if (!enterpriseId) {
       return sendTypedError(res, 404, API_ERROR_ENTERPRISE_NOT_FOUND);
     }
 
     const scopeResolution = await resolveScopeCollectionPointIds({
-      enterpriseId: enterprise.id,
+      enterpriseId,
       scopeType,
       catalogItemId,
     });
@@ -752,85 +758,67 @@ export async function getFeedbacksQuestionsController(req: Request, res: Respons
       return res.json({ questions: [] });
     }
 
-    let feedbackQuery = supabase
-      .from('feedback')
-      .select('id')
-      .eq('enterprise_id', enterprise.id);
-    if (filteredCollectionPointIds) {
-      feedbackQuery = feedbackQuery.in('collection_point_id', filteredCollectionPointIds);
-    }
+    // Feedbacks do escopo (SEMPRE por enterprise_id via scopedFeedbackWhere).
+    const feedbackRows = await getDb()
+      .select({ id: feedback.id })
+      .from(feedback)
+      .where(scopedFeedbackWhere(enterpriseId, filteredCollectionPointIds));
 
-    const { data: feedbackRows, error: feedbackError } = await feedbackQuery;
-    if (feedbackError) return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_STATS);
-
-    const feedbackIds = ((feedbackRows ?? []) as { id: string }[]).map((f) => f.id);
+    const feedbackIds = feedbackRows.map((f) => f.id);
     if (feedbackIds.length === 0) return res.json({ questions: [] });
 
-    // Respostas das perguntas → agrega por pergunta.
-    const { data: answerRows, error: answersError } = await supabase
-      .from('feedback_question_answers')
-      .select('question_id, question_text_snapshot, answer_value, answer_score')
-      .in('feedback_id', feedbackIds);
-    if (answersError) return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_STATS);
+    // Respostas das perguntas → agrega por pergunta. Isolamento transitivo: os
+    // feedbackIds já vêm tenant-scoped.
+    const answerRows = await getDb()
+      .select({
+        question_id: feedbackQuestionAnswers.questionId,
+        question_text_snapshot: feedbackQuestionAnswers.questionTextSnapshot,
+        answer_value: feedbackQuestionAnswers.answerValue,
+        answer_score: feedbackQuestionAnswers.answerScore,
+      })
+      .from(feedbackQuestionAnswers)
+      .where(inArray(feedbackQuestionAnswers.feedbackId, feedbackIds));
 
     // Agrupa as respostas por (question_id + redação do snapshot): cada redação
     // distinta vira uma entrada própria, para separar "atuais" de "antigas".
     const questionAgg = new Map<string, QuestionAnswerAgg>();
-    for (const row of (answerRows ?? []) as {
-      question_id: string;
-      question_text_snapshot: string;
-      answer_value: AnswerValueKey;
-      answer_score: number;
-    }[]) {
-      addAnswerToAgg(questionAgg, row.question_id, String(row.question_text_snapshot ?? '').trim(), row.answer_value, row.answer_score);
+    for (const row of answerRows) {
+      addAnswerToAgg(questionAgg, row.question_id, String(row.question_text_snapshot ?? '').trim(), row.answer_value as AnswerValueKey, row.answer_score);
     }
 
     // Respostas das subperguntas → agrega por (subquestion_id + redação).
-    const { data: subAnswerRows, error: subAnswersError } = await supabase
-      .from('feedback_subquestion_answers')
-      .select('subquestion_id, subquestion_text_snapshot, answer_value, answer_score')
-      .in('feedback_id', feedbackIds);
-    if (subAnswersError) return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_STATS);
+    const subAnswerRows = await getDb()
+      .select({
+        subquestion_id: feedbackSubquestionAnswers.subquestionId,
+        subquestion_text_snapshot: feedbackSubquestionAnswers.subquestionTextSnapshot,
+        answer_value: feedbackSubquestionAnswers.answerValue,
+        answer_score: feedbackSubquestionAnswers.answerScore,
+      })
+      .from(feedbackSubquestionAnswers)
+      .where(inArray(feedbackSubquestionAnswers.feedbackId, feedbackIds));
 
     const subAgg = new Map<string, QuestionAnswerAgg>();
-    for (const row of (subAnswerRows ?? []) as {
-      subquestion_id: string;
-      subquestion_text_snapshot: string;
-      answer_value: AnswerValueKey;
-      answer_score: number;
-    }[]) {
-      addAnswerToAgg(subAgg, row.subquestion_id, String(row.subquestion_text_snapshot ?? '').trim(), row.answer_value, row.answer_score);
+    for (const row of subAnswerRows) {
+      addAnswerToAgg(subAgg, row.subquestion_id, String(row.subquestion_text_snapshot ?? '').trim(), row.answer_value as AnswerValueKey, row.answer_score);
     }
 
     // Config ATUAL das perguntas (texto + is_active) por id — base da classificação
     // "atual" (ativa + texto igual ao configurado) vs "antiga" (editada/removida).
+    // eq(enterprise_id) OBRIGATÓRIO no repo (o Drizzle ignora a RLS).
     const currentQ = new Map<string, { text: string; isActive: boolean }>();
     const questionIds = [...new Set([...questionAgg.values()].map((a) => a.id))];
-    if (questionIds.length > 0) {
-      const { data: qDefs, error: qDefsError } = await supabase
-        .from('questions_of_feedbacks')
-        .select('id, question_text, is_active')
-        .in('id', questionIds);
-      if (qDefsError) return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_STATS);
-      for (const def of (qDefs ?? []) as { id: string; question_text: string; is_active: boolean }[]) {
-        currentQ.set(def.id, { text: String(def.question_text ?? '').trim(), isActive: def.is_active === true });
-      }
+    for (const def of await fetchQuestionDefsScoped(enterpriseId, questionIds)) {
+      currentQ.set(def.id, { text: String(def.questionText ?? '').trim(), isActive: def.isActive === true });
     }
 
     // Config ATUAL das subperguntas (texto + is_active) + mapeamento subpergunta → pai.
+    // O repo reforça o tenant via JOIN na pergunta-pai (enterprise_id).
     const subParentBySubId = new Map<string, string>();
     const currentSub = new Map<string, { text: string; isActive: boolean }>();
     const subIds = [...new Set([...subAgg.values()].map((a) => a.id))];
-    if (subIds.length > 0) {
-      const { data: subDefs, error: subDefsError } = await supabase
-        .from('feedback_question_subquestions')
-        .select('id, question_id, subquestion_text, is_active')
-        .in('id', subIds);
-      if (subDefsError) return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_STATS);
-      for (const def of (subDefs ?? []) as { id: string; question_id: string; subquestion_text: string; is_active: boolean }[]) {
-        subParentBySubId.set(def.id, def.question_id);
-        currentSub.set(def.id, { text: String(def.subquestion_text ?? '').trim(), isActive: def.is_active === true });
-      }
+    for (const def of await fetchSubquestionDefsScoped(enterpriseId, subIds)) {
+      subParentBySubId.set(def.id, def.questionId);
+      currentSub.set(def.id, { text: String(def.subquestionText ?? '').trim(), isActive: def.isActive === true });
     }
 
     // Subperguntas agrupadas por pergunta-pai (todas as redações; cada uma com status).
