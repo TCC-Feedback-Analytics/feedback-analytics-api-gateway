@@ -7,6 +7,7 @@ import {
   fetchScopedRatingAggregates,
   fetchScopedAnalysisAggregates,
 } from '../repositories/feedbackStats.repository.js';
+import { resolveEnterpriseIdByUser } from '../repositories/enterprise.repository.js';
 
 vi.mock('../config/supabase.js', () => ({
   createSupabaseServerClient: vi.fn(),
@@ -19,9 +20,16 @@ vi.mock('../repositories/feedbackStats.repository.js', () => ({
   fetchScopedAnalysisAggregates: vi.fn(),
 }));
 
+// A resolução de empresa do stats também virou Drizzle (enterprise.repository);
+// mockamos para o teste do controller (a resolução real é coberta por integração).
+vi.mock('../repositories/enterprise.repository.js', () => ({
+  resolveEnterpriseIdByUser: vi.fn(),
+}));
+
 const mockCreateClient = vi.mocked(createSupabaseServerClient);
 const mockRatingAgg = vi.mocked(fetchScopedRatingAggregates);
 const mockAnalysisAgg = vi.mocked(fetchScopedAnalysisAggregates);
+const mockResolveEnterprise = vi.mocked(resolveEnterpriseIdByUser);
 
 function setupAuthenticatedMock() {
   const mockSupabase = makeMockSupabase();
@@ -194,13 +202,10 @@ describe('[Integração] GET /api/protected/user/feedbacks/stats', () => {
   });
 
   it('[CT-UC09-01] retorna 200 com distribuição de ratings (agregação via Drizzle)', async () => {
-    const mockSupabase = setupAuthenticatedMock();
+    setupAuthenticatedMock();
 
-    // enterprise encontrada (lookup ainda via Supabase, protegido por RLS)
-    mockSupabase.queryBuilder.single.mockResolvedValueOnce({
-      data: TEST_ENTERPRISE,
-      error: null,
-    });
+    // enterprise resolvida via Drizzle (enterprise.repository, mockado).
+    mockResolveEnterprise.mockResolvedValueOnce(TEST_ENTERPRISE.id);
 
     // Agregados servidos via Drizzle (mockados): notas 5,5,4,3 e nada analisado.
     mockRatingAgg.mockResolvedValueOnce({

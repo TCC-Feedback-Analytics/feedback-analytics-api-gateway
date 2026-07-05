@@ -10,6 +10,7 @@ import {
 } from '../../config/errors.js';
 import { normalizeFeedbackAnalysisRows } from '../../libs/iaAnalyze/normalize.js';
 import { resolveScopeCollectionPointIds } from '../../repositories/scope.repository.js';
+import { resolveEnterpriseIdByUser } from '../../repositories/enterprise.repository.js';
 import { sendTypedError } from '../../utils/sendTypedError.js';
 import {
   ratingStats,
@@ -340,26 +341,20 @@ export async function getFeedbacksController(req: Request, res: Response) {
 }
 
 export async function getFeedbacksStatsController(req: Request, res: Response) {
-  const supabase = req.supabase!;
   const user = req.user!;
 
   const scopeType = parseInsightScopeType(req.query.scope_type);
   const catalogItemId = String(req.query.catalog_item_id ?? '').trim() || null;
 
   try {
-    const { data: enterprise, error: enterpriseError } = await supabase
-      .from('enterprise')
-      .select('id')
-      .eq('auth_user_id', user.id)
-      .single();
-
-    if (enterpriseError || !enterprise) {
+    const enterpriseId = req.enterpriseId ?? (await resolveEnterpriseIdByUser(user.id));
+    if (!enterpriseId) {
       return sendTypedError(res, 404, API_ERROR_ENTERPRISE_NOT_FOUND);
     }
 
     // Métricas filtradas pelo escopo selecionado no header (Geral = só o QR da empresa).
     const scopeResolution = await resolveScopeCollectionPointIds({
-      enterpriseId: enterprise.id,
+      enterpriseId,
       scopeType,
       catalogItemId,
     });
@@ -375,11 +370,11 @@ export async function getFeedbacksStatsController(req: Request, res: Response) {
     // aplicação — o Drizzle acessa com role que ignora a RLS). Ver
     // src/db/tenantScope.ts e src/repositories/feedbackStats.repository.ts.
     const ratingAgg = await fetchScopedRatingAggregates({
-      enterpriseId: enterprise.id,
+      enterpriseId,
       collectionPointIds: filteredCollectionPointIds,
     });
     const analysisAgg = await fetchScopedAnalysisAggregates({
-      enterpriseId: enterprise.id,
+      enterpriseId,
       collectionPointIds: filteredCollectionPointIds,
     });
 
