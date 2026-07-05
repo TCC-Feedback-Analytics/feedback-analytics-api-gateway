@@ -14,6 +14,7 @@ type RequestUser = {
   id: string;
   email?: string | null;
   phone?: string | null;
+  name?: string | null;
 };
 
 declare module 'express-serve-static-core' {
@@ -23,7 +24,23 @@ declare module 'express-serve-static-core' {
     // Empresa do usuário autenticado (Better Auth) — base do isolamento por tenant
     // na camada de aplicação. Substitui o auth.uid()/RLS quando fora do Supabase.
     enterpriseId?: string;
+    // Token de redefinição de senha (fluxo de recuperação), lido do cookie ba_reset
+    // apenas na rota /password. Consumido pelo resetPasswordController.
+    resetToken?: string;
   }
+}
+
+function readCookie(req: Request, name: string): string | undefined {
+  const header = req.headers.cookie;
+  if (!header) return undefined;
+  for (const part of header.split(';')) {
+    const idx = part.indexOf('=');
+    if (idx === -1) continue;
+    if (part.slice(0, idx).trim() === name) {
+      return decodeURIComponent(part.slice(idx + 1).trim());
+    }
+  }
+  return undefined;
 }
 
 export async function requireAuth(
@@ -60,20 +77,41 @@ async function requireAuthBetter(
       headers: fromNodeHeaders(req.headers),
     });
 
-    if (!result?.user) {
-      return res.status(401).json({ error: 'unauthorized' });
+    if (result?.user) {
+      const user = result.user as {
+        id: string;
+        email?: string | null;
+        phone?: string | null;
+        name?: string | null;
+      };
+      req.user = {
+        id: user.id,
+        email: user.email ?? null,
+        phone: user.phone ?? null,
+        name: user.name ?? null,
+      };
+
+      // Resolve a empresa do usuário (isolamento por tenant na aplicação).
+      const rows = await getDb().execute(
+        sql`SELECT id FROM public.enterprise WHERE auth_user_id = ${user.id} LIMIT 1`,
+      );
+      req.enterpriseId = (rows[0] as { id?: string } | undefined)?.id;
+
+      return next();
     }
 
-    const user = result.user as { id: string; email?: string | null; phone?: string | null };
-    req.user = { id: user.id, email: user.email ?? null, phone: user.phone ?? null };
+    // Recuperação de senha: sem sessão, mas com o cookie ba_reset setado pelo
+    // callback. Aceito SOMENTE na rota de senha (o cookie já é path-scoped; aqui
+    // reforçamos no servidor). O token é validado depois pelo Better Auth.
+    if (req.path.endsWith('/password')) {
+      const resetToken = readCookie(req, 'ba_reset');
+      if (resetToken) {
+        req.resetToken = resetToken;
+        return next();
+      }
+    }
 
-    // Resolve a empresa do usuário (isolamento por tenant na aplicação).
-    const rows = await getDb().execute(
-      sql`SELECT id FROM public.enterprise WHERE auth_user_id = ${user.id} LIMIT 1`,
-    );
-    req.enterpriseId = (rows[0] as { id?: string } | undefined)?.id;
-
-    return next();
+    return res.status(401).json({ error: 'unauthorized' });
   } catch {
     return res.status(401).json({ error: 'unauthorized' });
   }

@@ -6,6 +6,10 @@ import {
   API_ERROR_INTERNAL_ERROR,
   API_ERROR_INVALID_PAYLOAD,
 } from '../../config/errors.js';
+import { isBetterAuth } from '../../config/authProvider.js';
+import { getAuth } from '../../auth/auth.js';
+import { APIError } from 'better-auth/api';
+import { mapResendError } from '../../auth/errorMap.js';
 
 const resendConfirmationSchema = z.object({
   email: z.email({ error: 'E-mail inválido' }),
@@ -88,6 +92,27 @@ export async function resendConfirmationController(req: Request, res: Response) 
   }
 
   const { email } = parsed.data;
+
+  // --- Better Auth (gated) ---
+  if (isBetterAuth()) {
+    const webBase = process.env.PUBLIC_SITE_URL ?? 'http://localhost:5173';
+    try {
+      await getAuth().api.sendVerificationEmail({
+        body: { email, callbackURL: `${webBase}/auth/success` },
+      });
+      return res.json({ ok: true, message: 'E-mail de confirmação reenviado com sucesso.' });
+    } catch (err) {
+      if (err instanceof APIError) {
+        const mapped = mapResendError(err);
+        return sendTypedError(res, mapped.http, mapped.code, { message: mapped.message });
+      }
+      console.error('Resend confirmation (betterauth) error:', err);
+      return sendTypedError(res, 500, API_ERROR_INTERNAL_ERROR, {
+        message: 'Erro interno ao reenviar e-mail. Tente novamente.',
+      });
+    }
+  }
+
   const supabase = createSupabaseServerClient(req, res);
 
   try {
