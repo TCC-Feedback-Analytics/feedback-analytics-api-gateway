@@ -49,8 +49,6 @@ const mockReports = vi.mocked(fetchFeedbackInsightsReports);
 const mockUpsert = vi.mocked(upsertFeedbackInsightsReports);
 const mockRunIa = vi.mocked(runIaAnalyzeAnalysis);
 
-const SUPA = {} as never;
-
 function fb(createdAt: string) {
   return {
     id: `fb-${createdAt}`,
@@ -93,7 +91,6 @@ describe('[Integração] regenerateFeedbackInsights — cache de insights', () =
   beforeEach(() => {
     vi.clearAllMocks();
     mockEnterpriseContext.mockResolvedValue({
-      enterpriseId: 'e1',
       collecting: null,
       enterpriseName: 'Empresa',
     });
@@ -106,8 +103,7 @@ describe('[Integração] regenerateFeedbackInsights — cache de insights', () =
     mockReports.mockResolvedValue([COMPANY_REPORT] as never);
 
     const result = await regenerateFeedbackInsights({
-      supabase: SUPA,
-      userId: 'u1',
+      enterpriseId: 'e1',
       options: { scope_type: 'COMPANY' },
     });
 
@@ -124,8 +120,7 @@ describe('[Integração] regenerateFeedbackInsights — cache de insights', () =
     mockRunIa.mockResolvedValue(iaResult('novo') as never);
 
     const result = await regenerateFeedbackInsights({
-      supabase: SUPA,
-      userId: 'u1',
+      enterpriseId: 'e1',
       options: { scope_type: 'COMPANY' },
     });
 
@@ -140,8 +135,7 @@ describe('[Integração] regenerateFeedbackInsights — cache de insights', () =
     mockRunIa.mockResolvedValue(iaResult('forçado') as never);
 
     const result = await regenerateFeedbackInsights({
-      supabase: SUPA,
-      userId: 'u1',
+      enterpriseId: 'e1',
       options: { scope_type: 'COMPANY', force: true },
     });
 
@@ -156,8 +150,7 @@ describe('[Integração] regenerateFeedbackInsights — cache de insights', () =
     mockRunIa.mockResolvedValue(iaResult('primeiro') as never);
 
     const result = await regenerateFeedbackInsights({
-      supabase: SUPA,
-      userId: 'u1',
+      enterpriseId: 'e1',
       options: { scope_type: 'COMPANY' },
     });
 
