@@ -25,6 +25,19 @@ ALTER TABLE "public"."collecting_data_enterprise"
 ALTER TABLE "public"."collecting_data_enterprise"
   ADD COLUMN IF NOT EXISTS "uses_company_departments" boolean DEFAULT false NOT NULL;
 
+-- Uma linha de dados de coleta por empresa. A produção tem esta UNIQUE (é a base
+-- do upsert `ON CONFLICT (enterprise_id)`); o schema local estava sem — drift.
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'collecting_data_enterprise_enterprise_unique'
+      AND conrelid = 'public.collecting_data_enterprise'::regclass
+  ) THEN
+    ALTER TABLE "public"."collecting_data_enterprise"
+      ADD CONSTRAINT collecting_data_enterprise_enterprise_unique UNIQUE (enterprise_id);
+  END IF;
+END $$;
+
 ALTER TABLE "public"."collecting_data_enterprise" ENABLE ROW LEVEL SECURITY;
 
 -- Policies
