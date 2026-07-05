@@ -3,6 +3,10 @@ import request from 'supertest';
 import app from '../../index.js';
 import { createSupabaseServerClient } from '../config/supabase.js';
 import { fetchActiveQuestionsForScope } from '../repositories/publicQuestions.repository.js';
+import {
+  getPublicEnterpriseById,
+  resolveQrCollectionPoint,
+} from '../repositories/publicEnterprise.repository.js';
 import { makeMockSupabase } from './helpers/supabase-mock.js';
 
 vi.mock('../config/supabase.js', () => ({
@@ -14,8 +18,17 @@ vi.mock('../repositories/publicQuestions.repository.js', () => ({
   fetchActiveQuestionsForScope: vi.fn(),
 }));
 
+// Reader (enterprise.controller) virou Drizzle via publicEnterprise.repository —
+// coberto por integração; aqui é mockado.
+vi.mock('../repositories/publicEnterprise.repository.js', () => ({
+  getPublicEnterpriseById: vi.fn(),
+  resolveQrCollectionPoint: vi.fn(),
+}));
+
 const mockCreateClient = vi.mocked(createSupabaseServerClient);
 const mockFetchQuestions = vi.mocked(fetchActiveQuestionsForScope);
+const mockGetPublicEnterprise = vi.mocked(getPublicEnterpriseById);
+const mockResolveQrCollectionPoint = vi.mocked(resolveQrCollectionPoint);
 
 const ENTERPRISE_ID = '550e8400-e29b-41d4-a716-446655440001';
 const COLLECTION_POINT_ID = '550e8400-e29b-41d4-a716-446655440002';
@@ -330,38 +343,38 @@ describe('[Integração] POST /api/public/qrcode/feedback', () => {
 });
 
 describe('[Integração] GET /api/public/enterprise/:id', () => {
-  let mockSupabase: ReturnType<typeof makeMockSupabase>;
-
   beforeEach(() => {
     vi.clearAllMocks();
-    mockSupabase = makeMockSupabase();
-    mockCreateClient.mockReturnValue(mockSupabase as never);
     // default: nenhuma pergunta; testes específicos sobrescrevem com mockResolvedValueOnce.
     mockFetchQuestions.mockResolvedValue({ data: [], error: null } as never);
+    mockResolveQrCollectionPoint.mockResolvedValue(null);
   });
 
   it('retorna 200 com dados públicos da empresa', async () => {
-    mockSupabase.queryBuilder.single.mockResolvedValueOnce({
-      data: {
-        id: ENTERPRISE_ID,
-        name: 'Empresa Teste',
-        company_feedback_questions: [],
-        collecting_data_enterprise: [],
-      },
-      error: null,
+    mockGetPublicEnterprise.mockResolvedValueOnce({ id: ENTERPRISE_ID, name: 'Empresa Teste' });
+    mockResolveQrCollectionPoint.mockResolvedValueOnce({
+      id: COLLECTION_POINT_ID,
+      name: 'QR Geral',
+      catalogItemId: null,
+      catalogItemName: null,
+      catalogItemKind: null,
     });
 
     const res = await request(app).get(`/api/public/enterprise/${ENTERPRISE_ID}`);
 
-
     expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      id: ENTERPRISE_ID,
+      name: 'Empresa Teste',
+      collection_point_id: COLLECTION_POINT_ID,
+      catalog_item_id: null,
+      item_kind: null,
+      questions: [],
+    });
   });
 
   it('[CT-UC04-02] retorna 404 quando empresa não encontrada', async () => {
-    mockSupabase.queryBuilder.single.mockResolvedValueOnce({
-      data: null,
-      error: { message: 'No rows found', code: 'PGRST116' },
-    });
+    mockGetPublicEnterprise.mockResolvedValueOnce(null);
 
     const res = await request(app).get('/api/public/enterprise/id-inexistente');
 
