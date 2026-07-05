@@ -1,0 +1,57 @@
+# Cutover Supabase Auth → Better Auth (runbook)
+
+Este gateway usa **Better Auth** (sessão via cookie httpOnly) sobre o **Postgres**
+(o mesmo Postgres do projeto Supabase, acessado direto por connection string —
+`DATABASE_URL`). O Supabase **Auth/SDK** foi removido; o Supabase segue apenas
+como **provedor do Postgres**.
+
+## Pré-requisitos em produção (Vercel — projeto api-gateway)
+
+Variáveis de ambiente **obrigatórias** (Settings → Environment Variables → Production):
+
+| Var | O que é |
+|---|---|
+| `DATABASE_URL` | connection string do Postgres (Supabase → Settings → Database → **pooler**, porta 6543, transação). Todo o app (dados + auth) usa isto. |
+| `BETTER_AUTH_SECRET` | segredo aleatório forte: `openssl rand -base64 32`. **Sem ele o `getAuth()` quebra no boot e TODA requisição trava** ("carregando pra sempre"). |
+| `BETTER_AUTH_URL` | URL pública do **gateway** em prod (ex.: `https://…api….vercel.app`). |
+| `PUBLIC_SITE_URL` | URL pública do **web** (usada em callbacks/redirects). |
+| `CORS_ALLOWED_ORIGINS` | origens do web permitidas (CSV). |
+| `COOKIE_CROSS_SITE` | `true` se web e api estão em domínios diferentes (cookie `SameSite=None; Secure`). |
+| `SMTP_HOST` | `smtp.sendgrid.net` (SendGrid). |
+| `SMTP_PORT` | `587` (`SMTP_SECURE=false`) — ou `465` (`SMTP_SECURE=true`) se a 587 travar. |
+| `SMTP_SECURE` | `false` p/ 587, `true` p/ 465. |
+| `SMTP_USER` | `apikey` (literal — é assim no SendGrid). |
+| `SMTP_PASS` | a **API Key do SendGrid** (`SG.…`), criada em Settings → API Keys (permissão Mail Send). |
+| `MAIL_FROM` | remetente **verificado** no SendGrid (Single Sender p/ testar, Domain Authentication p/ produção). |
+
+## Passo único no banco (idempotente)
+
+Rode **uma vez** em produção, no Postgres do Supabase (Dashboard → SQL Editor), o script:
+
+```
+db/cutover/betterauth-enable.sql
+```
+
+Ele cria as tabelas do Better Auth (`user`/`session`/`account`/`verification`),
+remove a FK `enterprise.auth_user_id → auth.users` (usuários do Better Auth
+vivem em `public.user`) e dropa as policies RLS `auth.uid()` redundantes (o
+acesso a dados é 100% via Drizzle, que ignora a RLS). É idempotente.
+
+> ⚠️ O deploy (`deploy-api.yml`) **não** roda migration — este SQL é manual.
+
+## Ordem do cutover
+
+1. Setar as envs acima no Vercel.
+2. Rodar `betterauth-enable.sql` no Postgres.
+3. Deploy do api-gateway.
+4. Testar login/signup.
+
+## Notas operacionais
+
+- **E-mail de verificação é fire-and-forget**: se o envio falhar, o signup ainda
+  cria a conta (porém `email_verified=false` → não loga). Para destravar um teste:
+  `UPDATE public."user" SET email_verified = true WHERE lower(email) = '<email>';`
+- **Deliverability**: com Single Sender de um Gmail dá pra testar, mas para
+  usuários reais faça **Domain Authentication** no SendGrid (registros DNS).
+- **Rollback**: como o modo Supabase foi removido, o rollback é **redeploy do
+  commit anterior** no Vercel (Deployments → Promote), não mais por env var.

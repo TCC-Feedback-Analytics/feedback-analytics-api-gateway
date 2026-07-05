@@ -7,12 +7,14 @@ export default defineConfig({
     include: ['src/tests/**/*.test.ts'],
     env: {
       VERCEL: '1',
-      SUPABASE_URL: 'http://localhost:54321',
-      SUPABASE_ANON_KEY: 'test-anon-key',
       NODE_ENV: 'test',
-      // Suíte atual mocka o Supabase — fixa o provedor para não herdar o
-      // AUTH_PROVIDER do .env local (que pode estar em betterauth).
-      AUTH_PROVIDER: 'supabase',
+      // O index.ts monta getAuth() no import (Better Auth) → precisa destas envs
+      // mesmo nos testes unitários que importam o app. Nenhum teste unitário
+      // consulta o banco de verdade (mockam repos/getAuth), então o DATABASE_URL
+      // só serve para o getDb() instanciar sem lançar.
+      DATABASE_URL: 'postgresql://postgres:postgres@127.0.0.1:5433/feedback',
+      BETTER_AUTH_SECRET: 'unit-test-secret-please-32-chars-minimum-xyz',
+      BETTER_AUTH_URL: 'http://localhost:3000',
     },
     coverage: {
       provider: 'v8',

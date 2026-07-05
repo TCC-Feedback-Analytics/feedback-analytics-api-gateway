@@ -23,8 +23,6 @@
   },
   "dependencies": {
     "@feedback/lib-shared": "github:TCC-Feedback-Analytics/feedback-analytics-contracts#v1.0.0",
-    "@supabase/ssr": "^0.6.1",
-    "@supabase/supabase-js": "^2.53.0",
     "bcryptjs": "^3.0.3",
     "better-auth": "^1.6.23",
     "dotenv": "^17.2.1",
