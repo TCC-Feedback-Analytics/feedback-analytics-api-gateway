@@ -4,13 +4,13 @@ import {
   API_ERROR_FAILED_TO_COUNT_FEEDBACKS,
   API_ERROR_FAILED_TO_FETCH_FEEDBACKS,
   API_ERROR_FAILED_TO_FETCH_FEEDBACK_ANALYSIS,
-  API_ERROR_FAILED_TO_FETCH_FEEDBACK_INSIGHTS_REPORT,
   API_ERROR_FAILED_TO_FETCH_STATS,
   API_ERROR_INTERNAL_SERVER_ERROR,
 } from '../../config/errors.js';
 import { normalizeFeedbackAnalysisRows } from '../../libs/iaAnalyze/normalize.js';
 import { resolveScopeCollectionPointIds } from '../../repositories/scope.repository.js';
 import { resolveEnterpriseIdByUser } from '../../repositories/enterprise.repository.js';
+import { fetchScopedInsightsReport } from '../../repositories/feedbackInsights.repository.js';
 import { sendTypedError } from '../../utils/sendTypedError.js';
 import {
   ratingStats,
@@ -432,79 +432,30 @@ export async function getFeedbacksStatsController(req: Request, res: Response) {
 }
 
 export async function getFeedbacksInsightsReportController(req: Request, res: Response) {
-  const supabase = req.supabase!;
   const user = req.user!;
   const scopeType = parseInsightScopeType(req.query.scope_type) ?? 'COMPANY';
   const catalogItemId = String(req.query.catalog_item_id ?? '').trim() || null;
 
   try {
-    const { data: enterprise, error: enterpriseError } = await supabase
-      .from('enterprise')
-      .select('id')
-      .eq('auth_user_id', user.id)
-      .single();
-
-    if (enterpriseError || !enterprise) {
+    const enterpriseId = req.enterpriseId ?? (await resolveEnterpriseIdByUser(user.id));
+    if (!enterpriseId) {
       return sendTypedError(res, 404, API_ERROR_ENTERPRISE_NOT_FOUND);
     }
 
-    let scopedQuery = supabase
-      .from('feedback_insights_report')
-      .select('summary, recommendations, updated_at, scope_type, catalog_item_id')
-      .eq('enterprise_id', enterprise.id)
-      .eq('scope_type', scopeType)
-      .order('updated_at', { ascending: false })
-      .limit(1);
+    // Com o schema atual `scope_type` está sempre presente → a query escopada é
+    // autoritativa (o antigo fallback legado por empresa, sem escopo, foi removido).
+    const report = await fetchScopedInsightsReport({ enterpriseId, scopeType, catalogItemId });
 
-    if (catalogItemId) {
-      scopedQuery = scopedQuery.eq('catalog_item_id', catalogItemId);
-    } else if (scopeType === 'COMPANY') {
-      scopedQuery = scopedQuery.is('catalog_item_id', null);
-    }
-
-    const { data: scopedRows, error: scopedError } = await scopedQuery;
-
-    if (!scopedError) {
-      const report = Array.isArray(scopedRows) ? scopedRows[0] : null;
-
-      if (!report) {
-        return res.json({ summary: null, recommendations: [], updatedAt: null, scopeType, catalogItemId });
-      }
-
-      return res.json({
-        summary: (report.summary as string | null) ?? null,
-        recommendations: ((report.recommendations ?? []) as string[]).filter((rec) => !!rec && rec.trim().length > 0),
-        updatedAt: (report.updated_at as string | null) ?? null,
-        scopeType: (report.scope_type as string | null) ?? scopeType,
-        catalogItemId: (report.catalog_item_id as string | null) ?? catalogItemId,
-      });
-    }
-
-    if (scopeType !== 'COMPANY' || catalogItemId) {
-      return res.json({ summary: null, recommendations: [], updatedAt: null, scopeType, catalogItemId });
-    }
-
-    const { data: legacyReport, error: legacyError } = await supabase
-      .from('feedback_insights_report')
-      .select('summary, recommendations, updated_at')
-      .eq('enterprise_id', enterprise.id)
-      .maybeSingle();
-
-    if (legacyError) {
-      console.error('Erro ao buscar feedback_insights_report:', legacyError);
-      return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_FEEDBACK_INSIGHTS_REPORT);
-    }
-
-    if (!legacyReport) {
+    if (!report) {
       return res.json({ summary: null, recommendations: [], updatedAt: null, scopeType, catalogItemId });
     }
 
     return res.json({
-      summary: (legacyReport.summary as string | null) ?? null,
-      recommendations: ((legacyReport.recommendations ?? []) as string[]).filter((rec) => !!rec && rec.trim().length > 0),
-      updatedAt: (legacyReport.updated_at as string | null) ?? null,
-      scopeType,
-      catalogItemId,
+      summary: report.summary ?? null,
+      recommendations: (report.recommendations ?? []).filter((rec) => !!rec && rec.trim().length > 0),
+      updatedAt: report.updatedAt ?? null,
+      scopeType: report.scopeType ?? scopeType,
+      catalogItemId: report.catalogItemId ?? catalogItemId,
     });
   } catch (error) {
     console.error('Erro ao buscar relatório de insights (IA):', error);
