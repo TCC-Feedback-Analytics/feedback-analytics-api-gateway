@@ -92,7 +92,6 @@ export async function getPublicEnterpriseController(req: Request, res: Response)
     // as perguntas ativas configuradas para o escopo resolvido (pode ser nenhuma).
     const { data: questions, error: questionsError } =
       await fetchActiveQuestionsForScope({
-        supabase,
         enterpriseId: enterprise.id,
         scopeType: currentScope,
         catalogItemId: contextCatalogItemId,

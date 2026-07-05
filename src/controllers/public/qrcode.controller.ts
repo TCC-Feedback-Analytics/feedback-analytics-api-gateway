@@ -95,7 +95,6 @@ export async function submitQrCodeFeedbackController(req: Request, res: Response
 
   const { data: currentQuestions, error: currentQuestionsError } =
     await fetchActiveQuestionsForScope({
-      supabase,
       enterpriseId: payload.enterprise_id,
       scopeType: contextScope,
       catalogItemId: collectionPoint.catalog_item_id ?? null,
