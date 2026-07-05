@@ -15,7 +15,6 @@ import {
   reportRowToContext,
   scopeKey,
 } from '../libs/iaAnalyze/insightsCache.js';
-import type { SupabaseClient } from '@supabase/supabase-js';
 import type { IaAnalyzeRemoteRunRequest } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/remote.contract';
 import type {
   IaAnalyzeRawRunRequest,
@@ -44,16 +43,12 @@ import { applyExecutionFilter } from '../libs/iaAnalyze/filter.js';
  * Útil para garantir que apenas feedbacks válidos e inéditos sejam analisados, mantendo integridade e performance.
  */
 export async function analyzeRawFeedbacks(params: {
-  supabase: SupabaseClient;
-  userId: string;
+  enterpriseId: string;
   options?: IaAnalyzeRawRunRequest;
 }): Promise<IaAnalyzeRawRunResponse> {
-  const { supabase, userId, options } = params;
+  const { enterpriseId, options } = params;
 
-  const { enterpriseId, collecting, enterpriseName } = await fetchEnterpriseContextForAnalysis({
-    supabase,
-    userId,
-  });
+  const { collecting, enterpriseName } = await fetchEnterpriseContextForAnalysis({ enterpriseId });
 
   if (!hasRequiredEnterpriseInfoForAnalysis(collecting)) {
     throw new IaAnalyzeServiceError(
@@ -71,7 +66,6 @@ export async function analyzeRawFeedbacks(params: {
   // Busca já restrita ao escopo pedido: a janela de `limit` vale DENTRO do escopo
   // (evita "fome de escopo") e o filtro em memória abaixo só refina.
   const feedbacksForAnalysis = await fetchFeedbacksForAnalysis({
-    supabase,
     enterpriseId,
     limit,
     scopeType: options?.scope_type,
@@ -92,7 +86,6 @@ export async function analyzeRawFeedbacks(params: {
   }
 
   const alreadyAnalyzedIds = await fetchAlreadyAnalyzedFeedbackIds({
-    supabase,
     feedbackIds: feedbacksForExecution.map((f) => f.id),
   });
 
@@ -145,7 +138,7 @@ export async function analyzeRawFeedbacks(params: {
     return { analyzedCount: 0, feedbacksAnalyzed: [] };
   }
 
-  const feedbacksAnalyzed = await insertFeedbackAnalysisRows({ supabase, rows: rowsToInsert });
+  const feedbacksAnalyzed = await insertFeedbackAnalysisRows({ rows: rowsToInsert });
 
   return { analyzedCount: feedbacksAnalyzed.length, feedbacksAnalyzed };
 }
@@ -166,16 +159,12 @@ export async function analyzeRawFeedbacks(params: {
  * Útil para garantir que relatórios e dashboards estejam sempre atualizados com base na base de feedbacks mais recente.
  */
 export async function regenerateFeedbackInsights(params: {
-  supabase: SupabaseClient;
-  userId: string;
+  enterpriseId: string;
   options?: IaAnalyzeRegenerateInsightsRequest;
 }): Promise<IaAnalyzeRegenerateInsightsResponse> {
-  const { supabase, userId, options } = params;
+  const { enterpriseId, options } = params;
 
-  const { enterpriseId, collecting, enterpriseName } = await fetchEnterpriseContextForAnalysis({
-    supabase,
-    userId,
-  });
+  const { collecting, enterpriseName } = await fetchEnterpriseContextForAnalysis({ enterpriseId });
 
   if (!hasRequiredEnterpriseInfoForAnalysis(collecting)) {
     throw new IaAnalyzeServiceError(
@@ -188,7 +177,6 @@ export async function regenerateFeedbackInsights(params: {
   // Busca já restrita ao escopo pedido: assim a janela de linhas vale DENTRO do
   // escopo e o filtro em memória abaixo só refina (defesa em profundidade).
   const analyzedFeedbacks = await fetchAlreadyAnalyzedFeedbacks({
-    supabase,
     enterpriseId,
     scopeType: options?.scope_type,
     catalogItemId: options?.catalog_item_id?.trim() || null,
@@ -213,7 +201,6 @@ export async function regenerateFeedbackInsights(params: {
   // ignora o cache (botão "forçar regeneração").
   if (!options?.force) {
     const cachedReports = await fetchFeedbackInsightsReports({
-      supabase,
       enterpriseId,
       scopeType: options?.scope_type,
       catalogItemId: options?.catalog_item_id?.trim() || null,
@@ -272,7 +259,6 @@ export async function regenerateFeedbackInsights(params: {
     )?.globalInsights ?? insightsContexts[0]?.globalInsights ?? null;
 
   const persistedContexts = await upsertFeedbackInsightsReports({
-    supabase,
     enterpriseId,
     contexts: insightsContexts,
   });

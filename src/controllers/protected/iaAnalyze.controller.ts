@@ -11,6 +11,7 @@ import {
   analyzeRawFeedbacks,
   regenerateFeedbackInsights,
 } from '../../services/iaAnalyze.service.js';
+import { resolveEnterpriseIdByUser } from '../../repositories/enterprise.repository.js';
 import { IaAnalyzeServiceError } from '../../libs/iaAnalyze/errors.js';
 import { parseScopeType } from '../../libs/iaAnalyze/parse.js';
 import { readExecutionMode } from '../../libs/iaAnalyze/readEnvs.js';
@@ -52,7 +53,6 @@ function logIaAnalyzeFailure(label: string, startedAt: number, error: unknown) {
  * Útil para expor a análise IA de feedbacks brutos via API REST, garantindo tratamento de erros e validação de entrada.
  */
 export async function analyzeRawFeedbacksController(req: Request, res: Response) {
-  const supabase = req.supabase!;
   const user = req.user!;
   const body = (req.body ?? {}) as IaAnalyzeRawRunRequest;
 
@@ -67,9 +67,13 @@ export async function analyzeRawFeedbacksController(req: Request, res: Response)
   const startedAt = Date.now();
 
   try {
+    const enterpriseId = req.enterpriseId ?? (await resolveEnterpriseIdByUser(user.id));
+    if (!enterpriseId) {
+      throw new IaAnalyzeServiceError('Enterprise not found', 404, 'enterprise_not_found');
+    }
+
     const result = await analyzeRawFeedbacks({
-      supabase,
-      userId: user.id,
+      enterpriseId,
       options: { limit, scope_type, catalog_item_id },
     });
 
@@ -96,7 +100,6 @@ export async function analyzeRawFeedbacksController(req: Request, res: Response)
  * Útil para atualizar os insights globais/segmentados de feedbacks via API REST, garantindo tratamento de erros e validação de entrada.
  */
 export async function regenerateFeedbackInsightsController(req: Request, res: Response) {
-  const supabase = req.supabase!;
   const user = req.user!;
   const body = (req.body ?? {}) as IaAnalyzeRegenerateInsightsRequest;
 
@@ -110,9 +113,13 @@ export async function regenerateFeedbackInsightsController(req: Request, res: Re
   const startedAt = Date.now();
 
   try {
+    const enterpriseId = req.enterpriseId ?? (await resolveEnterpriseIdByUser(user.id));
+    if (!enterpriseId) {
+      throw new IaAnalyzeServiceError('Enterprise not found', 404, 'enterprise_not_found');
+    }
+
     const result = await regenerateFeedbackInsights({
-      supabase,
-      userId: user.id,
+      enterpriseId,
       options: { scope_type, catalog_item_id, force },
     });
 

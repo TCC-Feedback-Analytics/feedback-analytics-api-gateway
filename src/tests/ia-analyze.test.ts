@@ -4,6 +4,7 @@ import app from '../../index.js';
 import { createSupabaseServerClient } from '../config/supabase.js';
 import { analyzeRawFeedbacks, regenerateFeedbackInsights } from '../services/iaAnalyze.service.js';
 import { IaAnalyzeServiceError } from '../libs/iaAnalyze/errors.js';
+import { resolveEnterpriseIdByUser } from '../repositories/enterprise.repository.js';
 import { makeMockSupabase, TEST_USER } from './helpers/supabase-mock.js';
 
 vi.mock('../config/supabase.js', () => ({
@@ -15,9 +16,15 @@ vi.mock('../services/iaAnalyze.service.js', () => ({
   regenerateFeedbackInsights: vi.fn(),
 }));
 
+// O controller resolve enterpriseId via Drizzle (enterprise.repository) — mockado.
+vi.mock('../repositories/enterprise.repository.js', () => ({
+  resolveEnterpriseIdByUser: vi.fn(),
+}));
+
 const mockCreateClient = vi.mocked(createSupabaseServerClient);
 const mockAnalyzeRawFeedbacks = vi.mocked(analyzeRawFeedbacks);
 const mockRegenerateFeedbackInsights = vi.mocked(regenerateFeedbackInsights);
+const mockResolveEnterprise = vi.mocked(resolveEnterpriseIdByUser);
 
 function setupAuthenticatedMock() {
   const mockSupabase = makeMockSupabase();
@@ -26,6 +33,7 @@ function setupAuthenticatedMock() {
     error: null,
   });
   mockCreateClient.mockReturnValue(mockSupabase as never);
+  mockResolveEnterprise.mockResolvedValue('ent-1');
   return mockSupabase;
 }
 
