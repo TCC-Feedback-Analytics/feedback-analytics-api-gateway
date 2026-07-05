@@ -63,6 +63,12 @@ const B = {
   accountType: 'CNPJ' as const,
 };
 
+// Usuário criado SEM verificar o e-mail (para o caso RNE-014 no login).
+const UNVERIFIED = { email: 'e2e-unverified@x.local', password: 'senha-unverified-9', phone: '+5511900000009' };
+// CNPJ válido só-dígitos (o registerSchema exige /^\d{14}$/) e NÃO cadastrado —
+// usado nos testes HTTP de register que retornam antes do insert (dup e-mail/telefone).
+const VALID_CNPJ = '11222333000181';
+
 let userIdA = '';
 let userIdB = '';
 let cookieA = '';
@@ -84,7 +90,7 @@ afterAll(async () => {
     await db.execute(sql`DELETE FROM public.collecting_data_enterprise WHERE enterprise_id IN (SELECT id FROM public.enterprise WHERE document = ${doc})`);
     await db.execute(sql`DELETE FROM public.enterprise WHERE document = ${doc}`);
   }
-  for (const email of [A.email, B.email]) {
+  for (const email of [A.email, B.email, UNVERIFIED.email]) {
     await db.execute(sql`DELETE FROM public.session WHERE user_id IN (SELECT id FROM public."user" WHERE lower(email) = lower(${email}))`);
     await db.execute(sql`DELETE FROM public.account WHERE user_id IN (SELECT id FROM public."user" WHERE lower(email) = lower(${email}))`);
     await db.execute(sql`DELETE FROM public."user" WHERE lower(email) = lower(${email})`);
@@ -153,5 +159,95 @@ describe('[E2E cutover] autenticação Better Auth + dados protegidos via HTTP',
     // O QR de B continua inativo — a escrita de A não vazou.
     const statusB = await request(app).get('/api/protected/user/collection-points/qr/status').set('Cookie', cookieB);
     expect(statusB.body.active).toBe(false);
+  });
+});
+
+// Cobertura HTTP dos controllers de auth (loginController/logoutController/
+// registerUserController), que substituem os antigos testes unitários mockando
+// Supabase — aqui contra o Better Auth REAL.
+describe('[E2E cutover] endpoints públicos de auth via HTTP', () => {
+  it('POST /public/auth/login com credenciais válidas → 200 + cookie', async () => {
+    const res = await request(app).post('/api/public/auth/login').send({ email: A.email, password: A.password });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.user?.id).toBe(userIdA);
+    expect(res.headers['set-cookie']).toBeTruthy();
+  });
+
+  it('POST /public/auth/login com senha errada → 401 code invalid_credentials', async () => {
+    const res = await request(app).post('/api/public/auth/login').send({ email: A.email, password: 'senha-totalmente-errada' });
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('invalid_credentials');
+  });
+
+  it('[RNE-014] login com e-mail NÃO verificado responde igual a credencial inválida (anti-enumeração)', async () => {
+    // Cria um usuário e NÃO verifica o e-mail → requireEmailVerification bloqueia o login.
+    await getAuth().api.signUpEmail({
+      body: { email: UNVERIFIED.email, password: UNVERIFIED.password, name: 'Não Verificado', phone: UNVERIFIED.phone },
+    });
+
+    const res = await request(app).post('/api/public/auth/login').send({ email: UNVERIFIED.email, password: UNVERIFIED.password });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('invalid_credentials');
+    // NÃO pode vazar que a conta existe / está só não-confirmada.
+    const bodyStr = JSON.stringify(res.body).toLowerCase();
+    expect(bodyStr).not.toContain('confirm');
+    expect(bodyStr).not.toContain('verificad');
+  });
+
+  it('POST /public/auth/login com payload inválido → 400', async () => {
+    const res = await request(app).post('/api/public/auth/login').send({ email: 'nao-eh-email', password: '123' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_payload');
+  });
+
+  it('register com e-mail já cadastrado → 200 confirmation_required (anti-enumeração)', async () => {
+    const res = await request(app).post('/api/public/auth/register').send({
+      email: A.email, // já existe
+      password: 'SenhaForte123', confirmPassword: 'SenhaForte123', terms: true,
+      accountType: 'CNPJ', fullName: 'Outro Gestor', phone: '+5562999990099', document: VALID_CNPJ,
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.message).toBe('confirmation_required');
+  });
+
+  it('register com telefone já cadastrado → 409 phone_taken', async () => {
+    const res = await request(app).post('/api/public/auth/register').send({
+      email: 'reg-novo@x.local',
+      password: 'SenhaForte123', confirmPassword: 'SenhaForte123', terms: true,
+      accountType: 'CNPJ', fullName: 'Outro Gestor', phone: A.phone /* já existe */, document: VALID_CNPJ,
+    });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('phone_taken');
+  });
+
+  it('POST /public/auth/register com payload inválido → 400', async () => {
+    const res = await request(app).post('/api/public/auth/register').send({ email: 'x' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_payload');
+  });
+
+  it('forgot-password sempre responde 200 (anti-enumeração)', async () => {
+    const res = await request(app).post('/api/public/auth/forgot-password').send({ email: A.email });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+  });
+
+  it('forgot-password com e-mail inválido → 400', async () => {
+    const res = await request(app).post('/api/public/auth/forgot-password').send({ email: 'nao-eh-email' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_payload');
+  });
+
+  it('resend-confirmation com e-mail inválido → 400', async () => {
+    const res = await request(app).post('/api/public/auth/resend-confirmation').send({ email: 'nao-eh-email' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_payload');
+  });
+
+  it('POST /public/auth/logout → 204', async () => {
+    const res = await request(app).post('/api/public/auth/logout').set('Cookie', cookieB).send({});
+    expect(res.status).toBe(204);
   });
 });

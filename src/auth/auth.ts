@@ -1,5 +1,5 @@
 /**
- * Instância central do Better Auth (só usada quando AUTH_PROVIDER=betterauth).
+ * Instância central do Better Auth (o único provedor de autenticação do gateway).
  *
  * - Adapter Drizzle embutido (`better-auth/adapters/drizzle`, provider 'pg').
  * - Senha: `hash`/`verify` custom com **bcrypt** — valida os hashes legados do
@@ -11,8 +11,8 @@
  * - `autoSignIn:false` + `requireEmailVerification:true`: anti-enumeração no signup
  *   e login só após confirmação (paridade com RNE-014).
  *
- * Lazy (getAuth): só instancia no primeiro uso, pois exige DATABASE_URL — o app
- * sobe em modo supabase sem tocar aqui.
+ * Lazy (getAuth): só instancia no primeiro uso, pois exige DATABASE_URL/
+ * BETTER_AUTH_SECRET.
  */
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
@@ -38,7 +38,7 @@ function buildTrustedOrigins(): string[] {
 function createAuth() {
   const isProd = process.env.NODE_ENV === 'production';
   const crossSite = String(process.env.COOKIE_CROSS_SITE ?? '').trim() === 'true';
-  // Mesma política de cookie do createSupabaseServerClient (config/supabase.ts).
+  // Cross-site (web e api em domínios diferentes) → SameSite=None + Secure.
   const sameSite: 'lax' | 'none' = isProd && crossSite ? 'none' : 'lax';
 
   return betterAuth({

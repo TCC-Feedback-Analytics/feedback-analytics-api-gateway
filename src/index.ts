@@ -15,7 +15,6 @@ import resendConfirmationRoutes from './routes/public/resendConfirmation.routes.
 import forgotPasswordRoutes from './routes/public/forgotPassword.routes.js';
 import { toNodeHandler } from 'better-auth/node';
 import { getAuth } from './auth/auth.js';
-import { isBetterAuth } from './config/authProvider.js';
 
 function normalizeOrigin(rawValue: string): string | null {
   const value = String(rawValue ?? '').trim();
@@ -244,13 +243,11 @@ const app = express();
 // CORS precisa vir antes dos endpoints
 app.use(corsMiddleware);
 
-// Better Auth (gated por AUTH_PROVIDER): o handler nativo é montado ANTES do
-// express.json() — o toNodeHandler precisa ler o stream do request cru; se o
-// json() consumir antes, as chamadas /api/auth/* ficam presas em "pending".
-// (Express 5 exige o splat nomeado "*splat".)
-if (isBetterAuth()) {
-  app.all('/api/auth/*splat', toNodeHandler(getAuth()));
-}
+// Better Auth: o handler nativo é montado ANTES do express.json() — o
+// toNodeHandler precisa ler o stream do request cru; se o json() consumir antes,
+// as chamadas /api/auth/* ficam presas em "pending". (Express 5 exige o splat
+// nomeado "*splat".)
+app.all('/api/auth/*splat', toNodeHandler(getAuth()));
 
 app.use(express.json());
 

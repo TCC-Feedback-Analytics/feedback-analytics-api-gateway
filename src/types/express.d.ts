@@ -1,5 +1,3 @@
-import type { createSupabaseServerClient } from '../config/supabase';
-
 declare global {
   namespace Express {
     interface Request {
@@ -7,8 +5,8 @@ declare global {
         id: string;
         email?: string | null;
         phone?: string | null;
+        name?: string | null;
       };
-      supabase?: ReturnType<typeof createSupabaseServerClient>;
     }
   }
 }

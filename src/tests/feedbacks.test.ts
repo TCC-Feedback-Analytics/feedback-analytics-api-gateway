@@ -1,105 +1,80 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
 import app from '../../index.js';
-import { createSupabaseServerClient } from '../config/supabase.js';
-import { makeMockSupabase, TEST_USER, TEST_ENTERPRISE } from './helpers/supabase-mock.js';
 import {
   fetchScopedRatingAggregates,
   fetchScopedAnalysisAggregates,
 } from '../repositories/feedbackStats.repository.js';
 import { resolveEnterpriseIdByUser } from '../repositories/enterprise.repository.js';
 
-vi.mock('../config/supabase.js', () => ({
-  createSupabaseServerClient: vi.fn(),
+const TEST_USER_ID = '11111111-1111-1111-1111-111111111111';
+const TEST_ENTERPRISE_ID = 'aaaaaaaa-0000-0000-0000-000000000001';
+
+// requireAuth mockado: o gating real (sessão Better Auth) é coberto pelo e2e.
+// Cada teste controla o "usuário logado" via authState (ou null → 401).
+const { authState } = vi.hoisted(() => ({
+  authState: { user: null as { id: string; email?: string | null } | null },
+}));
+vi.mock('../middlewares/auth.js', () => ({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  requireAuth: (req: any, res: any, next: any) => {
+    if (!authState.user) return res.status(401).json({ error: 'unauthorized' });
+    req.user = authState.user;
+    next();
+  },
 }));
 
 // As agregações de stats migraram para Drizzle; mockamos o repositório para
-// testar o controller sem um banco real.
+// testar o controller sem um banco real (a agregação real é coberta por integração).
 vi.mock('../repositories/feedbackStats.repository.js', () => ({
   fetchScopedRatingAggregates: vi.fn(),
   fetchScopedAnalysisAggregates: vi.fn(),
 }));
-
-// A resolução de empresa do stats também virou Drizzle (enterprise.repository);
-// mockamos para o teste do controller (a resolução real é coberta por integração).
 vi.mock('../repositories/enterprise.repository.js', () => ({
   resolveEnterpriseIdByUser: vi.fn(),
 }));
 
-const mockCreateClient = vi.mocked(createSupabaseServerClient);
 const mockRatingAgg = vi.mocked(fetchScopedRatingAggregates);
 const mockAnalysisAgg = vi.mocked(fetchScopedAnalysisAggregates);
 const mockResolveEnterprise = vi.mocked(resolveEnterpriseIdByUser);
 
-function setupAuthenticatedMock() {
-  const mockSupabase = makeMockSupabase();
-  mockSupabase.auth.getUser.mockResolvedValue({
-    data: { user: TEST_USER },
-    error: null,
-  });
-  mockCreateClient.mockReturnValue(mockSupabase as never);
-  return mockSupabase;
-}
-
 describe('[Integração] GET /api/protected/user/feedbacks', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    authState.user = { id: TEST_USER_ID };
   });
 
   it('retorna 401 sem autenticação', async () => {
-    const mockSupabase = makeMockSupabase();
-    mockSupabase.auth.getUser.mockResolvedValue({
-      data: { user: null },
-      error: { message: 'Not authenticated' },
-    });
-    mockCreateClient.mockReturnValue(mockSupabase as never);
-
+    authState.user = null;
     const res = await request(app).get('/api/protected/user/feedbacks');
-
     expect(res.status).toBe(401);
     expect(res.body.error).toBe('unauthorized');
   });
 
   it('[CT-UC10-02] retorna 404 quando empresa não encontrada', async () => {
-    setupAuthenticatedMock();
     mockResolveEnterprise.mockResolvedValueOnce(null);
-
     const res = await request(app).get('/api/protected/user/feedbacks');
-
     expect(res.status).toBe(404);
     expect(res.body.error).toBe('enterprise_not_found');
   });
 
-  // Os casos de dados da lista (paginação, filtros de rating/categoria, shape
-  // aninhado) migraram para a suíte de integração — ver
-  // src/tests/integration/feedbackList.itest.ts (contra o Postgres local).
+  // Os casos de dados da lista migraram para integração (feedbackList.itest.ts).
 });
 
 describe('[Integração] GET /api/protected/user/feedbacks/stats', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    authState.user = { id: TEST_USER_ID };
   });
 
   it('retorna 401 sem autenticação', async () => {
-    const mockSupabase = makeMockSupabase();
-    mockSupabase.auth.getUser.mockResolvedValue({
-      data: { user: null },
-      error: { message: 'Not authenticated' },
-    });
-    mockCreateClient.mockReturnValue(mockSupabase as never);
-
+    authState.user = null;
     const res = await request(app).get('/api/protected/user/feedbacks/stats');
-
     expect(res.status).toBe(401);
   });
 
   it('[CT-UC09-01] retorna 200 com distribuição de ratings (agregação via Drizzle)', async () => {
-    setupAuthenticatedMock();
-
-    // enterprise resolvida via Drizzle (enterprise.repository, mockado).
-    mockResolveEnterprise.mockResolvedValueOnce(TEST_ENTERPRISE.id);
-
-    // Agregados servidos via Drizzle (mockados): notas 5,5,4,3 e nada analisado.
+    mockResolveEnterprise.mockResolvedValueOnce(TEST_ENTERPRISE_ID);
     mockRatingAgg.mockResolvedValueOnce({
       totalFeedbacks: 4,
       ratingSum: 17,
