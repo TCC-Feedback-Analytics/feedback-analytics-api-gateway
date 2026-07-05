@@ -1,5 +1,4 @@
 import type { Request, Response } from 'express';
-import { createSupabaseServerClient } from '../../config/supabase.js';
 import {
   API_ERROR_ENTERPRISE_ID_REQUIRED,
   API_ERROR_ENTERPRISE_NOT_FOUND,
@@ -7,6 +6,14 @@ import {
 } from '../../config/errors.js';
 import { sendTypedError } from '../../utils/sendTypedError.js';
 import { fetchActiveQuestionsForScope } from '../../repositories/publicQuestions.repository.js';
+import {
+  getPublicEnterpriseById,
+  resolveQrCollectionPoint,
+} from '../../repositories/publicEnterprise.repository.js';
+
+function normalizeItemKind(kind: string | null): 'PRODUCT' | 'SERVICE' | 'DEPARTMENT' | null {
+  return kind === 'PRODUCT' || kind === 'SERVICE' || kind === 'DEPARTMENT' ? kind : null;
+}
 
 export async function getPublicEnterpriseController(req: Request, res: Response) {
   const { id } = req.params;
@@ -17,16 +24,9 @@ export async function getPublicEnterpriseController(req: Request, res: Response)
     return sendTypedError(res, 400, API_ERROR_ENTERPRISE_ID_REQUIRED);
   }
 
-  const supabase = createSupabaseServerClient(req, res);
-
   try {
-    const { data: enterprise, error } = await supabase
-      .from('enterprise_public')
-      .select('id, name')
-      .eq('id', id)
-      .single();
-
-    if (error || !enterprise) {
+    const enterprise = await getPublicEnterpriseById(String(id));
+    if (!enterprise) {
       return sendTypedError(res, 404, API_ERROR_ENTERPRISE_NOT_FOUND);
     }
 
@@ -36,66 +36,37 @@ export async function getPublicEnterpriseController(req: Request, res: Response)
     let contextItemKind: 'PRODUCT' | 'SERVICE' | 'DEPARTMENT' | null = null;
 
     if (collectionPointId || catalogItemId) {
-      const cpContextQuery = supabase
-        .from('collection_points')
-        .select('id, catalog_item_id, catalog_items(name, kind)')
-        .eq('enterprise_id', enterprise.id)
-        .eq('type', 'QR_CODE')
-        .eq('status', 'ACTIVE');
+      const cp = await resolveQrCollectionPoint({
+        enterpriseId: enterprise.id,
+        collectionPointId: collectionPointId || null,
+        catalogItemId: catalogItemId || null,
+      });
 
-      if (collectionPointId) {
-        cpContextQuery.eq('id', collectionPointId);
-      } else {
-        cpContextQuery.eq('catalog_item_id', catalogItemId);
-      }
-
-      const { data: cpContext } = await cpContextQuery.maybeSingle();
-
-      if (cpContext) {
-        const contextItem = Array.isArray(cpContext.catalog_items)
-          ? cpContext.catalog_items[0]
-          : cpContext.catalog_items;
-
-        contextCollectionPointId = cpContext.id ?? null;
-        contextCatalogItemId = cpContext.catalog_item_id ?? null;
-        contextItemName = contextItem?.name ?? null;
-        contextItemKind =
-          contextItem?.kind === 'PRODUCT' ||
-          contextItem?.kind === 'SERVICE' ||
-          contextItem?.kind === 'DEPARTMENT'
-            ? contextItem.kind
-            : null;
+      if (cp) {
+        contextCollectionPointId = cp.id;
+        contextCatalogItemId = cp.catalogItemId;
+        contextItemName = cp.catalogItemName;
+        contextItemKind = normalizeItemKind(cp.catalogItemKind);
       }
     } else {
-      // Escopo empresa (sem collection_point/item na URL): resolve o ponto de
-      // coleta QR "geral" (catalog_item_id IS NULL), que é EXATAMENTE o que o
-      // submit exige. Sem isso o endpoint devolvia collection_point_id: null e o
-      // formulário era renderizado sem destino válido — e o envio falhava 404.
-      const { data: companyCp } = await supabase
-        .from('collection_points')
-        .select('id')
-        .eq('enterprise_id', enterprise.id)
-        .eq('type', 'QR_CODE')
-        .eq('status', 'ACTIVE')
-        .is('catalog_item_id', null)
-        .maybeSingle();
-
-      if (companyCp) {
-        contextCollectionPointId = companyCp.id ?? null;
-      }
+      // Escopo empresa: ponto de coleta QR "geral" (catalog_item_id IS NULL),
+      // que é EXATAMENTE o destino que o submit exige.
+      const companyCp = await resolveQrCollectionPoint({
+        enterpriseId: enterprise.id,
+        catalogItemId: null,
+      });
+      if (companyCp) contextCollectionPointId = companyCp.id;
     }
 
     const currentScope: 'COMPANY' | 'PRODUCT' | 'SERVICE' | 'DEPARTMENT' =
       contextItemKind ?? 'COMPANY';
 
-    // Contagem variável por escopo, SEM fallback para Geral: retorna exatamente
-    // as perguntas ativas configuradas para o escopo resolvido (pode ser nenhuma).
-    const { data: questions, error: questionsError } =
-      await fetchActiveQuestionsForScope({
-        enterpriseId: enterprise.id,
-        scopeType: currentScope,
-        catalogItemId: contextCatalogItemId,
-      });
+    // Contagem variável por escopo, SEM fallback para Geral.
+    const { data: questions, error: questionsError } = await fetchActiveQuestionsForScope({
+      enterpriseId: enterprise.id,
+      scopeType: currentScope,
+      catalogItemId: contextCatalogItemId,
+    });
 
     if (questionsError) {
       console.error('Erro ao buscar perguntas públicas de feedback:', questionsError);
