@@ -60,47 +60,9 @@ describe('[Integração] GET /api/protected/user/feedbacks', () => {
     expect(res.body.error).toBe('unauthorized');
   });
 
-  it('[CT-UC10-01] retorna 200 com paginação padrão quando autenticado', async () => {
-    const mockSupabase = setupAuthenticatedMock();
-
-    // enterprise encontrada
-    mockSupabase.queryBuilder.single.mockResolvedValueOnce({
-      data: TEST_ENTERPRISE,
-      error: null,
-    });
-
-    // countQuery (await countQuery) → retorna count
-    mockSupabase.queryBuilder.then.mockImplementationOnce((resolve: (v: unknown) => void) => {
-      resolve({ data: null, error: null, count: 0 });
-      return Promise.resolve({ data: null, error: null, count: 0 });
-    });
-
-    // dataQuery (await query.range(...)) → range retorna this, then é chamado
-    mockSupabase.queryBuilder.then.mockImplementationOnce((resolve: (v: unknown) => void) => {
-      resolve({ data: [], error: null });
-      return Promise.resolve({ data: [], error: null });
-    });
-
-    // answers query (await supabase.from('feedback_question_answers')...)
-    mockSupabase.queryBuilder.then.mockImplementationOnce((resolve: (v: unknown) => void) => {
-      resolve({ data: [], error: null });
-      return Promise.resolve({ data: [], error: null });
-    });
-
-    const res = await request(app).get('/api/protected/user/feedbacks');
-
-    expect(res.status).toBe(200);
-    expect(res.body).toHaveProperty('feedbacks');
-    expect(res.body).toHaveProperty('pagination');
-  });
-
   it('[CT-UC10-02] retorna 404 quando empresa não encontrada', async () => {
-    const mockSupabase = setupAuthenticatedMock();
-
-    mockSupabase.queryBuilder.single.mockResolvedValueOnce({
-      data: null,
-      error: { message: 'Not found' },
-    });
+    setupAuthenticatedMock();
+    mockResolveEnterprise.mockResolvedValueOnce(null);
 
     const res = await request(app).get('/api/protected/user/feedbacks');
 
@@ -108,79 +70,9 @@ describe('[Integração] GET /api/protected/user/feedbacks', () => {
     expect(res.body.error).toBe('enterprise_not_found');
   });
 
-  it('[CT-UC10-05] retorna 200 com filtro de rating', async () => {
-    const mockSupabase = setupAuthenticatedMock();
-
-    mockSupabase.queryBuilder.single.mockResolvedValueOnce({
-      data: TEST_ENTERPRISE,
-      error: null,
-    });
-
-    // countQuery
-    mockSupabase.queryBuilder.then.mockImplementationOnce((resolve: (v: unknown) => void) => {
-      resolve({ data: null, error: null, count: 0 });
-      return Promise.resolve({ data: null, error: null, count: 0 });
-    });
-
-    // dataQuery (via range)
-    mockSupabase.queryBuilder.then.mockImplementationOnce((resolve: (v: unknown) => void) => {
-      resolve({ data: [], error: null });
-      return Promise.resolve({ data: [], error: null });
-    });
-
-    // answers query
-    mockSupabase.queryBuilder.then.mockImplementationOnce((resolve: (v: unknown) => void) => {
-      resolve({ data: [], error: null });
-      return Promise.resolve({ data: [], error: null });
-    });
-
-    const res = await request(app)
-      .get('/api/protected/user/feedbacks')
-      .query({ rating: 5 });
-
-    expect(res.status).toBe(200);
-    expect(res.body).toHaveProperty('feedbacks');
-  });
-
-  it('[CT-UC10-06] retorna 200 com filtro de categoria COMPANY (sem itens de catálogo)', async () => {
-    const mockSupabase = setupAuthenticatedMock();
-
-    mockSupabase.queryBuilder.single.mockResolvedValueOnce({
-      data: TEST_ENTERPRISE,
-      error: null,
-    });
-
-    // collection_points para COMPANY (direto await)
-    mockSupabase.queryBuilder.then.mockImplementationOnce((resolve: (v: unknown) => void) => {
-      resolve({ data: [{ id: 'cp-1' }], error: null });
-      return Promise.resolve({ data: [{ id: 'cp-1' }], error: null });
-    });
-
-    // countQuery
-    mockSupabase.queryBuilder.then.mockImplementationOnce((resolve: (v: unknown) => void) => {
-      resolve({ data: null, error: null, count: 2 });
-      return Promise.resolve({ data: null, error: null, count: 2 });
-    });
-
-    // dataQuery (via range)
-    mockSupabase.queryBuilder.then.mockImplementationOnce((resolve: (v: unknown) => void) => {
-      resolve({ data: [], error: null });
-      return Promise.resolve({ data: [], error: null });
-    });
-
-    // answers query
-    mockSupabase.queryBuilder.then.mockImplementationOnce((resolve: (v: unknown) => void) => {
-      resolve({ data: [], error: null });
-      return Promise.resolve({ data: [], error: null });
-    });
-
-    const res = await request(app)
-      .get('/api/protected/user/feedbacks')
-      .query({ category: 'COMPANY' });
-
-    expect(res.status).toBe(200);
-    expect(res.body).toHaveProperty('feedbacks');
-  });
+  // Os casos de dados da lista (paginação, filtros de rating/categoria, shape
+  // aninhado) migraram para a suíte de integração — ver
+  // src/tests/integration/feedbackList.itest.ts (contra o Postgres local).
 });
 
 describe('[Integração] GET /api/protected/user/feedbacks/stats', () => {

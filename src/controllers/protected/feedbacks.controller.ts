@@ -1,8 +1,6 @@
 import type { Request, Response } from 'express';
 import {
   API_ERROR_ENTERPRISE_NOT_FOUND,
-  API_ERROR_FAILED_TO_COUNT_FEEDBACKS,
-  API_ERROR_FAILED_TO_FETCH_FEEDBACKS,
   API_ERROR_FAILED_TO_FETCH_FEEDBACK_ANALYSIS,
   API_ERROR_FAILED_TO_FETCH_STATS,
   API_ERROR_INTERNAL_SERVER_ERROR,
@@ -29,6 +27,13 @@ import {
   fetchQuestionDefsScoped,
   fetchSubquestionDefsScoped,
 } from '../../repositories/feedbackQuestions.repository.js';
+import {
+  resolveCategoryCollectionPointIds,
+  countScopedFeedbacks,
+  fetchScopedFeedbackPage,
+  fetchCatalogItemsByIds,
+  fetchAnswersForFeedbacks,
+} from '../../repositories/feedbackList.repository.js';
 import { inArray } from 'drizzle-orm';
 import { getDb } from '../../db/client.js';
 import {
@@ -38,15 +43,6 @@ import {
 } from '../../../drizzle/schema.js';
 import { scopedFeedbackWhere } from '../../db/tenantScope.js';
 
-type FeedbackQuestionAnswerRow = {
-  feedback_id: string;
-  question_id: string;
-  question_text_snapshot: string;
-  answer_value: 'PESSIMO' | 'RUIM' | 'MEDIANA' | 'BOA' | 'OTIMA';
-  answer_score: number;
-  created_at: string;
-};
-
 type FeedbackCollectionPoint = {
   id?: string;
   name?: string;
@@ -54,8 +50,6 @@ type FeedbackCollectionPoint = {
   identifier?: string | null;
   catalog_item_id?: string | null;
 };
-
-type IdRow = { id: string };
 
 type CatalogItemRow = {
   id: string;
@@ -89,7 +83,6 @@ function parseInsightScopeType(rawValue: unknown) {
 }
 
 export async function getFeedbacksController(req: Request, res: Response) {
-  const supabase = req.supabase!;
   const user = req.user!;
 
   const page = parseInt(req.query.page as string) || 1;
@@ -110,62 +103,16 @@ export async function getFeedbacksController(req: Request, res: Response) {
       : null;
 
   try {
-    const { data: enterprise, error: enterpriseError } = await supabase
-      .from('enterprise')
-      .select('id')
-      .eq('auth_user_id', user.id)
-      .single();
-
-    if (enterpriseError || !enterprise) {
+    const enterpriseId = req.enterpriseId ?? (await resolveEnterpriseIdByUser(user.id));
+    if (!enterpriseId) {
       return sendTypedError(res, 404, API_ERROR_ENTERPRISE_NOT_FOUND);
     }
 
-    let filteredCollectionPointIds: string[] | null = null;
-
-    if (category || item) {
-      if (category === 'COMPANY') {
-        if (item) {
-          filteredCollectionPointIds = [];
-        } else {
-          const { data: companyCollectionPoints, error: companyCpError } = await supabase
-            .from('collection_points')
-            .select('id')
-            .eq('enterprise_id', enterprise.id)
-            .is('catalog_item_id', null);
-
-          if (companyCpError) return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_FEEDBACKS);
-
-          filteredCollectionPointIds = ((companyCollectionPoints ?? []) as IdRow[]).map((cp) => cp.id);
-        }
-      } else {
-        let catalogQuery = supabase
-          .from('catalog_items')
-          .select('id')
-          .eq('enterprise_id', enterprise.id);
-
-        if (category) catalogQuery = catalogQuery.eq('kind', category);
-        if (item) catalogQuery = catalogQuery.ilike('name', `%${item}%`);
-
-        const { data: catalogItems, error: catalogItemsError } = await catalogQuery;
-        if (catalogItemsError) return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_FEEDBACKS);
-
-        const catalogItemIds = ((catalogItems ?? []) as IdRow[]).map((ci) => ci.id);
-
-        if (catalogItemIds.length === 0) {
-          filteredCollectionPointIds = [];
-        } else {
-          const { data: catalogCollectionPoints, error: catalogCpError } = await supabase
-            .from('collection_points')
-            .select('id')
-            .eq('enterprise_id', enterprise.id)
-            .in('catalog_item_id', catalogItemIds);
-
-          if (catalogCpError) return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_FEEDBACKS);
-
-          filteredCollectionPointIds = ((catalogCollectionPoints ?? []) as IdRow[]).map((cp) => cp.id);
-        }
-      }
-    }
+    const filteredCollectionPointIds = await resolveCategoryCollectionPointIds({
+      enterpriseId,
+      category,
+      item,
+    });
 
     if (filteredCollectionPointIds && filteredCollectionPointIds.length === 0) {
       return res.json({
@@ -181,63 +128,15 @@ export async function getFeedbacksController(req: Request, res: Response) {
       });
     }
 
-    let query = supabase
-      .from('feedback')
-      .select(
-        `
-        id,
-        message,
-        rating,
-        created_at,
-        updated_at,
-        collection_points!inner(
-          id,
-          name,
-          type,
-          identifier,
-          catalog_item_id
-        ),
-        tracked_devices(
-          id,
-          device_fingerprint,
-          user_agent,
-          ip_address,
-          feedback_count,
-          is_blocked,
-          customer_id,
-          customer(
-            id,
-            name,
-            email,
-            gender
-          )
-        )
-      `,
-      )
-      .eq('enterprise_id', enterprise.id)
-      .order('created_at', { ascending: false });
-
-    if (rating) query = query.eq('rating', rating);
-    if (search) query = query.ilike('message', `%${search}%`);
-    if (filteredCollectionPointIds) query = query.in('collection_point_id', filteredCollectionPointIds);
-
-    let countQuery = supabase
-      .from('feedback')
-      .select('*', { count: 'exact', head: true })
-      .eq('enterprise_id', enterprise.id);
-
-    if (rating) countQuery = countQuery.eq('rating', rating);
-    if (search) countQuery = countQuery.ilike('message', `%${search}%`);
-    if (filteredCollectionPointIds) countQuery = countQuery.in('collection_point_id', filteredCollectionPointIds);
-
-    const { count, error: countError } = await countQuery;
-    if (countError) return sendTypedError(res, 500, API_ERROR_FAILED_TO_COUNT_FEEDBACKS);
-
-    const { data: feedbacks, error: feedbacksError } = await query.range(offset, offset + limit - 1);
-    if (feedbacksError) return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_FEEDBACKS);
-
+    const listFilter = { rating, search, collectionPointIds: filteredCollectionPointIds };
+    const count = await countScopedFeedbacks(enterpriseId, listFilter);
     const totalPages = Math.ceil((count || 0) / limit);
-    const feedbackRows = (feedbacks ?? []) as FeedbackListRow[];
+    const feedbackRows = (await fetchScopedFeedbackPage({
+      enterpriseId,
+      filter: listFilter,
+      limit,
+      offset,
+    })) as FeedbackListRow[];
 
     const catalogItemIds = Array.from(
       new Set(
@@ -250,12 +149,7 @@ export async function getFeedbacksController(req: Request, res: Response) {
     let catalogItemById = new Map<string, { name: string; kind: 'PRODUCT' | 'SERVICE' | 'DEPARTMENT' }>();
 
     if (catalogItemIds.length > 0) {
-      const { data: catalogRows, error: catalogRowsError } = await supabase
-        .from('catalog_items')
-        .select('id, name, kind')
-        .in('id', catalogItemIds);
-
-      if (catalogRowsError) return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_FEEDBACKS);
+      const catalogRows = await fetchCatalogItemsByIds(enterpriseId, catalogItemIds);
 
       catalogItemById = new Map(
         ((catalogRows ?? []) as CatalogItemRow[])
@@ -308,25 +202,16 @@ export async function getFeedbacksController(req: Request, res: Response) {
     >();
 
     if (feedbackIds.length > 0) {
-      const { data: answerRows, error: answersError } = await supabase
-        .from('feedback_question_answers')
-        .select('feedback_id, question_id, question_text_snapshot, answer_value, answer_score, created_at')
-        .in('feedback_id', feedbackIds)
-        .order('created_at', { ascending: true });
-
-      if (answersError) {
-        console.error('Erro ao buscar respostas dinâmicas dos feedbacks:', answersError);
-      } else {
-        (answerRows as FeedbackQuestionAnswerRow[] | null)?.forEach((row) => {
-          const current = answersByFeedbackId.get(row.feedback_id) ?? [];
-          current.push({
-            question_id: row.question_id,
-            question_text_snapshot: row.question_text_snapshot,
-            answer_value: row.answer_value,
-            answer_score: row.answer_score,
-          });
-          answersByFeedbackId.set(row.feedback_id, current);
+      const answerRows = await fetchAnswersForFeedbacks(feedbackIds);
+      for (const row of answerRows) {
+        const current = answersByFeedbackId.get(row.feedback_id) ?? [];
+        current.push({
+          question_id: row.question_id,
+          question_text_snapshot: row.question_text_snapshot,
+          answer_value: row.answer_value as 'PESSIMO' | 'RUIM' | 'MEDIANA' | 'BOA' | 'OTIMA',
+          answer_score: row.answer_score,
         });
+        answersByFeedbackId.set(row.feedback_id, current);
       }
     }
 
