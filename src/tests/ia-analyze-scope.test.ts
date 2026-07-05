@@ -4,6 +4,20 @@ import {
   fetchFeedbacksForAnalysis,
 } from '../repositories/iaAnalyze.repository.js';
 
+// A resolução de escopo passou a ser Drizzle (testada em integração — ver
+// src/tests/integration/scope.itest.ts). Aqui mockamos ela derivando os ids do
+// próprio cenário, para o teste focar no INVARIANTE do fetch: a busca de feedback
+// é restrita aos collection_point ids do escopo ANTES do limite.
+vi.mock('../repositories/scope.repository.js', () => ({
+  resolveScopeCollectionPointIds: vi.fn(
+    async ({ scopeType, catalogItemId }: { scopeType?: string; catalogItemId?: string | null }) => {
+      if (!scopeType && !catalogItemId) return { error: false, ids: null };
+      if (catalogItemId === 'svc-2') return { error: false, ids: [] };
+      return { error: false, ids: ['cp-1', 'cp-2'] };
+    },
+  ),
+}));
+
 /**
  * Regressão do "insights falso sucesso": `fetchAlreadyAnalyzedFeedbacks` precisa
  * restringir a busca ao escopo pedido ANTES de aplicar o limite de linhas. Sem

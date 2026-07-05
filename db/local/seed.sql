@@ -61,4 +61,9 @@ INSERT INTO public.feedback_analysis (feedback_id, sentiment, categories, keywor
   ('f0000000-0000-0000-0000-0000000000a2', 'positive', ARRAY['comida','ambiente']::text[], ARRAY['boa','agradavel']::text[], 0.60, 0.80),
   ('f0000000-0000-0000-0000-0000000000a3', 'negative', ARRAY['atendimento']::text[], ARRAY['demora']::text[], -0.70, 0.90);
 
+-- Relatórios de insights (IA) — 1 por empresa, escopo COMPANY (Geral).
+INSERT INTO public.feedback_insights_report (enterprise_id, scope_type, catalog_item_id, summary, recommendations) VALUES
+  ('aaaaaaaa-0000-0000-0000-000000000001', 'COMPANY', NULL, 'Clientes elogiam o atendimento; alguns reclamam da demora.', ARRAY['Reduzir o tempo de espera','Manter a qualidade do atendimento']::text[]),
+  ('bbbbbbbb-0000-0000-0000-000000000001', 'COMPANY', NULL, 'Resultado do corte agrada; atenção ao acabamento.', ARRAY['Revisar o acabamento final']::text[]);
+
 COMMIT;

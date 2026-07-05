@@ -60,7 +60,6 @@ export async function fetchFeedbacksForAnalysis(params: {
   // `limit` linhas valha DENTRO do escopo (e não nas mais recentes da empresa
   // inteira). Mesmo critério de escopo de stats/analysis/regeneração.
   const scopeResolution = await resolveScopeCollectionPointIds({
-    supabase,
     enterpriseId,
     scopeType,
     catalogItemId,
@@ -547,7 +546,6 @@ export async function fetchAlreadyAnalyzedFeedbacks(params: {
   // `limit` linhas valha DENTRO do escopo (e não nas linhas mais recentes da
   // empresa inteira). Mantém o mesmo critério de escopo de stats/analysis.
   const scopeResolution = await resolveScopeCollectionPointIds({
-    supabase,
     enterpriseId,
     scopeType,
     catalogItemId,

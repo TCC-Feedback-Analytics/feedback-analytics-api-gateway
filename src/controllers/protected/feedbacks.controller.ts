@@ -1,15 +1,14 @@
 import type { Request, Response } from 'express';
 import {
   API_ERROR_ENTERPRISE_NOT_FOUND,
-  API_ERROR_FAILED_TO_COUNT_FEEDBACKS,
-  API_ERROR_FAILED_TO_FETCH_FEEDBACKS,
   API_ERROR_FAILED_TO_FETCH_FEEDBACK_ANALYSIS,
-  API_ERROR_FAILED_TO_FETCH_FEEDBACK_INSIGHTS_REPORT,
   API_ERROR_FAILED_TO_FETCH_STATS,
   API_ERROR_INTERNAL_SERVER_ERROR,
 } from '../../config/errors.js';
 import { normalizeFeedbackAnalysisRows } from '../../libs/iaAnalyze/normalize.js';
 import { resolveScopeCollectionPointIds } from '../../repositories/scope.repository.js';
+import { resolveEnterpriseIdByUser } from '../../repositories/enterprise.repository.js';
+import { fetchScopedInsightsReport } from '../../repositories/feedbackInsights.repository.js';
 import { sendTypedError } from '../../utils/sendTypedError.js';
 import {
   ratingStats,
@@ -24,15 +23,26 @@ import {
   fetchScopedRatingAggregates,
   fetchScopedAnalysisAggregates,
 } from '../../repositories/feedbackStats.repository.js';
-
-type FeedbackQuestionAnswerRow = {
-  feedback_id: string;
-  question_id: string;
-  question_text_snapshot: string;
-  answer_value: 'PESSIMO' | 'RUIM' | 'MEDIANA' | 'BOA' | 'OTIMA';
-  answer_score: number;
-  created_at: string;
-};
+import {
+  fetchQuestionDefsScoped,
+  fetchSubquestionDefsScoped,
+} from '../../repositories/feedbackQuestions.repository.js';
+import {
+  resolveCategoryCollectionPointIds,
+  countScopedFeedbacks,
+  fetchScopedFeedbackPage,
+  fetchCatalogItemsByIds,
+  fetchAnswersForFeedbacks,
+} from '../../repositories/feedbackList.repository.js';
+import { fetchScopedFeedbackAnalysisRows } from '../../repositories/feedbackAnalysis.repository.js';
+import { inArray } from 'drizzle-orm';
+import { getDb } from '../../db/client.js';
+import {
+  feedback,
+  feedbackQuestionAnswers,
+  feedbackSubquestionAnswers,
+} from '../../../drizzle/schema.js';
+import { scopedFeedbackWhere } from '../../db/tenantScope.js';
 
 type FeedbackCollectionPoint = {
   id?: string;
@@ -41,8 +51,6 @@ type FeedbackCollectionPoint = {
   identifier?: string | null;
   catalog_item_id?: string | null;
 };
-
-type IdRow = { id: string };
 
 type CatalogItemRow = {
   id: string;
@@ -76,7 +84,6 @@ function parseInsightScopeType(rawValue: unknown) {
 }
 
 export async function getFeedbacksController(req: Request, res: Response) {
-  const supabase = req.supabase!;
   const user = req.user!;
 
   const page = parseInt(req.query.page as string) || 1;
@@ -97,62 +104,16 @@ export async function getFeedbacksController(req: Request, res: Response) {
       : null;
 
   try {
-    const { data: enterprise, error: enterpriseError } = await supabase
-      .from('enterprise')
-      .select('id')
-      .eq('auth_user_id', user.id)
-      .single();
-
-    if (enterpriseError || !enterprise) {
+    const enterpriseId = req.enterpriseId ?? (await resolveEnterpriseIdByUser(user.id));
+    if (!enterpriseId) {
       return sendTypedError(res, 404, API_ERROR_ENTERPRISE_NOT_FOUND);
     }
 
-    let filteredCollectionPointIds: string[] | null = null;
-
-    if (category || item) {
-      if (category === 'COMPANY') {
-        if (item) {
-          filteredCollectionPointIds = [];
-        } else {
-          const { data: companyCollectionPoints, error: companyCpError } = await supabase
-            .from('collection_points')
-            .select('id')
-            .eq('enterprise_id', enterprise.id)
-            .is('catalog_item_id', null);
-
-          if (companyCpError) return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_FEEDBACKS);
-
-          filteredCollectionPointIds = ((companyCollectionPoints ?? []) as IdRow[]).map((cp) => cp.id);
-        }
-      } else {
-        let catalogQuery = supabase
-          .from('catalog_items')
-          .select('id')
-          .eq('enterprise_id', enterprise.id);
-
-        if (category) catalogQuery = catalogQuery.eq('kind', category);
-        if (item) catalogQuery = catalogQuery.ilike('name', `%${item}%`);
-
-        const { data: catalogItems, error: catalogItemsError } = await catalogQuery;
-        if (catalogItemsError) return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_FEEDBACKS);
-
-        const catalogItemIds = ((catalogItems ?? []) as IdRow[]).map((ci) => ci.id);
-
-        if (catalogItemIds.length === 0) {
-          filteredCollectionPointIds = [];
-        } else {
-          const { data: catalogCollectionPoints, error: catalogCpError } = await supabase
-            .from('collection_points')
-            .select('id')
-            .eq('enterprise_id', enterprise.id)
-            .in('catalog_item_id', catalogItemIds);
-
-          if (catalogCpError) return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_FEEDBACKS);
-
-          filteredCollectionPointIds = ((catalogCollectionPoints ?? []) as IdRow[]).map((cp) => cp.id);
-        }
-      }
-    }
+    const filteredCollectionPointIds = await resolveCategoryCollectionPointIds({
+      enterpriseId,
+      category,
+      item,
+    });
 
     if (filteredCollectionPointIds && filteredCollectionPointIds.length === 0) {
       return res.json({
@@ -168,63 +129,15 @@ export async function getFeedbacksController(req: Request, res: Response) {
       });
     }
 
-    let query = supabase
-      .from('feedback')
-      .select(
-        `
-        id,
-        message,
-        rating,
-        created_at,
-        updated_at,
-        collection_points!inner(
-          id,
-          name,
-          type,
-          identifier,
-          catalog_item_id
-        ),
-        tracked_devices(
-          id,
-          device_fingerprint,
-          user_agent,
-          ip_address,
-          feedback_count,
-          is_blocked,
-          customer_id,
-          customer(
-            id,
-            name,
-            email,
-            gender
-          )
-        )
-      `,
-      )
-      .eq('enterprise_id', enterprise.id)
-      .order('created_at', { ascending: false });
-
-    if (rating) query = query.eq('rating', rating);
-    if (search) query = query.ilike('message', `%${search}%`);
-    if (filteredCollectionPointIds) query = query.in('collection_point_id', filteredCollectionPointIds);
-
-    let countQuery = supabase
-      .from('feedback')
-      .select('*', { count: 'exact', head: true })
-      .eq('enterprise_id', enterprise.id);
-
-    if (rating) countQuery = countQuery.eq('rating', rating);
-    if (search) countQuery = countQuery.ilike('message', `%${search}%`);
-    if (filteredCollectionPointIds) countQuery = countQuery.in('collection_point_id', filteredCollectionPointIds);
-
-    const { count, error: countError } = await countQuery;
-    if (countError) return sendTypedError(res, 500, API_ERROR_FAILED_TO_COUNT_FEEDBACKS);
-
-    const { data: feedbacks, error: feedbacksError } = await query.range(offset, offset + limit - 1);
-    if (feedbacksError) return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_FEEDBACKS);
-
+    const listFilter = { rating, search, collectionPointIds: filteredCollectionPointIds };
+    const count = await countScopedFeedbacks(enterpriseId, listFilter);
     const totalPages = Math.ceil((count || 0) / limit);
-    const feedbackRows = (feedbacks ?? []) as FeedbackListRow[];
+    const feedbackRows = (await fetchScopedFeedbackPage({
+      enterpriseId,
+      filter: listFilter,
+      limit,
+      offset,
+    })) as FeedbackListRow[];
 
     const catalogItemIds = Array.from(
       new Set(
@@ -237,12 +150,7 @@ export async function getFeedbacksController(req: Request, res: Response) {
     let catalogItemById = new Map<string, { name: string; kind: 'PRODUCT' | 'SERVICE' | 'DEPARTMENT' }>();
 
     if (catalogItemIds.length > 0) {
-      const { data: catalogRows, error: catalogRowsError } = await supabase
-        .from('catalog_items')
-        .select('id, name, kind')
-        .in('id', catalogItemIds);
-
-      if (catalogRowsError) return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_FEEDBACKS);
+      const catalogRows = await fetchCatalogItemsByIds(enterpriseId, catalogItemIds);
 
       catalogItemById = new Map(
         ((catalogRows ?? []) as CatalogItemRow[])
@@ -295,25 +203,16 @@ export async function getFeedbacksController(req: Request, res: Response) {
     >();
 
     if (feedbackIds.length > 0) {
-      const { data: answerRows, error: answersError } = await supabase
-        .from('feedback_question_answers')
-        .select('feedback_id, question_id, question_text_snapshot, answer_value, answer_score, created_at')
-        .in('feedback_id', feedbackIds)
-        .order('created_at', { ascending: true });
-
-      if (answersError) {
-        console.error('Erro ao buscar respostas dinâmicas dos feedbacks:', answersError);
-      } else {
-        (answerRows as FeedbackQuestionAnswerRow[] | null)?.forEach((row) => {
-          const current = answersByFeedbackId.get(row.feedback_id) ?? [];
-          current.push({
-            question_id: row.question_id,
-            question_text_snapshot: row.question_text_snapshot,
-            answer_value: row.answer_value,
-            answer_score: row.answer_score,
-          });
-          answersByFeedbackId.set(row.feedback_id, current);
+      const answerRows = await fetchAnswersForFeedbacks(feedbackIds);
+      for (const row of answerRows) {
+        const current = answersByFeedbackId.get(row.feedback_id) ?? [];
+        current.push({
+          question_id: row.question_id,
+          question_text_snapshot: row.question_text_snapshot,
+          answer_value: row.answer_value as 'PESSIMO' | 'RUIM' | 'MEDIANA' | 'BOA' | 'OTIMA',
+          answer_score: row.answer_score,
         });
+        answersByFeedbackId.set(row.feedback_id, current);
       }
     }
 
@@ -340,27 +239,20 @@ export async function getFeedbacksController(req: Request, res: Response) {
 }
 
 export async function getFeedbacksStatsController(req: Request, res: Response) {
-  const supabase = req.supabase!;
   const user = req.user!;
 
   const scopeType = parseInsightScopeType(req.query.scope_type);
   const catalogItemId = String(req.query.catalog_item_id ?? '').trim() || null;
 
   try {
-    const { data: enterprise, error: enterpriseError } = await supabase
-      .from('enterprise')
-      .select('id')
-      .eq('auth_user_id', user.id)
-      .single();
-
-    if (enterpriseError || !enterprise) {
+    const enterpriseId = req.enterpriseId ?? (await resolveEnterpriseIdByUser(user.id));
+    if (!enterpriseId) {
       return sendTypedError(res, 404, API_ERROR_ENTERPRISE_NOT_FOUND);
     }
 
     // Métricas filtradas pelo escopo selecionado no header (Geral = só o QR da empresa).
     const scopeResolution = await resolveScopeCollectionPointIds({
-      supabase,
-      enterpriseId: enterprise.id,
+      enterpriseId,
       scopeType,
       catalogItemId,
     });
@@ -376,11 +268,11 @@ export async function getFeedbacksStatsController(req: Request, res: Response) {
     // aplicação — o Drizzle acessa com role que ignora a RLS). Ver
     // src/db/tenantScope.ts e src/repositories/feedbackStats.repository.ts.
     const ratingAgg = await fetchScopedRatingAggregates({
-      enterpriseId: enterprise.id,
+      enterpriseId,
       collectionPointIds: filteredCollectionPointIds,
     });
     const analysisAgg = await fetchScopedAnalysisAggregates({
-      enterpriseId: enterprise.id,
+      enterpriseId,
       collectionPointIds: filteredCollectionPointIds,
     });
 
@@ -438,79 +330,30 @@ export async function getFeedbacksStatsController(req: Request, res: Response) {
 }
 
 export async function getFeedbacksInsightsReportController(req: Request, res: Response) {
-  const supabase = req.supabase!;
   const user = req.user!;
   const scopeType = parseInsightScopeType(req.query.scope_type) ?? 'COMPANY';
   const catalogItemId = String(req.query.catalog_item_id ?? '').trim() || null;
 
   try {
-    const { data: enterprise, error: enterpriseError } = await supabase
-      .from('enterprise')
-      .select('id')
-      .eq('auth_user_id', user.id)
-      .single();
-
-    if (enterpriseError || !enterprise) {
+    const enterpriseId = req.enterpriseId ?? (await resolveEnterpriseIdByUser(user.id));
+    if (!enterpriseId) {
       return sendTypedError(res, 404, API_ERROR_ENTERPRISE_NOT_FOUND);
     }
 
-    let scopedQuery = supabase
-      .from('feedback_insights_report')
-      .select('summary, recommendations, updated_at, scope_type, catalog_item_id')
-      .eq('enterprise_id', enterprise.id)
-      .eq('scope_type', scopeType)
-      .order('updated_at', { ascending: false })
-      .limit(1);
+    // Com o schema atual `scope_type` está sempre presente → a query escopada é
+    // autoritativa (o antigo fallback legado por empresa, sem escopo, foi removido).
+    const report = await fetchScopedInsightsReport({ enterpriseId, scopeType, catalogItemId });
 
-    if (catalogItemId) {
-      scopedQuery = scopedQuery.eq('catalog_item_id', catalogItemId);
-    } else if (scopeType === 'COMPANY') {
-      scopedQuery = scopedQuery.is('catalog_item_id', null);
-    }
-
-    const { data: scopedRows, error: scopedError } = await scopedQuery;
-
-    if (!scopedError) {
-      const report = Array.isArray(scopedRows) ? scopedRows[0] : null;
-
-      if (!report) {
-        return res.json({ summary: null, recommendations: [], updatedAt: null, scopeType, catalogItemId });
-      }
-
-      return res.json({
-        summary: (report.summary as string | null) ?? null,
-        recommendations: ((report.recommendations ?? []) as string[]).filter((rec) => !!rec && rec.trim().length > 0),
-        updatedAt: (report.updated_at as string | null) ?? null,
-        scopeType: (report.scope_type as string | null) ?? scopeType,
-        catalogItemId: (report.catalog_item_id as string | null) ?? catalogItemId,
-      });
-    }
-
-    if (scopeType !== 'COMPANY' || catalogItemId) {
-      return res.json({ summary: null, recommendations: [], updatedAt: null, scopeType, catalogItemId });
-    }
-
-    const { data: legacyReport, error: legacyError } = await supabase
-      .from('feedback_insights_report')
-      .select('summary, recommendations, updated_at')
-      .eq('enterprise_id', enterprise.id)
-      .maybeSingle();
-
-    if (legacyError) {
-      console.error('Erro ao buscar feedback_insights_report:', legacyError);
-      return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_FEEDBACK_INSIGHTS_REPORT);
-    }
-
-    if (!legacyReport) {
+    if (!report) {
       return res.json({ summary: null, recommendations: [], updatedAt: null, scopeType, catalogItemId });
     }
 
     return res.json({
-      summary: (legacyReport.summary as string | null) ?? null,
-      recommendations: ((legacyReport.recommendations ?? []) as string[]).filter((rec) => !!rec && rec.trim().length > 0),
-      updatedAt: (legacyReport.updated_at as string | null) ?? null,
-      scopeType,
-      catalogItemId,
+      summary: report.summary ?? null,
+      recommendations: (report.recommendations ?? []).filter((rec) => !!rec && rec.trim().length > 0),
+      updatedAt: report.updatedAt ?? null,
+      scopeType: report.scopeType ?? scopeType,
+      catalogItemId: report.catalogItemId ?? catalogItemId,
     });
   } catch (error) {
     console.error('Erro ao buscar relatório de insights (IA):', error);
@@ -519,7 +362,6 @@ export async function getFeedbacksInsightsReportController(req: Request, res: Re
 }
 
 export async function getFeedbacksAnalysisController(req: Request, res: Response) {
-  const supabase = req.supabase!;
   const user = req.user!;
 
   const sentimentFilter = (req.query.sentiment as 'positive' | 'neutral' | 'negative' | undefined) ?? undefined;
@@ -527,13 +369,8 @@ export async function getFeedbacksAnalysisController(req: Request, res: Response
   const catalogItemId = String(req.query.catalog_item_id ?? '').trim() || null;
 
   try {
-    const { data: enterprise, error: enterpriseError } = await supabase
-      .from('enterprise')
-      .select('id')
-      .eq('auth_user_id', user.id)
-      .single();
-
-    if (enterpriseError || !enterprise) {
+    const enterpriseId = req.enterpriseId ?? (await resolveEnterpriseIdByUser(user.id));
+    if (!enterpriseId) {
       return sendTypedError(res, 404, API_ERROR_ENTERPRISE_NOT_FOUND);
     }
 
@@ -543,8 +380,7 @@ export async function getFeedbacksAnalysisController(req: Request, res: Response
     };
 
     const scopeResolution = await resolveScopeCollectionPointIds({
-      supabase,
-      enterpriseId: enterprise.id,
+      enterpriseId,
       scopeType,
       catalogItemId,
     });
@@ -559,34 +395,11 @@ export async function getFeedbacksAnalysisController(req: Request, res: Response
       return res.json(emptyResult);
     }
 
-    let query = supabase
-      .from('feedback')
-      .select(
-        `
-        id,
-        message,
-        rating,
-        created_at,
-        feedback_analysis:feedback_analysis (
-          sentiment,
-          categories,
-          keywords,
-          aspects,
-          sentiment_score,
-          confidence
-        )
-      `,
-      )
-      .eq('enterprise_id', enterprise.id);
-
-    if (filteredCollectionPointIds) query = query.in('collection_point_id', filteredCollectionPointIds);
-    if (sentimentFilter) query = query.eq('feedback_analysis.sentiment', sentimentFilter);
-
-    const { data, error } = await query;
-    if (error) {
-      console.error('Erro ao buscar análises de feedbacks:', error);
-      return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_FEEDBACK_ANALYSIS);
-    }
+    const data = await fetchScopedFeedbackAnalysisRows({
+      enterpriseId,
+      collectionPointIds: filteredCollectionPointIds,
+      sentiment: sentimentFilter,
+    });
 
     const itemsRaw = normalizeFeedbackAnalysisRows(data);
     if (itemsRaw.length === 0) return res.json(emptyResult);
@@ -776,26 +589,19 @@ function aggToMetricFields(agg: QuestionAnswerAgg) {
  * pior→melhor (menor nota no topo).
  */
 export async function getFeedbacksQuestionsController(req: Request, res: Response) {
-  const supabase = req.supabase!;
   const user = req.user!;
 
   const scopeType = parseInsightScopeType(req.query.scope_type);
   const catalogItemId = String(req.query.catalog_item_id ?? '').trim() || null;
 
   try {
-    const { data: enterprise, error: enterpriseError } = await supabase
-      .from('enterprise')
-      .select('id')
-      .eq('auth_user_id', user.id)
-      .single();
-
-    if (enterpriseError || !enterprise) {
+    const enterpriseId = req.enterpriseId ?? (await resolveEnterpriseIdByUser(user.id));
+    if (!enterpriseId) {
       return sendTypedError(res, 404, API_ERROR_ENTERPRISE_NOT_FOUND);
     }
 
     const scopeResolution = await resolveScopeCollectionPointIds({
-      supabase,
-      enterpriseId: enterprise.id,
+      enterpriseId,
       scopeType,
       catalogItemId,
     });
@@ -809,85 +615,67 @@ export async function getFeedbacksQuestionsController(req: Request, res: Respons
       return res.json({ questions: [] });
     }
 
-    let feedbackQuery = supabase
-      .from('feedback')
-      .select('id')
-      .eq('enterprise_id', enterprise.id);
-    if (filteredCollectionPointIds) {
-      feedbackQuery = feedbackQuery.in('collection_point_id', filteredCollectionPointIds);
-    }
+    // Feedbacks do escopo (SEMPRE por enterprise_id via scopedFeedbackWhere).
+    const feedbackRows = await getDb()
+      .select({ id: feedback.id })
+      .from(feedback)
+      .where(scopedFeedbackWhere(enterpriseId, filteredCollectionPointIds));
 
-    const { data: feedbackRows, error: feedbackError } = await feedbackQuery;
-    if (feedbackError) return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_STATS);
-
-    const feedbackIds = ((feedbackRows ?? []) as { id: string }[]).map((f) => f.id);
+    const feedbackIds = feedbackRows.map((f) => f.id);
     if (feedbackIds.length === 0) return res.json({ questions: [] });
 
-    // Respostas das perguntas → agrega por pergunta.
-    const { data: answerRows, error: answersError } = await supabase
-      .from('feedback_question_answers')
-      .select('question_id, question_text_snapshot, answer_value, answer_score')
-      .in('feedback_id', feedbackIds);
-    if (answersError) return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_STATS);
+    // Respostas das perguntas → agrega por pergunta. Isolamento transitivo: os
+    // feedbackIds já vêm tenant-scoped.
+    const answerRows = await getDb()
+      .select({
+        question_id: feedbackQuestionAnswers.questionId,
+        question_text_snapshot: feedbackQuestionAnswers.questionTextSnapshot,
+        answer_value: feedbackQuestionAnswers.answerValue,
+        answer_score: feedbackQuestionAnswers.answerScore,
+      })
+      .from(feedbackQuestionAnswers)
+      .where(inArray(feedbackQuestionAnswers.feedbackId, feedbackIds));
 
     // Agrupa as respostas por (question_id + redação do snapshot): cada redação
     // distinta vira uma entrada própria, para separar "atuais" de "antigas".
     const questionAgg = new Map<string, QuestionAnswerAgg>();
-    for (const row of (answerRows ?? []) as {
-      question_id: string;
-      question_text_snapshot: string;
-      answer_value: AnswerValueKey;
-      answer_score: number;
-    }[]) {
-      addAnswerToAgg(questionAgg, row.question_id, String(row.question_text_snapshot ?? '').trim(), row.answer_value, row.answer_score);
+    for (const row of answerRows) {
+      addAnswerToAgg(questionAgg, row.question_id, String(row.question_text_snapshot ?? '').trim(), row.answer_value as AnswerValueKey, row.answer_score);
     }
 
     // Respostas das subperguntas → agrega por (subquestion_id + redação).
-    const { data: subAnswerRows, error: subAnswersError } = await supabase
-      .from('feedback_subquestion_answers')
-      .select('subquestion_id, subquestion_text_snapshot, answer_value, answer_score')
-      .in('feedback_id', feedbackIds);
-    if (subAnswersError) return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_STATS);
+    const subAnswerRows = await getDb()
+      .select({
+        subquestion_id: feedbackSubquestionAnswers.subquestionId,
+        subquestion_text_snapshot: feedbackSubquestionAnswers.subquestionTextSnapshot,
+        answer_value: feedbackSubquestionAnswers.answerValue,
+        answer_score: feedbackSubquestionAnswers.answerScore,
+      })
+      .from(feedbackSubquestionAnswers)
+      .where(inArray(feedbackSubquestionAnswers.feedbackId, feedbackIds));
 
     const subAgg = new Map<string, QuestionAnswerAgg>();
-    for (const row of (subAnswerRows ?? []) as {
-      subquestion_id: string;
-      subquestion_text_snapshot: string;
-      answer_value: AnswerValueKey;
-      answer_score: number;
-    }[]) {
-      addAnswerToAgg(subAgg, row.subquestion_id, String(row.subquestion_text_snapshot ?? '').trim(), row.answer_value, row.answer_score);
+    for (const row of subAnswerRows) {
+      addAnswerToAgg(subAgg, row.subquestion_id, String(row.subquestion_text_snapshot ?? '').trim(), row.answer_value as AnswerValueKey, row.answer_score);
     }
 
     // Config ATUAL das perguntas (texto + is_active) por id — base da classificação
     // "atual" (ativa + texto igual ao configurado) vs "antiga" (editada/removida).
+    // eq(enterprise_id) OBRIGATÓRIO no repo (o Drizzle ignora a RLS).
     const currentQ = new Map<string, { text: string; isActive: boolean }>();
     const questionIds = [...new Set([...questionAgg.values()].map((a) => a.id))];
-    if (questionIds.length > 0) {
-      const { data: qDefs, error: qDefsError } = await supabase
-        .from('questions_of_feedbacks')
-        .select('id, question_text, is_active')
-        .in('id', questionIds);
-      if (qDefsError) return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_STATS);
-      for (const def of (qDefs ?? []) as { id: string; question_text: string; is_active: boolean }[]) {
-        currentQ.set(def.id, { text: String(def.question_text ?? '').trim(), isActive: def.is_active === true });
-      }
+    for (const def of await fetchQuestionDefsScoped(enterpriseId, questionIds)) {
+      currentQ.set(def.id, { text: String(def.questionText ?? '').trim(), isActive: def.isActive === true });
     }
 
     // Config ATUAL das subperguntas (texto + is_active) + mapeamento subpergunta → pai.
+    // O repo reforça o tenant via JOIN na pergunta-pai (enterprise_id).
     const subParentBySubId = new Map<string, string>();
     const currentSub = new Map<string, { text: string; isActive: boolean }>();
     const subIds = [...new Set([...subAgg.values()].map((a) => a.id))];
-    if (subIds.length > 0) {
-      const { data: subDefs, error: subDefsError } = await supabase
-        .from('feedback_question_subquestions')
-        .select('id, question_id, subquestion_text, is_active')
-        .in('id', subIds);
-      if (subDefsError) return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_STATS);
-      for (const def of (subDefs ?? []) as { id: string; question_id: string; subquestion_text: string; is_active: boolean }[]) {
-        subParentBySubId.set(def.id, def.question_id);
-        currentSub.set(def.id, { text: String(def.subquestion_text ?? '').trim(), isActive: def.is_active === true });
-      }
+    for (const def of await fetchSubquestionDefsScoped(enterpriseId, subIds)) {
+      subParentBySubId.set(def.id, def.questionId);
+      currentSub.set(def.id, { text: String(def.subquestionText ?? '').trim(), isActive: def.isActive === true });
     }
 
     // Subperguntas agrupadas por pergunta-pai (todas as redações; cada uma com status).

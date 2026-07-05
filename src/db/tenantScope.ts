@@ -1,5 +1,6 @@
-import { and, eq, inArray, type SQL } from 'drizzle-orm';
-import { feedback } from '../../drizzle/schema.js';
+import { and, eq, inArray, isNull, type SQL } from 'drizzle-orm';
+import type { PgColumn } from 'drizzle-orm/pg-core';
+import { collectionPoints, feedback } from '../../drizzle/schema.js';
 
 /**
  * Garante que nenhuma query tenant-scoped seja construída sem um enterprise_id.
@@ -39,4 +40,68 @@ export function scopedFeedbackWhere(
   }
 
   return byEnterprise;
+}
+
+/**
+ * WHERE para `collection_points` SEMPRE filtrado por `enterprise_id`, cobrindo os
+ * padrões repetidos do fluxo QR (tipo/status/ponto específico/escopo COMPANY ou
+ * por item de catálogo). Como a role do Drizzle IGNORA a RLS, o `eq(enterprise_id)`
+ * é a ÚNICA barreira cross-tenant — por isso é sempre incluído.
+ *
+ * Convenção de `catalogItemId`:
+ * - `undefined` => não filtra por item;
+ * - `null`      => `catalog_item_id IS NULL` (ponto "geral"/COMPANY);
+ * - string      => aquele item.
+ */
+export function scopedCollectionPointWhere(
+  enterpriseId: string,
+  opts?: {
+    id?: string;
+    type?: string;
+    status?: string;
+    catalogItemId?: string | null;
+    catalogItemIds?: string[];
+  },
+): SQL {
+  assertEnterpriseId(enterpriseId);
+
+  const conds: SQL[] = [eq(collectionPoints.enterpriseId, enterpriseId)];
+  if (opts?.id) conds.push(eq(collectionPoints.id, opts.id));
+  if (opts?.type) conds.push(eq(collectionPoints.type, opts.type));
+  if (opts?.status) conds.push(eq(collectionPoints.status, opts.status));
+  if (opts?.catalogItemId === null) {
+    conds.push(isNull(collectionPoints.catalogItemId));
+  } else if (opts?.catalogItemId) {
+    conds.push(eq(collectionPoints.catalogItemId, opts.catalogItemId));
+  }
+  if (opts?.catalogItemIds && opts.catalogItemIds.length > 0) {
+    conds.push(inArray(collectionPoints.catalogItemId, opts.catalogItemIds));
+  }
+
+  return (conds.length === 1 ? conds[0] : and(...conds)) as SQL;
+}
+
+/**
+ * Helper fino para as demais tabelas que têm coluna `enterprise_id`
+ * (catalog_items, questions_of_feedbacks, collecting_data_enterprise,
+ * feedback_insights_report, customer, tracked_devices). Recebe a COLUNA
+ * `enterprise_id` EXPLICITAMENTE — o TypeScript garante em compile-time que a
+ * tabela tem a coluna, e a explicitude evita esquecer o escopo (sem reflection).
+ *
+ * Tabelas SEM `enterprise_id` (feedback_question_answers,
+ * feedback_subquestion_answers, feedback_question_subquestions) NÃO usam este
+ * helper: o isolamento delas é TRANSITIVO — os `feedback_id`/`question_id`
+ * passados a montante DEVEM sempre vir de uma query já tenant-scoped.
+ */
+export function scopedByEnterprise(
+  enterpriseIdColumn: PgColumn,
+  enterpriseId: string,
+  ...extra: Array<SQL | undefined>
+): SQL {
+  assertEnterpriseId(enterpriseId);
+  const conds: SQL[] = [eq(enterpriseIdColumn, enterpriseId)];
+  for (const e of extra) {
+    if (e) conds.push(e);
+  }
+  return (conds.length === 1 ? conds[0] : and(...conds)) as SQL;
 }
