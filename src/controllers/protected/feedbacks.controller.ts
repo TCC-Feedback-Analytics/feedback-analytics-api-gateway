@@ -34,6 +34,7 @@ import {
   fetchCatalogItemsByIds,
   fetchAnswersForFeedbacks,
 } from '../../repositories/feedbackList.repository.js';
+import { fetchScopedFeedbackAnalysisRows } from '../../repositories/feedbackAnalysis.repository.js';
 import { inArray } from 'drizzle-orm';
 import { getDb } from '../../db/client.js';
 import {
@@ -361,7 +362,6 @@ export async function getFeedbacksInsightsReportController(req: Request, res: Re
 }
 
 export async function getFeedbacksAnalysisController(req: Request, res: Response) {
-  const supabase = req.supabase!;
   const user = req.user!;
 
   const sentimentFilter = (req.query.sentiment as 'positive' | 'neutral' | 'negative' | undefined) ?? undefined;
@@ -369,13 +369,8 @@ export async function getFeedbacksAnalysisController(req: Request, res: Response
   const catalogItemId = String(req.query.catalog_item_id ?? '').trim() || null;
 
   try {
-    const { data: enterprise, error: enterpriseError } = await supabase
-      .from('enterprise')
-      .select('id')
-      .eq('auth_user_id', user.id)
-      .single();
-
-    if (enterpriseError || !enterprise) {
+    const enterpriseId = req.enterpriseId ?? (await resolveEnterpriseIdByUser(user.id));
+    if (!enterpriseId) {
       return sendTypedError(res, 404, API_ERROR_ENTERPRISE_NOT_FOUND);
     }
 
@@ -385,7 +380,7 @@ export async function getFeedbacksAnalysisController(req: Request, res: Response
     };
 
     const scopeResolution = await resolveScopeCollectionPointIds({
-      enterpriseId: enterprise.id,
+      enterpriseId,
       scopeType,
       catalogItemId,
     });
@@ -400,34 +395,11 @@ export async function getFeedbacksAnalysisController(req: Request, res: Response
       return res.json(emptyResult);
     }
 
-    let query = supabase
-      .from('feedback')
-      .select(
-        `
-        id,
-        message,
-        rating,
-        created_at,
-        feedback_analysis:feedback_analysis (
-          sentiment,
-          categories,
-          keywords,
-          aspects,
-          sentiment_score,
-          confidence
-        )
-      `,
-      )
-      .eq('enterprise_id', enterprise.id);
-
-    if (filteredCollectionPointIds) query = query.in('collection_point_id', filteredCollectionPointIds);
-    if (sentimentFilter) query = query.eq('feedback_analysis.sentiment', sentimentFilter);
-
-    const { data, error } = await query;
-    if (error) {
-      console.error('Erro ao buscar análises de feedbacks:', error);
-      return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_FEEDBACK_ANALYSIS);
-    }
+    const data = await fetchScopedFeedbackAnalysisRows({
+      enterpriseId,
+      collectionPointIds: filteredCollectionPointIds,
+      sentiment: sentimentFilter,
+    });
 
     const itemsRaw = normalizeFeedbackAnalysisRows(data);
     if (itemsRaw.length === 0) return res.json(emptyResult);
