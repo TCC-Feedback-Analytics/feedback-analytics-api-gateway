@@ -2,13 +2,20 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
 import app from '../../index.js';
 import { createSupabaseServerClient } from '../config/supabase.js';
+import { fetchActiveQuestionsForScope } from '../repositories/publicQuestions.repository.js';
 import { makeMockSupabase } from './helpers/supabase-mock.js';
 
 vi.mock('../config/supabase.js', () => ({
   createSupabaseServerClient: vi.fn(),
 }));
 
+// fetchActiveQuestionsForScope virou Drizzle (coberto por integração) — mockado.
+vi.mock('../repositories/publicQuestions.repository.js', () => ({
+  fetchActiveQuestionsForScope: vi.fn(),
+}));
+
 const mockCreateClient = vi.mocked(createSupabaseServerClient);
+const mockFetchQuestions = vi.mocked(fetchActiveQuestionsForScope);
 
 const ENTERPRISE_ID = '550e8400-e29b-41d4-a716-446655440001';
 const COLLECTION_POINT_ID = '550e8400-e29b-41d4-a716-446655440002';
@@ -54,6 +61,8 @@ describe('[Integração] POST /api/public/qrcode/feedback', () => {
     vi.clearAllMocks();
     mockSupabase = makeMockSupabase();
     mockCreateClient.mockReturnValue(mockSupabase as never);
+    // default: nenhuma pergunta; testes específicos sobrescrevem com mockResolvedValueOnce.
+    mockFetchQuestions.mockResolvedValue({ data: [], error: null } as never);
   });
 
   it('[CT-UC04-02] retorna 400 com payload inválido (sem enterprise_id e channel)', async () => {
@@ -97,11 +106,8 @@ describe('[Integração] POST /api/public/qrcode/feedback', () => {
       error: null,
     });
 
-    // questions encontradas (3)
-    mockSupabase.queryBuilder.then.mockImplementationOnce((resolve: (v: unknown) => void) => {
-      resolve({ data: VALID_QUESTIONS, error: null });
-      return Promise.resolve({ data: VALID_QUESTIONS, error: null });
-    });
+    // questions (3) via fetchActiveQuestionsForScope (Drizzle, mockado)
+    mockFetchQuestions.mockResolvedValueOnce({ data: VALID_QUESTIONS, error: null } as never);
 
     // device existente
     mockSupabase.queryBuilder.maybeSingle.mockResolvedValueOnce({
@@ -147,11 +153,8 @@ describe('[Integração] POST /api/public/qrcode/feedback', () => {
       error: null,
     });
 
-    // questions encontradas (3)
-    mockSupabase.queryBuilder.then.mockImplementationOnce((resolve: (v: unknown) => void) => {
-      resolve({ data: VALID_QUESTIONS, error: null });
-      return Promise.resolve({ data: VALID_QUESTIONS, error: null });
-    });
+    // questions (3) via fetchActiveQuestionsForScope (Drizzle, mockado)
+    mockFetchQuestions.mockResolvedValueOnce({ data: VALID_QUESTIONS, error: null } as never);
 
     // device não encontrado (novo)
     mockSupabase.queryBuilder.maybeSingle.mockResolvedValueOnce({
@@ -215,12 +218,8 @@ describe('[Integração] POST /api/public/qrcode/feedback', () => {
       error: null,
     });
 
-    // apenas 1 pergunta ativa configurada para o produto
-    mockSupabase.queryBuilder.then.mockImplementationOnce((resolve: (v: unknown) => void) => {
-      const result = { data: [SINGLE_QUESTION], error: null };
-      resolve(result);
-      return Promise.resolve(result);
-    });
+    // apenas 1 pergunta ativa (via fetchActiveQuestionsForScope, mockado)
+    mockFetchQuestions.mockResolvedValueOnce({ data: [SINGLE_QUESTION], error: null } as never);
 
     // device novo
     mockSupabase.queryBuilder.maybeSingle.mockResolvedValueOnce({
@@ -284,12 +283,7 @@ describe('[Integração] POST /api/public/qrcode/feedback', () => {
       error: null,
     });
 
-    // nenhuma pergunta configurada
-    mockSupabase.queryBuilder.then.mockImplementationOnce((resolve: (v: unknown) => void) => {
-      const result = { data: [], error: null };
-      resolve(result);
-      return Promise.resolve(result);
-    });
+    // nenhuma pergunta configurada (default do mockFetchQuestions)
 
     // device novo
     mockSupabase.queryBuilder.maybeSingle.mockResolvedValueOnce({
@@ -342,6 +336,8 @@ describe('[Integração] GET /api/public/enterprise/:id', () => {
     vi.clearAllMocks();
     mockSupabase = makeMockSupabase();
     mockCreateClient.mockReturnValue(mockSupabase as never);
+    // default: nenhuma pergunta; testes específicos sobrescrevem com mockResolvedValueOnce.
+    mockFetchQuestions.mockResolvedValue({ data: [], error: null } as never);
   });
 
   it('retorna 200 com dados públicos da empresa', async () => {
