@@ -359,7 +359,6 @@ export async function getFeedbacksStatsController(req: Request, res: Response) {
 
     // Métricas filtradas pelo escopo selecionado no header (Geral = só o QR da empresa).
     const scopeResolution = await resolveScopeCollectionPointIds({
-      supabase,
       enterpriseId: enterprise.id,
       scopeType,
       catalogItemId,
@@ -543,7 +542,6 @@ export async function getFeedbacksAnalysisController(req: Request, res: Response
     };
 
     const scopeResolution = await resolveScopeCollectionPointIds({
-      supabase,
       enterpriseId: enterprise.id,
       scopeType,
       catalogItemId,
@@ -794,7 +792,6 @@ export async function getFeedbacksQuestionsController(req: Request, res: Respons
     }
 
     const scopeResolution = await resolveScopeCollectionPointIds({
-      supabase,
       enterpriseId: enterprise.id,
       scopeType,
       catalogItemId,
