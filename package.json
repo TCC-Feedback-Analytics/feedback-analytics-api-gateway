@@ -18,7 +18,8 @@
     "db:studio": "drizzle-kit studio",
     "db:local:up": "docker compose up -d",
     "db:local:down": "docker compose down",
-    "db:reset": "node scripts/db-local.mjs",
+    "db:reset": "node scripts/db-local.mjs && npm run db:seed:e2e",
+    "db:seed:e2e": "tsx scripts/seed-e2e-user.ts",
     "verify:stats": "tsx scripts/verify-stats-drizzle.ts"
   },
   "dependencies": {
