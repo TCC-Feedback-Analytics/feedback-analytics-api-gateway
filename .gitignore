@@ -3,3 +3,4 @@ _bundle.cjs
 coverage
 dist
 .env
+.claude
