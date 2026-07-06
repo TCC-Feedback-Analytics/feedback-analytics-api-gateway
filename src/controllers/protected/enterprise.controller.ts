@@ -147,8 +147,8 @@ function normalizeCompanyFeedbackQuestions(
 }
 
 /**
- * Empresa do usuário autenticado. Em Better Auth vem de `req.enterpriseId` (já
- * resolvido no requireAuth); em modo supabase caímos no resolve por auth_user_id.
+ * Empresa do usuário autenticado: vem de `req.enterpriseId` (resolvido no
+ * requireAuth), com fallback defensivo para o resolve por auth_user_id.
  */
 async function resolveEnterpriseId(req: Request): Promise<string | null> {
   if (req.enterpriseId) return req.enterpriseId;

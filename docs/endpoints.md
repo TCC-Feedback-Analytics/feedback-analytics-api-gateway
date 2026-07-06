@@ -2,7 +2,7 @@
 
 > **Base URL (desenvolvimento):** `http://localhost:3000`
 
-Todos os endpoints protegidos usam a sessão que trafega por **cookies HttpOnly** (gerenciada via `@supabase/ssr`). O cliente deve enviar as requisições com `credentials: 'include'`. **Não** há header `Authorization: Bearer`.
+Todos os endpoints protegidos usam a sessão que trafega por **cookies HttpOnly** (gerenciada pelo Better Auth). O cliente deve enviar as requisições com `credentials: 'include'`. **Não** há header `Authorization: Bearer`.
 
 > **Nota:** todas as rotas são prefixadas com `/api` (ex.: `GET /api/health`).
 
@@ -29,7 +29,7 @@ curl http://localhost:3000/api/health
 
 ### `GET /api/protected/user/auth_user`
 
-Retorna o usuário autenticado, extraído do JWT (injetado por `requireAuth`).
+Retorna o usuário autenticado, extraído da sessão (injetado por `requireAuth`).
 
 **Response 200**
 ```json
@@ -40,7 +40,7 @@ Retorna o usuário autenticado, extraído do JWT (injetado por `requireAuth`).
 
 ### `PATCH /api/protected/user/email`
 
-Inicia a troca de e-mail. O Supabase envia um link de confirmação para o novo endereço; a mudança só é efetivada após o callback.
+Inicia a troca de e-mail. O Better Auth envia um link de confirmação para o novo endereço; a mudança só é efetivada após o callback.
 
 **Body**
 ```json
@@ -71,7 +71,7 @@ Atualiza metadados do usuário (ex.: `full_name`).
 
 ### `POST /api/protected/user/phone/start`
 
-Inicia a verificação de telefone — o Supabase envia um código por SMS.
+Registra/atualiza o telefone do usuário. **Não há provedor de SMS**: o número é salvo diretamente e a verificação por OTP em `/phone/verify` é um no-op. O contrato (`200 { ok: true }`) foi preservado.
 
 **Body**
 ```json
@@ -89,7 +89,7 @@ Inicia a verificação de telefone — o Supabase envia um código por SMS.
 
 ### `POST /api/protected/user/phone/verify`
 
-Confirma o código SMS recebido, efetivando a troca de telefone.
+**No-op** — não há provedor de SMS; o telefone já foi salvo em `/phone/start`. Mantido para preservar o contrato: responde `200 { ok: true }` para qualquer `phone`/`token` não vazios.
 
 **Body**
 ```json
@@ -656,7 +656,7 @@ Analisa feedbacks **ainda não analisados** e persiste os resultados.
 
 | Status | Código | Descrição |
 |---|---|---|
-| `401` | `unauthorized` | JWT ausente ou inválido |
+| `401` | `unauthorized` | Sessão ausente ou inválida |
 | `422` | `collecting_data_required_for_analysis` | Dados de contexto da empresa não preenchidos |
 | `422` | `insufficient_feedbacks_for_analysis` | Menos de 10 feedbacks disponíveis no escopo |
 | `500` | `missing_ia_analyze_remote_url` | Em runtime serverless (`VERCEL=1`) sem `IA_ANALYZE_REMOTE_URL` configurada |
@@ -708,7 +708,7 @@ Regenera os insights globais com base nos feedbacks **já analisados**.
 
 ## Autenticação (Pública)
 
-Endpoints sem JWT. A sessão é gerenciada por **cookie HttpOnly** (use `credentials: 'include'`).
+Endpoints sem autenticação. A sessão é gerenciada por **cookie HttpOnly** (use `credentials: 'include'`).
 
 ### `POST /api/public/auth/login`
 

@@ -1,8 +1,9 @@
 /**
- * Cliente Drizzle (postgres-js) para os caminhos AUTENTICADOS/INTERNOS do
- * gateway. Lazy: a conexão só é criada no primeiro uso, para o app subir mesmo
- * sem `DATABASE_URL` (o fluxo público anônimo do QR Code continua via Supabase
- * client + RLS, sem Drizzle — ver docs/arquitetura/orm-rls-decisao.md).
+ * Cliente Drizzle (postgres-js) — único caminho de acesso a dados do gateway
+ * (autenticado/interno E público, após o cutover para Better Auth). Lazy: a
+ * conexão só é criada no primeiro uso; o módulo importa sem exigir `DATABASE_URL`
+ * no boot (health check e testes sobem — o primeiro uso real sem a var lança erro
+ * claro em `getDb()`).
  *
  * IMPORTANTE (segurança): esta conexão usa a connection string do Postgres, que
  * roda com uma role que IGNORA a RLS. Portanto, TODA query por aqui DEVE filtrar

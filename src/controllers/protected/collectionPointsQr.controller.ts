@@ -63,8 +63,9 @@ function hasValidQuestionLength(value: string) {
 }
 
 /**
- * Empresa do usuário: `req.enterpriseId` (Better Auth) ou resolve por auth_user_id
- * (supabase). A role do Drizzle ignora a RLS → o escopo por empresa é feito aqui.
+ * Empresa do usuário: `req.enterpriseId` (resolvido no requireAuth) ou, como
+ * fallback, resolve por auth_user_id. A role do Drizzle ignora a RLS → o escopo
+ * por empresa é feito aqui.
  */
 async function resolveEnterpriseId(req: Request): Promise<string | null> {
   if (req.enterpriseId) return req.enterpriseId;

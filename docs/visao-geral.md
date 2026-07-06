@@ -7,15 +7,15 @@ O `api-gateway` é o **Backend-for-Frontend (BFF)** do sistema. Ele é o único 
 ## Por Que Existe
 
 Centralizar o backend permite:
-- **Autenticação uniforme** — um único middleware valida a sessão Supabase (cookie HttpOnly) para todos os endpoints **protegidos** (os públicos não passam por `requireAuth`)
-- **Isolamento do banco** — as queries ficam no backend; o frontend não precisa de acesso direto ao Supabase
+- **Autenticação uniforme** — um único middleware valida a sessão do Better Auth (cookie HttpOnly) para todos os endpoints **protegidos** (os públicos não passam por `requireAuth`)
+- **Isolamento do banco** — as queries ficam no backend; o frontend não precisa de acesso direto ao banco
 - **Orquestração da IA** — o Gateway prepara os dados, chama o `ia-analyze` e persiste os resultados sem expor a complexidade ao cliente
 
 ## Responsabilidades
 
-1. **Validar autenticação** lendo a sessão do cookie httpOnly via `@supabase/ssr` e `supabase.auth.getUser()` (middleware `requireAuth`)
+1. **Validar autenticação** lendo a sessão do cookie httpOnly via Better Auth (`getAuth().api.getSession()`, no middleware `requireAuth`)
 2. **Expor endpoints REST** para o frontend React
-3. **Ler e escrever** no banco de dados Supabase
+3. **Ler e escrever** no banco de dados (Postgres, via Drizzle)
 4. **Orquestrar serviços** — busca feedbacks, monta batches, chama `ia-analyze`, persiste resultados
 
 ## Endpoints Disponíveis
@@ -24,7 +24,7 @@ Centralizar o backend permite:
 
 | Método | Caminho | Descrição |
 |---|---|---|
-| `GET` | `/api/protected/user/auth_user` | Dados do usuário autenticado (do JWT) |
+| `GET` | `/api/protected/user/auth_user` | Dados do usuário autenticado (da sessão) |
 | `PATCH` | `/api/protected/user/email` | Atualiza e-mail (envia confirmação) |
 | `PATCH` | `/api/protected/user/metadados` | Atualiza metadados do usuário (ex.: nome) |
 | `POST` | `/api/protected/user/phone/start` | Inicia verificação de telefone (envia SMS) |
@@ -67,8 +67,8 @@ Centralizar o backend permite:
 
 - **Runtime:** Node.js 20+ com TypeScript (ESM)
 - **Framework:** Express 5
-- **Auth:** Supabase Auth via `@supabase/ssr` (`createServerClient`) — sessão em cookie httpOnly, validada por `supabase.auth.getUser()` em `requireAuth`; não há `Authorization: Bearer`
-- **Dados:** cliente Supabase (`@supabase/ssr`, sujeito à RLS) + **Drizzle ORM** (`DATABASE_URL`) para as agregações de estatística, com isolamento por `enterprise_id` na aplicação
+- **Auth:** **Better Auth** (único provedor) — sessão em cookie httpOnly, validada por `getAuth().api.getSession()` em `requireAuth`; não há `Authorization: Bearer`
+- **Dados:** **Drizzle ORM** (`DATABASE_URL`) como único caminho — a role do Drizzle ignora a RLS, com isolamento por `enterprise_id` na aplicação. O Supabase permanece apenas como **provedor do Postgres**
 - **Deploy:** Vercel (serverless)
 
 ## Veja Também

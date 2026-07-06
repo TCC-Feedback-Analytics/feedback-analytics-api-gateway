@@ -21,11 +21,12 @@ O **CI** (lint/typecheck/unit) **não precisa de secret** — os testes são moc
 
 ## Env de runtime (no projeto Vercel, NÃO como GitHub secret)
 
-`DATABASE_URL` (Drizzle), URL/token do serviço `ia-analyze`
-(`IA_ANALYZE_REMOTE_URL`/`IA_ANALYZE_REMOTE_TOKEN`) e as chaves do Supabase
-(**anon key**: `SUPABASE_URL`/`SUPABASE_ANON_KEY` — a autorização vem do JWT da
-sessão do usuário via RLS, **não** há service role) são variáveis de ambiente
-configuradas nas **Settings do projeto Vercel** da API — não entram no CI.
+`DATABASE_URL` (Drizzle — dados **e** Better Auth), o segredo/URL do Better Auth
+(`BETTER_AUTH_SECRET`/`BETTER_AUTH_URL`), o SMTP transacional (`SMTP_*` + `MAIL_FROM`)
+e a URL/token do serviço `ia-analyze` (`IA_ANALYZE_REMOTE_URL`/`IA_ANALYZE_REMOTE_TOKEN`)
+são variáveis de ambiente configuradas nas **Settings do projeto Vercel** da API —
+não entram no CI. (O Supabase entra apenas como provedor do Postgres, via `DATABASE_URL`;
+não há mais `SUPABASE_URL`/`SUPABASE_ANON_KEY`.)
 
 ## Deploy
 
