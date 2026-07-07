@@ -39,6 +39,24 @@ acesso a dados é 100% via Drizzle, que ignora a RLS). É idempotente.
 
 > ⚠️ O deploy (`deploy-api.yml`) **não** roda migration — este SQL é manual.
 
+## Complemento — FK de deleção por usuário (recomendado)
+
+O `betterauth-enable.sql` **removeu** a FK `enterprise.auth_user_id → auth.users`
+mas **não** recriou apontando para `public.user`. Sem ela, deletar um usuário
+(`public.user`) **não** cascateia para a empresa — a `enterprise` e todos os
+dados de negócio ficam órfãos. Para fechar essa lacuna, rode (uma vez, idempotente):
+
+```
+db/cutover/enterprise-user-fk.sql
+```
+
+Ele recria a FK `enterprise.auth_user_id → public.user` com **`ON DELETE CASCADE`**
+(deletar o usuário apaga a empresa → e a cascata da empresa apaga feedbacks,
+catálogo, pontos de coleta, etc.). É seguro em bases grandes: adiciona a FK como
+`NOT VALID` e só a `VALIDATE` se não houver empresas órfãs — se houver, avisa
+quais são e como validar depois de limpá-las. No banco **local** essa FK já vem
+no dump (`db/schema/tables/public.enterprise.sql`) e é aplicada pelo `db:reset`.
+
 ## Ordem do cutover
 
 1. Setar as envs acima no Vercel.
