@@ -65,12 +65,12 @@ jobs:
           URL=$(npx vercel deploy --yes --token "$VERCEL_TOKEN" --local-config vercel.json)
           echo "url=$URL" >> "$GITHUB_OUTPUT"
 
-      - name: Atribuir alias fixo ao homolog
+      - name: Atribuir alias fixo ao developer
         if: github.ref_name == 'developer'
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          npx vercel alias set ${{ steps.deploy-dev.outputs.url }} feedback-analytics-api-homolog.vercel.app --token "$VERCEL_TOKEN"
+          npx vercel alias set ${{ steps.deploy-dev.outputs.url }} feedback-analytics-api-developer.vercel.app --token "$VERCEL_TOKEN"
 
       - name: Deploy production (main)
         if: github.ref_name == 'main'
