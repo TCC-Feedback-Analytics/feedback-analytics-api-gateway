@@ -101,6 +101,25 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- Foreign Key: auth_user_id -> public.user (Better Auth)
+-- ON DELETE CASCADE: deletar o usuário apaga a empresa, e a cascata da empresa
+-- apaga os dados de negócio (feedbacks, catálogo, pontos de coleta, etc.).
+-- Guarda `to_regclass`: só cria se `public.user` já existir (better_auth é
+-- aplicado ANTES de enterprise no db:reset). Idempotente.
+DO $$ BEGIN
+  IF to_regclass('public."user"') IS NOT NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM pg_constraint
+       WHERE conname = 'enterprise_auth_user_id_user_fkey'
+         AND conrelid = 'public.enterprise'::regclass
+     ) THEN
+    ALTER TABLE "public"."enterprise"
+      ADD CONSTRAINT enterprise_auth_user_id_user_fkey
+        FOREIGN KEY ("auth_user_id") REFERENCES "public"."user"("id")
+        ON DELETE CASCADE;
+  END IF;
+END $$;
+
 -- Triggers
 DROP TRIGGER IF EXISTS "set_updated_at" ON "public"."enterprise";
 CREATE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."enterprise"

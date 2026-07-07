@@ -150,7 +150,7 @@ function isAllowedByVercelProjectPair(params: {
     return true;
   }
 
-  // Fallback: alguns aliases de preview variam entre projetos (ex.: -nando006 vs -git-homolog).
+  // Fallback: alguns aliases de preview variam entre projetos (ex.: -nando006 vs -git-developer).
   // Ainda assim, permitimos se origem e host pertencem aos slugs configurados de web/api.
   return (
     isVercelProjectHostname(originHostname, vercelPairConfig.webProjectSlug) &&
