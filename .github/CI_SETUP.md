@@ -36,4 +36,4 @@ Reusa o mesmo projeto Vercel (`VERCEL_PROJECT_ID_API_GATEWAY`), mantendo estáve
 o **domínio de produção** (`main`, `--prod`) e o **alias fixo de homologação** — o
 deploy de preview em si gera uma URL nova a cada run, por isso o alias é fixado. O
 frontend aponta para o alias/domínio, não para a URL de preview. Branch de staging:
-`developer` (deploya e fixa o alias `feedback-analytics-api-homolog.vercel.app`).
+`developer` (deploya e fixa o alias `feedback-analytics-api-developer.vercel.app`).
