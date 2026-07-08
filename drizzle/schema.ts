@@ -1,3 +1,23 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// ⚠️ FONTE DA VERDADE — CONGELADA NO ESTADO PRÉ-CUTOVER (Supabase Auth → Better Auth)
+//    Ver ADR-0001 (docs/adr/0001-fonte-unica-de-schema.md).
+//
+//    Este arquivo é gerado por `db:pull` e é a fonte das migrations de PRODUÇÃO e
+//    dos tipos que o app importa em runtime — mas DIVERGE do banco real desde o
+//    cutover para o Better Auth. Drifts conhecidos:
+//      1. FK enterprise.auth_user_id → auth.users (abaixo): no banco real aponta
+//         para public.user ON DELETE CASCADE (db/cutover/enterprise-user-fk.sql).
+//      2. Policies RLS auth.uid() (abaixo): DROPADAS em produção
+//         (db/cutover/betterauth-enable.sql). O runtime ignora a RLS por design.
+//      3. Tabelas do Better Auth (user/session/account/verification): AUSENTES aqui;
+//         vivem em src/auth/schema.ts e no banco real.
+//    Dependências residuais de `auth` a resolver na Fase 2: tracked_devices.blocked_by
+//    → auth.users e a view enterprise_public (LEFT JOIN auth.users).
+//
+//    Ao MUDAR o schema, espelhe em db/schema/ (local) e db/cutover/ (prod). O CI
+//    `schema-drift` (.github/workflows/schema-drift.yml) falha se o schema local
+//    mudar sem o golden db/schema/.drift-snapshot.sql ser regenerado.
+// ─────────────────────────────────────────────────────────────────────────────
 import { pgTable, index, foreignKey, pgPolicy, check, uuid, text, integer, timestamp, unique, jsonb, numeric, inet, boolean, uniqueIndex, pgView } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 // auth.users é gerenciada pelo Supabase e fica fora do schemaFilter ['public'].

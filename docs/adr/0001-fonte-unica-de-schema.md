@@ -134,16 +134,16 @@ Nota de severidade: o drift de RLS é de baixo risco funcional (runtime ignora R
 
 ## Itens de ação
 
-**Fase 1 — Guard-rail interino (agora):**
-- [ ] Adicionar este ADR ao repo e preencher a data.
-- [ ] Escrever a nota de "fonte da verdade congelada pré-cutover" no topo de `drizzle/schema.ts` e em `docs/migrations-drizzle.md`, listando os 3 drifts (FK `enterprise`, 13 policies `auth.uid()`, 4 tabelas Better Auth) e as 2 dependências `auth` remanescentes (`tracked_devices.blocked_by`, view `enterprise_public`).
-- [ ] Criar um checklist de "mudança de schema" (espelhar em `drizzle/`, `db/schema/`, `db/cutover/` + reaplicar as 2 linhas de `authUsers` após qualquer `db:pull`) e referenciá-lo no template de PR.
-- [ ] Implementar o **teste de CI anti-drift**: workflow que (a) sobe Postgres efêmero, (b) roda `npm run db:reset`, (c) roda `drizzle-kit` em modo de checagem/introspecção contra esse banco, (d) compara com uma **allowlist** versionada dos drifts conhecidos e **falha** em qualquer diferença fora dela.
-- [ ] Versionar a allowlist (cada drift com justificativa e link para este ADR) e validar num PR de teste que drift **novo** quebra o build e drift **conhecido** passa.
+**Fase 1 — Guard-rail interino (agora):** — *entregue em 2026-07-08*
+- [x] Adicionar este ADR ao repo e preencher a data.
+- [x] Escrever a nota de "fonte da verdade congelada pré-cutover" no topo de `drizzle/schema.ts` e em `docs/migrations-drizzle.md`, listando os 3 drifts (FK `enterprise`, 13 policies `auth.uid()`, 4 tabelas Better Auth) e as 2 dependências `auth` remanescentes (`tracked_devices.blocked_by`, view `enterprise_public`).
+- [x] Criar um checklist de "mudança de schema" (espelhar em `drizzle/`, `db/schema/`, `db/cutover/` + reaplicar as 2 linhas de `authUsers` após qualquer `db:pull`) e referenciá-lo no template de PR (`.github/PULL_REQUEST_TEMPLATE.md`).
+- [x] Implementar o **teste de CI anti-drift** (`.github/workflows/schema-drift.yml`): sobe o Postgres do `docker-compose`, roda `node scripts/db-local.mjs` e compara o `pg_dump` do schema `public` com o **golden versionado** `db/schema/.drift-snapshot.sql` (via `scripts/schema-drift.mjs`), **falhando** em qualquer divergência. **Mecanismo escolhido:** *golden snapshot* em vez de diff `drizzle-kit` — como as duas representações divergem por design (pré/pós-cutover), um diff direto seria sempre "vermelho"; o golden materializa a **allowlist** (o schema local aceito) e força regeneração consciente a cada mudança.
+- [x] Versionar o golden (`db/schema/.drift-snapshot.sql`) como a allowlist materializada; determinismo e detecção validados localmente (o token aleatório `\restrict`/`\unrestrict` do `pg_dump` 16 é normalizado no `schema-drift.mjs`).
 - [ ] Documentar/verificar o mecanismo real de migração das tabelas Better Auth em produção e incorporá-lo ao checklist/CI.
 - [ ] Abrir tarefa "Fase 2 — consolidação na fonte única", com os gatilhos de revisão desta decisão.
 
-**Fase 2 — Consolidação na fonte única (pós-entrega/defesa):**
+**Fase 2 — Consolidação na fonte única (pós-entrega/defesa):** — runbook passo a passo em [`0001-plano-fase2-rebaseline.md`](0001-plano-fase2-rebaseline.md)
 - [ ] Fazer `pg_dump` completo de produção **pós-cutover** e tag git de partida (ponto de reversão) antes de qualquer introspecção.
 - [ ] Mapear formalmente o delta entre `drizzle/schema.ts` e o banco real (FK `enterprise`, 13 policies dropadas, 4 tabelas Better Auth, view, `blocked_by`), consolidando `docs/migrations-drizzle.md:72`.
 - [ ] Incorporar as **tabelas Better Auth** (`src/auth/schema.ts`: `user`/`session`/`account`/`verification`) ao alcance do `drizzle-kit`, preservando `id uuid`/`generateId:false`; validar que o ORM continua importável em runtime.

@@ -4,6 +4,25 @@
 
 Relacionado: [ORM × RLS: nossa decisão](https://github.com/TCC-Feedback-Analytics/feedback-analytics/blob/main/docs/arquitetura/orm-rls-decisao.md).
 
+## Fonte da verdade, drift e o guard-rail anti-drift
+
+> **Decisão:** [ADR-0001](adr/0001-fonte-unica-de-schema.md) — o **alvo** é `drizzle/schema.ts` + migrations como **fonte única**. Hoje ainda há **duas representações do schema mantidas à mão**, e um guard-rail interino as mantém honestas até a consolidação (Fase 2).
+
+As duas trilhas que precisam ser espelhadas a cada mudança de schema:
+
+- **`drizzle/schema.ts` + `drizzle/*.sql`** — fonte das migrations de **produção** e o schema **tipado que o app importa em runtime** (`src/db/client.ts` + repositories/controllers). Por isso **não pode ser deletado**.
+- **`db/schema/*.sql`** — dumps aplicados pelo `db:reset` para montar o banco **local** (Postgres puro).
+
+`drizzle/schema.ts` está **congelado no estado pré-cutover** (Better Auth) e diverge do banco real em três eixos: (1) FK `enterprise.auth_user_id` ainda → `auth.users` (real: `public.user`, `ON DELETE CASCADE`); (2) policies RLS `auth.uid()` presentes (real: dropadas em prod); (3) tabelas Better Auth ausentes (real: `public.user/session/account/verification`). Dependências residuais de `auth` a resolver na Fase 2: `tracked_devices.blocked_by → auth.users` e a view `enterprise_public`.
+
+**Guard-rail (CI):** [`.github/workflows/schema-drift.yml`](../.github/workflows/schema-drift.yml) sobe o Postgres do `docker-compose`, roda `node scripts/db-local.mjs` e compara o `pg_dump` do schema `public` com o golden versionado [`db/schema/.drift-snapshot.sql`](../db/schema/.drift-snapshot.sql) (via [`scripts/schema-drift.mjs`](../scripts/schema-drift.mjs)). **Qualquer mudança no schema local quebra o CI** até o golden ser regenerado conscientemente.
+
+**Ao mudar o schema, espelhe nos lugares certos** (checklist no [PULL_REQUEST_TEMPLATE](../.github/PULL_REQUEST_TEMPLATE.md)):
+
+1. `drizzle/schema.ts` (+ `npm run db:generate`) — produção e tipos do app.
+2. `db/schema/*.sql` — banco local; depois **regenere o golden**: `npm run db:local:up && node scripts/db-local.mjs && npm run db:drift:snapshot`.
+3. `db/cutover/*.sql` — se a mudança precisa ir para a produção (Supabase) fora do fluxo Drizzle.
+
 ## Estrutura da pasta `drizzle/`
 
 | Arquivo | Papel |
