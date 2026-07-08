@@ -39,6 +39,20 @@ acesso a dados é 100% via Drizzle, que ignora a RLS). É idempotente.
 
 > ⚠️ O deploy (`deploy-api.yml`) **não** roda migration — este SQL é manual.
 
+## Governança das tabelas do Better Auth (`user`/`session`/`account`/`verification`)
+
+**Como chegam em produção:** *só* pelo `betterauth-enable.sql` acima, rodado à mão uma vez. **Não há** ferramenta de migração para elas: não existe `@better-auth/cli` nas dependências, elas ficam **fora** do `drizzle-kit` (não estão em `drizzle/schema.ts`) e o `deploy-api.yml` **não roda migration**. Em runtime o `drizzleAdapter` do Better Auth **consome** as tabelas, mas **não as cria**.
+
+**As mesmas 4 tabelas têm três definições mantidas à mão** — mantenha-as em sincronia:
+
+1. `src/auth/schema.ts` — descrição Drizzle que o `drizzleAdapter` usa em **runtime**.
+2. `db/cutover/betterauth-enable.sql` — cria em **produção** (Supabase, manual).
+3. `db/schema/tables/public.better_auth.sql` — cria no **banco local** (`db:reset`).
+
+Hoje as três **coincidem** (id `uuid`/`gen_random_uuid()`, `user.phone` UNIQUE, FKs `ON DELETE CASCADE`). O guard-rail `schema-drift` cobre a definição **local** (item 3), mas **não** verifica que (1) e (2) batem com ela. Ao mudar uma dessas tabelas: espelhe nas **três** definições e rode `betterauth-enable.sql` de novo em prod.
+
+> ⚠️ `CREATE TABLE IF NOT EXISTS` **não altera** uma tabela que já existe — para adicionar/alterar coluna numa dessas tabelas em produção é preciso escrever o `ALTER TABLE` correspondente (não basta editar o `CREATE`). A consolidação numa fonte única (Drizzle) está no [ADR-0001](../../docs/adr/0001-fonte-unica-de-schema.md).
+
 ## Complemento — FK de deleção por usuário (recomendado)
 
 O `betterauth-enable.sql` **removeu** a FK `enterprise.auth_user_id → auth.users`
