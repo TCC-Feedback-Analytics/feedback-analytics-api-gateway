@@ -14,6 +14,7 @@ o schema vive em **duas representações mantidas à mão** — espelhe nas duas
       `npm run db:local:up && node scripts/db-local.mjs && npm run db:drift:snapshot` (commitar `db/schema/.drift-snapshot.sql`).
 - [ ] **`db/cutover/*.sql`** — se a mudança precisa ir para produção (Supabase) fora do fluxo Drizzle (SQL idempotente).
 - [ ] Se rodei `npm run db:pull`: **reapliquei as 2 linhas de `authUsers`** no topo de `drizzle/schema.ts`.
+- [ ] Se mexi nas **tabelas do Better Auth** (`user`/`session`/`account`/`verification`): espelhei nas **3** definições (`src/auth/schema.ts` + `db/cutover/betterauth-enable.sql` + `db/schema/tables/public.better_auth.sql`) — não há migration tool para elas (ver `db/cutover/README.md`).
 - [ ] O CI **`schema-drift`** está verde.
 
 > Por que duas representações? Ver [ADR-0001](../docs/adr/0001-fonte-unica-de-schema.md) — a consolidação numa fonte única é a Fase 2.
