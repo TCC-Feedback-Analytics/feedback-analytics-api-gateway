@@ -39,8 +39,8 @@ function q(order: QuestionOrder, text: string, subs: NormalizedCatalogSubquestio
 beforeAll(async () => {
   const db = getDb();
   await db.execute(sql`
-    INSERT INTO auth.users (id, email, raw_user_meta_data, email_confirmed_at)
-    VALUES (${D_USER}, 'itest-cpqr@x.local', '{"full_name":"Gestor D"}', now())
+    INSERT INTO public."user" (id, email, name, email_verified)
+    VALUES (${D_USER}, 'itest-cpqr@x.local', 'Gestor D', true)
     ON CONFLICT (id) DO NOTHING
   `);
   await db.execute(sql`

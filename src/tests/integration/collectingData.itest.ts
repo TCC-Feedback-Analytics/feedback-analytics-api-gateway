@@ -43,8 +43,8 @@ function emptyCatalogPlan(): SyncPlan['catalog'] {
 beforeAll(async () => {
   const db = getDb();
   await db.execute(sql`
-    INSERT INTO auth.users (id, email, raw_user_meta_data, email_confirmed_at)
-    VALUES (${C_USER}, 'itest-collecting@x.local', '{"full_name":"Gestor C"}', now())
+    INSERT INTO public."user" (id, email, name, email_verified)
+    VALUES (${C_USER}, 'itest-collecting@x.local', 'Gestor C', true)
     ON CONFLICT (id) DO NOTHING
   `);
   await db.execute(sql`
