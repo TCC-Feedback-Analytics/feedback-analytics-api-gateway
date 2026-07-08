@@ -40,36 +40,6 @@ $$;
 
 ALTER TABLE "public"."tracked_devices" ENABLE ROW LEVEL SECURITY;
 
--- Policies
-DROP POLICY IF EXISTS "Anon pode atualizar contagem do proprio device" ON "public"."tracked_devices";
-CREATE POLICY "Anon pode atualizar contagem do proprio device" ON "public"."tracked_devices"
-  AS PERMISSIVE
-  FOR UPDATE
-  TO anon
-  USING (((enterprise_id IS NOT NULL) AND (device_fingerprint IS NOT NULL) AND (COALESCE(is_blocked, false) = false)))
-  WITH CHECK (((enterprise_id IS NOT NULL) AND (device_fingerprint IS NOT NULL) AND (COALESCE(is_blocked, false) = false)));
-
-DROP POLICY IF EXISTS "Permitir criação anônima de dispositivo" ON "public"."tracked_devices";
-CREATE POLICY "Permitir criação anônima de dispositivo" ON "public"."tracked_devices"
-  AS PERMISSIVE
-  FOR INSERT
-  TO anon
-  WITH CHECK (((enterprise_id IS NOT NULL) AND (device_fingerprint IS NOT NULL)));
-
-DROP POLICY IF EXISTS "Permitir verificação anônima de dispositivo" ON "public"."tracked_devices";
-CREATE POLICY "Permitir verificação anônima de dispositivo" ON "public"."tracked_devices"
-  AS PERMISSIVE
-  FOR SELECT
-  TO anon
-  USING (((device_fingerprint IS NOT NULL) AND (enterprise_id IS NOT NULL)));
-
-DROP POLICY IF EXISTS "Usuários autenticados podem gerenciar dispositivos" ON "public"."tracked_devices";
-CREATE POLICY "Usuários autenticados podem gerenciar dispositivos" ON "public"."tracked_devices"
-  AS PERMISSIVE
-  FOR ALL
-  TO authenticated
-  USING ((enterprise_id IN ( SELECT enterprise.id FROM enterprise WHERE (enterprise.auth_user_id = auth.uid()))));
-
 -- Triggers
 DROP TRIGGER IF EXISTS "set_updated_at" ON "public"."tracked_devices";
 CREATE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."tracked_devices"

@@ -69,21 +69,6 @@ $$;
 
 ALTER TABLE "public"."catalog_items" ENABLE ROW LEVEL SECURITY;
 
--- Policies
-DROP POLICY IF EXISTS "Usuários autenticados podem gerenciar catálogo" ON "public"."catalog_items";
-CREATE POLICY "Usuários autenticados podem gerenciar catálogo" ON "public"."catalog_items"
-  AS PERMISSIVE
-  FOR ALL
-  TO authenticated
-  USING ((enterprise_id IN ( SELECT enterprise.id FROM enterprise WHERE (enterprise.auth_user_id = auth.uid()))));
-
-DROP POLICY IF EXISTS "Anon pode ler catálogo ativo" ON "public"."catalog_items";
-CREATE POLICY "Anon pode ler catálogo ativo" ON "public"."catalog_items"
-  AS PERMISSIVE
-  FOR SELECT
-  TO anon
-  USING ((status = 'ACTIVE'::text));
-
 -- Triggers
 DROP TRIGGER IF EXISTS "set_updated_at" ON "public"."catalog_items";
 CREATE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."catalog_items"

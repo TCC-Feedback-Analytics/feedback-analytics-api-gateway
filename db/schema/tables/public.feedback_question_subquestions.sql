@@ -82,38 +82,6 @@ CREATE INDEX IF NOT EXISTS "idx_feedback_question_subquestions_active"
 
 ALTER TABLE "public"."feedback_question_subquestions" ENABLE ROW LEVEL SECURITY;
 
--- Policies
-DROP POLICY IF EXISTS "Auth gerencia subperguntas de feedback" ON "public"."feedback_question_subquestions";
-CREATE POLICY "Auth gerencia subperguntas de feedback" ON "public"."feedback_question_subquestions"
-  AS PERMISSIVE
-  FOR ALL
-  TO authenticated
-  USING ((question_id IN (
-    SELECT q.id
-    FROM questions_of_feedbacks q
-    WHERE q.enterprise_id IN (
-      SELECT enterprise.id
-      FROM enterprise
-      WHERE enterprise.auth_user_id = auth.uid()
-    )
-  )))
-  WITH CHECK ((question_id IN (
-    SELECT q.id
-    FROM questions_of_feedbacks q
-    WHERE q.enterprise_id IN (
-      SELECT enterprise.id
-      FROM enterprise
-      WHERE enterprise.auth_user_id = auth.uid()
-    )
-  )));
-
-DROP POLICY IF EXISTS "Anon pode ler subperguntas ativas" ON "public"."feedback_question_subquestions";
-CREATE POLICY "Anon pode ler subperguntas ativas" ON "public"."feedback_question_subquestions"
-  AS PERMISSIVE
-  FOR SELECT
-  TO anon
-  USING ((is_active = true));
-
 -- Triggers
 DROP TRIGGER IF EXISTS "set_updated_at" ON "public"."feedback_question_subquestions";
 CREATE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."feedback_question_subquestions"

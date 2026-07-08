@@ -17,14 +17,6 @@ CREATE TABLE IF NOT EXISTS "public"."customer" (
 
 ALTER TABLE "public"."customer" ENABLE ROW LEVEL SECURITY;
 
--- Policies
-DROP POLICY IF EXISTS "Usuários autenticados podem gerenciar clientes" ON "public"."customer";
-CREATE POLICY "Usuários autenticados podem gerenciar clientes" ON "public"."customer"
-  AS PERMISSIVE
-  FOR ALL
-  TO authenticated
-  USING ((enterprise_id IN ( SELECT enterprise.id FROM enterprise WHERE (enterprise.auth_user_id = auth.uid()))));
-
 -- Triggers
 DROP TRIGGER IF EXISTS "set_updated_at" ON "public"."customer";
 CREATE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."customer"

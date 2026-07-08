@@ -150,22 +150,6 @@ CREATE TRIGGER "validate_questions_of_feedbacks_context"
 
 ALTER TABLE "public"."questions_of_feedbacks" ENABLE ROW LEVEL SECURITY;
 
--- Policies
-DROP POLICY IF EXISTS "Auth gerencia perguntas de feedback" ON "public"."questions_of_feedbacks";
-CREATE POLICY "Auth gerencia perguntas de feedback" ON "public"."questions_of_feedbacks"
-  AS PERMISSIVE
-  FOR ALL
-  TO authenticated
-  USING ((enterprise_id IN (SELECT enterprise.id FROM enterprise WHERE (enterprise.auth_user_id = auth.uid()))))
-  WITH CHECK ((enterprise_id IN (SELECT enterprise.id FROM enterprise WHERE (enterprise.auth_user_id = auth.uid()))));
-
-DROP POLICY IF EXISTS "Anon pode ler perguntas ativas de feedback" ON "public"."questions_of_feedbacks";
-CREATE POLICY "Anon pode ler perguntas ativas de feedback" ON "public"."questions_of_feedbacks"
-  AS PERMISSIVE
-  FOR SELECT
-  TO anon
-  USING ((is_active = true));
-
 -- Triggers
 DROP TRIGGER IF EXISTS "set_updated_at" ON "public"."questions_of_feedbacks";
 CREATE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."questions_of_feedbacks"

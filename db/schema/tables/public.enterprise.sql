@@ -18,29 +18,6 @@ CREATE TABLE IF NOT EXISTS "public"."enterprise" (
 
 ALTER TABLE "public"."enterprise" ENABLE ROW LEVEL SECURITY;
 
--- Policies
-DROP POLICY IF EXISTS "Usuários autenticados podem criar sua empresa" ON "public"."enterprise";
-CREATE POLICY "Usuários autenticados podem criar sua empresa" ON "public"."enterprise"
-  AS PERMISSIVE
-  FOR INSERT
-  TO public
-  WITH CHECK ((auth.uid() = auth_user_id));
-
-DROP POLICY IF EXISTS "Usuários autenticados veem apenas sua empresa" ON "public"."enterprise";
-CREATE POLICY "Usuários autenticados veem apenas sua empresa" ON "public"."enterprise"
-  AS PERMISSIVE
-  FOR SELECT
-  TO authenticated
-  USING ((auth.uid() = auth_user_id));
-
-DROP POLICY IF EXISTS "Usuários podem atualizar sua própria empresa" ON "public"."enterprise";
-CREATE POLICY "Usuários podem atualizar sua própria empresa" ON "public"."enterprise"
-  AS PERMISSIVE
-  FOR UPDATE
-  TO public
-  USING ((auth.uid() = auth_user_id))
-  WITH CHECK ((auth.uid() = auth_user_id));
-
 -- Trial / Subscription
 ALTER TABLE "public"."enterprise"
   ADD COLUMN IF NOT EXISTS "trial_ends_at" timestamp with time zone,

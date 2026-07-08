@@ -57,21 +57,6 @@ $$;
 
 ALTER TABLE "public"."collection_points" ENABLE ROW LEVEL SECURITY;
 
--- Policies
-DROP POLICY IF EXISTS "Anon pode ler pontos QR_CODE ativos" ON "public"."collection_points";
-CREATE POLICY "Anon pode ler pontos QR_CODE ativos" ON "public"."collection_points"
-  AS PERMISSIVE
-  FOR SELECT
-  TO anon
-  USING (((type = 'QR_CODE'::text) AND (status = 'ACTIVE'::text) AND ((catalog_item_id IS NULL) OR (EXISTS ( SELECT 1 FROM catalog_items ci WHERE ((ci.id = collection_points.catalog_item_id) AND (ci.status = 'ACTIVE'::text)))))));
-
-DROP POLICY IF EXISTS "Usuários autenticados podem gerenciar pontos de coleta" ON "public"."collection_points";
-CREATE POLICY "Usuários autenticados podem gerenciar pontos de coleta" ON "public"."collection_points"
-  AS PERMISSIVE
-  FOR ALL
-  TO authenticated
-  USING ((enterprise_id IN ( SELECT enterprise.id FROM enterprise WHERE (enterprise.auth_user_id = auth.uid()))));
-
 -- Triggers
 DROP TRIGGER IF EXISTS "set_updated_at" ON "public"."collection_points";
 CREATE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."collection_points"

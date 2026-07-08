@@ -163,29 +163,6 @@ CREATE TRIGGER "validate_feedback_insights_report_context"
 
 ALTER TABLE "public"."feedback_insights_report" ENABLE ROW LEVEL SECURITY;
 
--- Policies
-DROP POLICY IF EXISTS "feedback_insights_report_insert" ON "public"."feedback_insights_report";
-CREATE POLICY "feedback_insights_report_insert" ON "public"."feedback_insights_report"
-  AS PERMISSIVE
-  FOR INSERT
-  TO public
-  WITH CHECK ((enterprise_id IN ( SELECT enterprise.id FROM enterprise WHERE (enterprise.auth_user_id = auth.uid()))));
-
-DROP POLICY IF EXISTS "feedback_insights_report_select" ON "public"."feedback_insights_report";
-CREATE POLICY "feedback_insights_report_select" ON "public"."feedback_insights_report"
-  AS PERMISSIVE
-  FOR SELECT
-  TO public
-  USING ((enterprise_id IN ( SELECT enterprise.id FROM enterprise WHERE (enterprise.auth_user_id = auth.uid()))));
-
-DROP POLICY IF EXISTS "feedback_insights_report_update" ON "public"."feedback_insights_report";
-CREATE POLICY "feedback_insights_report_update" ON "public"."feedback_insights_report"
-  AS PERMISSIVE
-  FOR UPDATE
-  TO public
-  USING ((enterprise_id IN ( SELECT enterprise.id FROM enterprise WHERE (enterprise.auth_user_id = auth.uid()))))
-  WITH CHECK ((enterprise_id IN ( SELECT enterprise.id FROM enterprise WHERE (enterprise.auth_user_id = auth.uid()))));
-
 -- Triggers
 DROP TRIGGER IF EXISTS "set_updated_at" ON "public"."feedback_insights_report";
 CREATE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."feedback_insights_report"

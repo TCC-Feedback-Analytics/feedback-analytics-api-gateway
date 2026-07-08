@@ -96,35 +96,3 @@ CREATE INDEX IF NOT EXISTS "idx_feedback_subquestion_answers_subquestion_id"
   ON "public"."feedback_subquestion_answers" ("subquestion_id");
 
 ALTER TABLE "public"."feedback_subquestion_answers" ENABLE ROW LEVEL SECURITY;
-
--- Policies
-DROP POLICY IF EXISTS "Auth gerencia respostas de subperguntas" ON "public"."feedback_subquestion_answers";
-CREATE POLICY "Auth gerencia respostas de subperguntas" ON "public"."feedback_subquestion_answers"
-  AS PERMISSIVE
-  FOR ALL
-  TO authenticated
-  USING ((feedback_id IN (
-    SELECT f.id
-    FROM feedback f
-    WHERE f.enterprise_id IN (
-      SELECT enterprise.id
-      FROM enterprise
-      WHERE enterprise.auth_user_id = auth.uid()
-    )
-  )))
-  WITH CHECK ((feedback_id IN (
-    SELECT f.id
-    FROM feedback f
-    WHERE f.enterprise_id IN (
-      SELECT enterprise.id
-      FROM enterprise
-      WHERE enterprise.auth_user_id = auth.uid()
-    )
-  )));
-
-DROP POLICY IF EXISTS "Anon pode inserir respostas de subperguntas" ON "public"."feedback_subquestion_answers";
-CREATE POLICY "Anon pode inserir respostas de subperguntas" ON "public"."feedback_subquestion_answers"
-  AS PERMISSIVE
-  FOR INSERT
-  TO anon
-  WITH CHECK ((feedback_id IS NOT NULL) AND (subquestion_id IS NOT NULL));

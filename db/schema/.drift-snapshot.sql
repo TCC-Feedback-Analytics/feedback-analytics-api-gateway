@@ -783,106 +783,6 @@ ALTER TABLE ONLY public.session
 ALTER TABLE ONLY public.tracked_devices
     ADD CONSTRAINT tracked_devices_enterprise_id_fkey FOREIGN KEY (enterprise_id) REFERENCES public.enterprise(id) ON DELETE CASCADE;
 
-CREATE POLICY "Anon pode atualizar contagem do proprio device" ON public.tracked_devices FOR UPDATE TO anon USING (((enterprise_id IS NOT NULL) AND (device_fingerprint IS NOT NULL) AND (COALESCE(is_blocked, false) = false))) WITH CHECK (((enterprise_id IS NOT NULL) AND (device_fingerprint IS NOT NULL) AND (COALESCE(is_blocked, false) = false)));
-
-CREATE POLICY "Anon pode inserir feedback via QR_CODE com checks" ON public.feedback FOR INSERT TO anon WITH CHECK (((EXISTS ( SELECT 1
-   FROM public.collection_points cp
-  WHERE ((cp.id = feedback.collection_point_id) AND (cp.enterprise_id = feedback.enterprise_id) AND (cp.type = 'QR_CODE'::text) AND (cp.status = 'ACTIVE'::text)))) AND (enterprise_id IS NOT NULL) AND (tracked_device_id IS NOT NULL) AND (EXISTS ( SELECT 1
-   FROM public.tracked_devices td
-  WHERE ((td.id = feedback.tracked_device_id) AND (td.enterprise_id = feedback.enterprise_id) AND (COALESCE(td.is_blocked, false) = false))))));
-
-CREATE POLICY "Anon pode inserir respostas de perguntas" ON public.feedback_question_answers FOR INSERT TO anon WITH CHECK (((feedback_id IS NOT NULL) AND (question_id IS NOT NULL)));
-
-CREATE POLICY "Anon pode inserir respostas de subperguntas" ON public.feedback_subquestion_answers FOR INSERT TO anon WITH CHECK (((feedback_id IS NOT NULL) AND (subquestion_id IS NOT NULL)));
-
-CREATE POLICY "Anon pode ler catálogo ativo" ON public.catalog_items FOR SELECT TO anon USING ((status = 'ACTIVE'::text));
-
-CREATE POLICY "Anon pode ler perguntas ativas de feedback" ON public.questions_of_feedbacks FOR SELECT TO anon USING ((is_active = true));
-
-CREATE POLICY "Anon pode ler pontos QR_CODE ativos" ON public.collection_points FOR SELECT TO anon USING (((type = 'QR_CODE'::text) AND (status = 'ACTIVE'::text) AND ((catalog_item_id IS NULL) OR (EXISTS ( SELECT 1
-   FROM public.catalog_items ci
-  WHERE ((ci.id = collection_points.catalog_item_id) AND (ci.status = 'ACTIVE'::text)))))));
-
-CREATE POLICY "Anon pode ler subperguntas ativas" ON public.feedback_question_subquestions FOR SELECT TO anon USING ((is_active = true));
-
-CREATE POLICY "Auth gerencia dados de coleta" ON public.collecting_data_enterprise TO authenticated USING ((enterprise_id IN ( SELECT enterprise.id
-   FROM public.enterprise
-  WHERE (enterprise.auth_user_id = auth.uid())))) WITH CHECK ((enterprise_id IN ( SELECT enterprise.id
-   FROM public.enterprise
-  WHERE (enterprise.auth_user_id = auth.uid()))));
-
-CREATE POLICY "Auth gerencia perguntas de feedback" ON public.questions_of_feedbacks TO authenticated USING ((enterprise_id IN ( SELECT enterprise.id
-   FROM public.enterprise
-  WHERE (enterprise.auth_user_id = auth.uid())))) WITH CHECK ((enterprise_id IN ( SELECT enterprise.id
-   FROM public.enterprise
-  WHERE (enterprise.auth_user_id = auth.uid()))));
-
-CREATE POLICY "Auth gerencia respostas de perguntas de feedback" ON public.feedback_question_answers TO authenticated USING ((feedback_id IN ( SELECT f.id
-   FROM public.feedback f
-  WHERE (f.enterprise_id IN ( SELECT enterprise.id
-           FROM public.enterprise
-          WHERE (enterprise.auth_user_id = auth.uid())))))) WITH CHECK ((feedback_id IN ( SELECT f.id
-   FROM public.feedback f
-  WHERE (f.enterprise_id IN ( SELECT enterprise.id
-           FROM public.enterprise
-          WHERE (enterprise.auth_user_id = auth.uid()))))));
-
-CREATE POLICY "Auth gerencia respostas de subperguntas" ON public.feedback_subquestion_answers TO authenticated USING ((feedback_id IN ( SELECT f.id
-   FROM public.feedback f
-  WHERE (f.enterprise_id IN ( SELECT enterprise.id
-           FROM public.enterprise
-          WHERE (enterprise.auth_user_id = auth.uid())))))) WITH CHECK ((feedback_id IN ( SELECT f.id
-   FROM public.feedback f
-  WHERE (f.enterprise_id IN ( SELECT enterprise.id
-           FROM public.enterprise
-          WHERE (enterprise.auth_user_id = auth.uid()))))));
-
-CREATE POLICY "Auth gerencia subperguntas de feedback" ON public.feedback_question_subquestions TO authenticated USING ((question_id IN ( SELECT q.id
-   FROM public.questions_of_feedbacks q
-  WHERE (q.enterprise_id IN ( SELECT enterprise.id
-           FROM public.enterprise
-          WHERE (enterprise.auth_user_id = auth.uid())))))) WITH CHECK ((question_id IN ( SELECT q.id
-   FROM public.questions_of_feedbacks q
-  WHERE (q.enterprise_id IN ( SELECT enterprise.id
-           FROM public.enterprise
-          WHERE (enterprise.auth_user_id = auth.uid()))))));
-
-CREATE POLICY "Empresas gerenciam apenas suas próprias análises" ON public.feedback_analysis USING ((feedback_id IN ( SELECT f.id
-   FROM public.feedback f
-  WHERE (f.enterprise_id IN ( SELECT e.id
-           FROM public.enterprise e
-          WHERE (e.auth_user_id = auth.uid()))))));
-
-CREATE POLICY "Permitir criação anônima de dispositivo" ON public.tracked_devices FOR INSERT TO anon WITH CHECK (((enterprise_id IS NOT NULL) AND (device_fingerprint IS NOT NULL)));
-
-CREATE POLICY "Permitir verificação anônima de dispositivo" ON public.tracked_devices FOR SELECT TO anon USING (((device_fingerprint IS NOT NULL) AND (enterprise_id IS NOT NULL)));
-
-CREATE POLICY "Usuários autenticados podem criar sua empresa" ON public.enterprise FOR INSERT WITH CHECK ((auth.uid() = auth_user_id));
-
-CREATE POLICY "Usuários autenticados podem gerenciar catálogo" ON public.catalog_items TO authenticated USING ((enterprise_id IN ( SELECT enterprise.id
-   FROM public.enterprise
-  WHERE (enterprise.auth_user_id = auth.uid()))));
-
-CREATE POLICY "Usuários autenticados podem gerenciar clientes" ON public.customer TO authenticated USING ((enterprise_id IN ( SELECT enterprise.id
-   FROM public.enterprise
-  WHERE (enterprise.auth_user_id = auth.uid()))));
-
-CREATE POLICY "Usuários autenticados podem gerenciar dispositivos" ON public.tracked_devices TO authenticated USING ((enterprise_id IN ( SELECT enterprise.id
-   FROM public.enterprise
-  WHERE (enterprise.auth_user_id = auth.uid()))));
-
-CREATE POLICY "Usuários autenticados podem gerenciar feedbacks" ON public.feedback TO authenticated USING ((enterprise_id IN ( SELECT enterprise.id
-   FROM public.enterprise
-  WHERE (enterprise.auth_user_id = auth.uid()))));
-
-CREATE POLICY "Usuários autenticados podem gerenciar pontos de coleta" ON public.collection_points TO authenticated USING ((enterprise_id IN ( SELECT enterprise.id
-   FROM public.enterprise
-  WHERE (enterprise.auth_user_id = auth.uid()))));
-
-CREATE POLICY "Usuários autenticados veem apenas sua empresa" ON public.enterprise FOR SELECT TO authenticated USING ((auth.uid() = auth_user_id));
-
-CREATE POLICY "Usuários podem atualizar sua própria empresa" ON public.enterprise FOR UPDATE USING ((auth.uid() = auth_user_id)) WITH CHECK ((auth.uid() = auth_user_id));
-
 ALTER TABLE public.catalog_items ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.collecting_data_enterprise ENABLE ROW LEVEL SECURITY;
@@ -898,20 +798,6 @@ ALTER TABLE public.feedback ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.feedback_analysis ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.feedback_insights_report ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY feedback_insights_report_insert ON public.feedback_insights_report FOR INSERT WITH CHECK ((enterprise_id IN ( SELECT enterprise.id
-   FROM public.enterprise
-  WHERE (enterprise.auth_user_id = auth.uid()))));
-
-CREATE POLICY feedback_insights_report_select ON public.feedback_insights_report FOR SELECT USING ((enterprise_id IN ( SELECT enterprise.id
-   FROM public.enterprise
-  WHERE (enterprise.auth_user_id = auth.uid()))));
-
-CREATE POLICY feedback_insights_report_update ON public.feedback_insights_report FOR UPDATE USING ((enterprise_id IN ( SELECT enterprise.id
-   FROM public.enterprise
-  WHERE (enterprise.auth_user_id = auth.uid())))) WITH CHECK ((enterprise_id IN ( SELECT enterprise.id
-   FROM public.enterprise
-  WHERE (enterprise.auth_user_id = auth.uid()))));
 
 ALTER TABLE public.feedback_question_answers ENABLE ROW LEVEL SECURITY;
 

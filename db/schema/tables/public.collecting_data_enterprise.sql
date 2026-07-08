@@ -40,15 +40,6 @@ END $$;
 
 ALTER TABLE "public"."collecting_data_enterprise" ENABLE ROW LEVEL SECURITY;
 
--- Policies
-DROP POLICY IF EXISTS "Auth gerencia dados de coleta" ON "public"."collecting_data_enterprise";
-CREATE POLICY "Auth gerencia dados de coleta" ON "public"."collecting_data_enterprise"
-  AS PERMISSIVE
-  FOR ALL
-  TO authenticated
-  USING ((enterprise_id IN ( SELECT enterprise.id FROM enterprise WHERE (enterprise.auth_user_id = auth.uid()))))
-  WITH CHECK ((enterprise_id IN ( SELECT enterprise.id FROM enterprise WHERE (enterprise.auth_user_id = auth.uid()))));
-
 -- Triggers
 DROP TRIGGER IF EXISTS "set_updated_at" ON "public"."collecting_data_enterprise";
 CREATE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."collecting_data_enterprise"
