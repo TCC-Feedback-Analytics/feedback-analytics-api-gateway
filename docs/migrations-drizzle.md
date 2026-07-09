@@ -21,8 +21,9 @@ Antes da Fase 2 o schema vivia em **dois lugares** que precisavam ser espelhados
 
 | Arquivo | Papel |
 |---|---|
-| `schema.ts` | **Fonte única** do schema (mantido à mão; alimenta `generate` e o runtime do app). |
-| `relations.ts` | Relações para a query API do Drizzle (gerado; opcional). |
+| `schema.ts` | **Barrel** — só re-exporta as tabelas de `schema/*.ts`. É o que o `drizzle-kit` e o app (`src/db/client.ts`) importam. |
+| `schema/*.ts` | **Fonte única** do schema, organizada por **domínio**: `auth`, `enterprise`, `questions`, `feedback`, `devices`, `views`. Mantida à mão; alimenta o `generate` e os tipos do runtime. |
+| `relations.ts` + `relations/*.ts` | Relações da query API do Drizzle (barrel + arquivos por domínio). **Opcional** — o app não carrega relations hoje. |
 | `0000_great_talisman.sql` | **Baseline (re-baseline da Fase 2)** — tabelas, FKs, índices e a view `enterprise_public`, refletindo o estado **pós-cutover** (inclui as tabelas Better Auth; sem dependência de `auth.users`). |
 | `0001_functions_triggers_rls.sql` | Migration **custom** — funções (plpgsql/sql), triggers e `ENABLE RLS` que o `drizzle-kit` não deriva. |
 | `meta/_journal.json` + `meta/*_snapshot.json` | Histórico e snapshots usados pelo `generate` para fazer o diff. |
@@ -31,7 +32,7 @@ Antes da Fase 2 o schema vivia em **dois lugares** que precisavam ser espelhados
 
 | Comando | O que faz | Precisa do banco? |
 |---|---|---|
-| `npm run db:pull` | Introspecta o banco → regenera `schema.ts` | sim (leitura) |
+| `npm run db:pull` | Introspecta o banco → regenera `schema.ts` (⚠️ **num arquivo só**) | sim (leitura) |
 | `npm run db:generate` | Faz o **diff** schema × último snapshot → nova migration SQL | **não** (offline) |
 | `npm run db:migrate` | Aplica as migrations pendentes no banco | sim |
 | `npm run db:check` | Valida consistência das migrations | não |
@@ -39,9 +40,11 @@ Antes da Fase 2 o schema vivia em **dois lugares** que precisavam ser espelhados
 | `npm run db:studio` | Abre o Drizzle Studio | sim |
 | `npm run verify:stats` | Confere as agregações de estatística servidas via Drizzle | sim (leitura) |
 
+> ⚠️ O `db:pull` regenera o `schema.ts` como **um arquivo único**, desfazendo a divisão por domínio. Como o schema é mantido à mão pós-Fase 2, use-o só para **diff/auditoria** — não para regenerar.
+
 ## Fluxo de uma mudança de schema (daqui pra frente)
 
-1. Edite `drizzle/schema.ts` (ex.: adicione uma coluna, índice, tabela).
+1. Edite o arquivo de **domínio** em `drizzle/schema/` (ex.: `enterprise.ts`, `feedback.ts`) — o `schema.ts` é só barrel, não precisa tocar (a não ser que adicione um domínio novo).
 2. `npm run db:generate` → cria `drizzle/000N_*.sql` (**revise o SQL!**).
 3. `npm run db:migrate` (produção) ou `npm run db:reset` (recria o local) → aplica.
 4. Commit do `schema.ts` + da migration + do snapshot juntos.

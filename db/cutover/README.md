@@ -45,10 +45,10 @@ acesso a dados é 100% via Drizzle, que ignora a RLS). É idempotente.
 
 **As mesmas 4 tabelas têm duas definições** — mantenha-as em sincronia:
 
-1. `drizzle/schema.ts` — **fonte única**. É a descrição Drizzle que o `drizzleAdapter` usa em **runtime** (as 4 tabelas com `mode:'date'` nos timestamps) e que o `drizzle-kit` usa para gerar as migrations em `drizzle/` e montar o banco **local** (`db:reset` → `drizzle-kit migrate`).
+1. `drizzle/schema/auth.ts` (re-exportada pelo barrel `drizzle/schema.ts`) — **fonte única**. É a descrição Drizzle que o `drizzleAdapter` usa em **runtime** (as 4 tabelas com `mode:'date'` nos timestamps) e que o `drizzle-kit` usa para gerar as migrations em `drizzle/` e montar o banco **local** (`db:reset` → `drizzle-kit migrate`).
 2. `db/cutover/betterauth-enable.sql` — cria em **produção** (Supabase, manual).
 
-As duas **coincidem** (id `uuid`/`gen_random_uuid()`, `user.phone` UNIQUE, FKs `ON DELETE CASCADE`). Não há guard-rail automático verificando que (1) e (2) batem entre si: o `betterauth-enable.sql` é mantido à mão. Ao mudar uma dessas tabelas, edite primeiro `drizzle/schema.ts` (gere a migration com `npm run db:generate`), **espelhe** a alteração no `betterauth-enable.sql` e rode-o de novo em prod.
+As duas **coincidem** (id `uuid`/`gen_random_uuid()`, `user.phone` UNIQUE, FKs `ON DELETE CASCADE`). Não há guard-rail automático verificando que (1) e (2) batem entre si: o `betterauth-enable.sql` é mantido à mão. Ao mudar uma dessas tabelas, edite primeiro `drizzle/schema/auth.ts` (gere a migration com `npm run db:generate`), **espelhe** a alteração no `betterauth-enable.sql` e rode-o de novo em prod.
 
 > ⚠️ `CREATE TABLE IF NOT EXISTS` **não altera** uma tabela que já existe — para adicionar/alterar coluna numa dessas tabelas em produção é preciso escrever o `ALTER TABLE` correspondente (não basta editar o `CREATE`). A consolidação numa fonte única (Drizzle) está no [ADR-0001](../../docs/adr/0001-fonte-unica-de-schema.md).
 
