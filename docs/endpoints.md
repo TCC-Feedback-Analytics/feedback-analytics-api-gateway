@@ -33,8 +33,10 @@ Retorna o usuário autenticado, extraído da sessão (injetado por `requireAuth`
 
 **Response 200**
 ```json
-{ "user": { "id": "uuid", "email": "gestor@empresa.com", "user_metadata": { "full_name": "Maria" } } }
+{ "user": { "id": "uuid", "email": "gestor@empresa.com", "phone": "+5511999990000", "user_metadata": { "full_name": "Maria" } } }
 ```
+
+> `phone` está sempre presente (valor ou `null`).
 
 ---
 
@@ -65,7 +67,7 @@ Atualiza metadados do usuário (ex.: `full_name`).
 { "user": { "id": "uuid", "email": "gestor@empresa.com", "user_metadata": { "full_name": "Maria" } } }
 ```
 
-**Response 400** `invalid_payload` / `update_failed`.
+**Response 400** `invalid_payload` — body fora do schema. *(O `UPDATE` no banco não tem tratamento de erro próprio; este endpoint não emite `update_failed`.)*
 
 ---
 
@@ -101,7 +103,7 @@ Registra/atualiza o telefone do usuário. **Não há provedor de SMS**: o númer
 { "ok": true }
 ```
 
-**Response 400** `invalid_payload` / `verify_failed`.
+**Response 400** `invalid_payload` — `phone`/`token` vazios. *(No-op: só há `400 invalid_payload` ou `200 { ok: true }`; não existe `verify_failed`.)*
 
 ---
 
@@ -127,6 +129,7 @@ Redefine a senha do usuário. Usado na etapa final do fluxo "Esqueci minha senha
 | `400` | `reset_password_weak` | Senha muito fraca |
 | `401` | `reset_password_invalid_token` | Link/sessão de recuperação expirado ou inválido |
 | `400` | `reset_password_failed` | Falha genérica ao redefinir |
+| `503` | `service_unavailable` | Serviço de autenticação indisponível (Better Auth respondeu 5xx) |
 
 ---
 
@@ -157,7 +160,7 @@ Retorna os dados cadastrais da empresa associada ao usuário autenticado, inclui
 }
 ```
 
-> `full_name` não é retornado por este endpoint — vem do campo `phone` e `email` de `auth.users`, e de `user_metadata.full_name` retornados no objeto `user`.
+> Do usuário, este endpoint retorna apenas `id`, `email` e `phone` — **não** inclui `full_name`. O `full_name` é exposto via `user_metadata.full_name` por outros endpoints (`GET /user/auth_user`, `PATCH /user/metadados`).
 
 ---
 
@@ -168,11 +171,14 @@ Atualiza dados cadastrais parciais da empresa (termos, tipo de conta).
 **Body (todos os campos são opcionais)**
 ```json
 {
+  "document": "12.345.678/0001-99",
   "account_type": "CNPJ",
   "terms_version": "v2",
   "terms_accepted_at": "2026-05-24T10:00:00Z"
 }
 ```
+
+> `document` (string, 11–18 caracteres) também é aceito e gravado.
 
 **Response 200** — mesmo formato de `GET /enterprise`.
 
@@ -191,7 +197,7 @@ Retorna as configurações de coleta da empresa — tipos ativos, catálogo e pe
     "company_objective": "...",
     "analytics_goal": "...",
     "business_summary": "...",
-    "main_products_or_services": "...",
+    "main_products_or_services": ["...", "..."],
     "uses_company_products": true,
     "uses_company_services": false,
     "uses_company_departments": false,
@@ -650,15 +656,16 @@ Analisa feedbacks **ainda não analisados** e persiste os resultados.
 }
 ```
 
-> Os itens persistidos carregam também `aspects[]` (ABSA por aspecto), `sentiment_score` (intensidade do sentimento geral em [-1, 1]) e `confidence` (confiança da classificação em [0, 1]). O mínimo de **10 feedbacks é por escopo** (`422` se insuficiente).
+> Os itens persistidos carregam também `aspects[]` (ABSA por aspecto), `sentiment_score` (intensidade do sentimento geral em [-1, 1]) e `confidence` (confiança da classificação em [0, 1]). O mínimo de **10 feedbacks é por escopo**: com **1 a 9** feedbacks retorna `422`; com **0** feedbacks retorna `200` com `analyzedCount: 0` e `feedbacksAnalyzed: []` (não há nada a analisar).
 
 **Erros Possíveis**
 
 | Status | Código | Descrição |
 |---|---|---|
 | `401` | `unauthorized` | Sessão ausente ou inválida |
+| `404` | `enterprise_not_found` | Nenhuma empresa resolvida para o usuário autenticado |
 | `422` | `collecting_data_required_for_analysis` | Dados de contexto da empresa não preenchidos |
-| `422` | `insufficient_feedbacks_for_analysis` | Menos de 10 feedbacks disponíveis no escopo |
+| `422` | `insufficient_feedbacks_for_analysis` | 1 a 9 feedbacks no escopo (com **0** feedbacks retorna `200` vazio, sem erro) |
 | `500` | `missing_ia_analyze_remote_url` | Em runtime serverless (`VERCEL=1`) sem `IA_ANALYZE_REMOTE_URL` configurada |
 | `500` | `failed_to_fetch_feedbacks_for_ia` | Falha ao buscar/resolver o escopo dos feedbacks a analisar |
 | `500` | `failed_to_fetch_analyzed_feedbacks` | Falha ao buscar/resolver o escopo dos feedbacks já analisados |
@@ -676,9 +683,12 @@ Regenera os insights globais com base nos feedbacks **já analisados**.
 ```json
 {
   "scope_type": "COMPANY",
-  "catalog_item_id": null
+  "catalog_item_id": null,
+  "force": false
 }
 ```
+
+> `force` (boolean, opcional — padrão `false`): quando `true`, **ignora o cache** de relatórios e força a regeneração no LLM mesmo que já exista relatório salvo para o escopo.
 
 **Response 200**
 ```json
@@ -696,11 +706,14 @@ Regenera os insights globais com base nos feedbacks **já analisados**.
       "globalInsights": { "summary": "...", "recommendations": ["..."] }
     }
   ],
-  "reportGenerated": true
+  "reportGenerated": true,
+  "fromCache": false
 }
 ```
 
 > `reportGenerated` é `true` **somente** quando um relatório foi de fato persistido para o escopo pedido (com escopo informado: existe relatório salvo para `scope_type` + item; sem escopo: ao menos um relatório foi salvo). Permite ao cliente detectar o "falso sucesso" — quando nada é gerado por falta de feedbacks com texto analisados suficientes.
+>
+> `fromCache` (boolean) indica se o relatório retornado veio do **cache** (sem chamar o LLM) — `true` quando já havia relatório salvo e `force` não foi usado.
 
 **Erros Possíveis** — mesmos códigos de `analyze-raw`.
 
@@ -779,8 +792,7 @@ Cria uma nova conta. Por segurança (RNE-014), e-mail já cadastrado **não** é
 | `409` | `document_taken` | Documento já cadastrado |
 | `400` | `signup_failed` | Falha de cadastro (e-mail/senha inválidos, captcha ou erro genérico) |
 | `429` | `signup_failed` | Muitas tentativas (rate limit) |
-| `502` | `signup_failed` | Falha ao enviar o e-mail de confirmação |
-| `503` | `signup_failed` | Novos cadastros temporariamente indisponíveis |
+| `503` | `signup_failed` | Cadastro temporariamente indisponível — Better Auth respondeu 5xx (inclui falha ao enviar o e-mail de confirmação) |
 
 > O e-mail duplicado **não** gera erro — retorna `200 confirmation_required` (anti-enumeração).
 
@@ -810,6 +822,8 @@ Solicita o e-mail de redefinição de senha. A resposta é sempre genérica (nã
 { "ok": true, "message": "Se este e-mail estiver cadastrado, você receberá as instruções em breve." }
 ```
 
+> A resposta é genérica quanto à **existência** do e-mail (anti-enumeração). Ainda assim, um body malformado retorna **`400 invalid_payload`** — o `email` precisa ser um e-mail válido.
+
 ---
 
 ### `POST /api/public/auth/resend-confirmation`
@@ -826,7 +840,15 @@ Reenvia o e-mail de confirmação de cadastro.
 { "ok": true, "message": "E-mail de confirmação reenviado com sucesso." }
 ```
 
-**Response 429** `rate_limited` — muitas solicitações de reenvio.
+**Erros Possíveis**
+
+| Status | Código | Descrição |
+|---|---|---|
+| `400` | `invalid_payload` | E-mail ausente ou inválido no body |
+| `400` | `resend_failed` | Falha ao reenviar o e-mail de confirmação |
+| `429` | `rate_limited` | Muitas solicitações de reenvio |
+| `503` | `service_unavailable` | Serviço de e-mail temporariamente indisponível |
+| `500` | `internal_error` | Exceção não tratada |
 
 ---
 
@@ -843,8 +865,10 @@ Processa o link clicado no e-mail (confirmação de cadastro, troca de e-mail ou
 | `next` | Caminho de destino após sucesso (padrão `/user/dashboard`) |
 
 **Redirecionamentos**
-- Sucesso → `/auth/success?next=<destino>`
-- Link inválido/expirado → `/auth/link-expired`
+- Recuperação de senha (`type=recovery` com token) → vai **direto** para `<web>/<next>` (ex.: `/auth/reset-password`), **sem** passar por `/auth/success`.
+- Demais casos (signup / `email_change`) → `<web>/auth/success?next=<destino>`.
+
+> O gateway **não** tem um redirect próprio para link inválido/expirado (não existe `/auth/link-expired`). A validação do token acontece na etapa seguinte — ex.: no `PATCH /user/password`, que retorna `reset_password_invalid_token` quando o link de recuperação está expirado/ inválido.
 
 ---
 
@@ -875,6 +899,8 @@ Retorna os dados públicos de uma empresa **e as perguntas do escopo** para mont
   "questions": [
     {
       "id": "uuid",
+      "scope_type": "PRODUCT",
+      "catalog_item_id": "uuid | null",
       "question_order": 1,
       "question_text": "Como você avalia o atendimento?",
       "subquestions": []
