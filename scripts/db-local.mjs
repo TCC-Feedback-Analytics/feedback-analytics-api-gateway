@@ -1,5 +1,5 @@
 // Recria o schema do banco LOCAL (dev) a partir das MIGRATIONS Drizzle e aplica o seed.
-// Fluxo (ADR-0001, Fase 2 · Passo 6): DROP → shim + auth.users → drizzle-kit migrate → seed.
+// Fluxo (ADR-0001, Fase 2): DROP → drizzle-kit migrate → seed.
 // Uso: npm run db:reset   (exige o Postgres local no ar: npm run db:local:up)
 //
 // SEGURANÇA: recusa rodar em qualquer DATABASE_URL que não seja local — este
@@ -42,12 +42,6 @@ try {
     'reset schemas',
     'DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS auth CASCADE; DROP SCHEMA IF EXISTS drizzle CASCADE;',
   );
-
-  // Shim de portabilidade Postgres-puro: recria auth.uid()/roles que o schema `auth`
-  // do Supabase proveria. Pós-Passo 7 o schema NÃO referencia mais auth.users, então
-  // a tabela auth.users mínima deixou de ser aplicada (retirar o shim por completo,
-  // já que auth.uid()/roles viraram código morto, é um cleanup opcional).
-  await apply('shim', read('db/local/00-shim.sql'));
 
   // Aplica as migrations versionadas: 0000 (tabelas/FKs/índices/view) + 0001
   // (funções/triggers/RLS). MESMA sequência que a produção usaria.
