@@ -1,6 +1,6 @@
 {
-  "id": "6ec7d5a0-b782-4d9c-bdea-2256c59980e3",
-  "prevId": "00000000-0000-0000-0000-000000000000",
+  "id": "52b0f752-0755-4e8e-8715-17a976a08d12",
+  "prevId": "6ec7d5a0-b782-4d9c-bdea-2256c59980e3",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -95,15 +95,15 @@
         "account_user_id_fkey": {
           "name": "account_user_id_fkey",
           "tableFrom": "account",
-          "tableTo": "user",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -194,9 +194,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_catalog_items_status": {
           "name": "idx_catalog_items_status",
@@ -209,24 +209,24 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "catalog_items_enterprise_id_fkey": {
           "name": "catalog_items_enterprise_id_fkey",
           "tableFrom": "catalog_items",
-          "tableTo": "enterprise",
           "columnsFrom": [
             "enterprise_id"
           ],
+          "tableTo": "enterprise",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -327,10 +327,10 @@
       "uniqueConstraints": {
         "collecting_data_enterprise_enterprise_unique": {
           "name": "collecting_data_enterprise_enterprise_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "enterprise_id"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -412,37 +412,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "collection_points_catalog_item_id_fkey": {
           "name": "collection_points_catalog_item_id_fkey",
           "tableFrom": "collection_points",
-          "tableTo": "catalog_items",
           "columnsFrom": [
             "catalog_item_id"
           ],
+          "tableTo": "catalog_items",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "collection_points_enterprise_id_fkey": {
           "name": "collection_points_enterprise_id_fkey",
           "tableFrom": "collection_points",
-          "tableTo": "enterprise",
           "columnsFrom": [
             "enterprise_id"
           ],
+          "tableTo": "enterprise",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -583,32 +583,32 @@
         "enterprise_auth_user_id_user_fkey": {
           "name": "enterprise_auth_user_id_user_fkey",
           "tableFrom": "enterprise",
-          "tableTo": "user",
           "columnsFrom": [
             "auth_user_id"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "enterprise_document_key": {
           "name": "enterprise_document_key",
-          "nullsNotDistinct": false,
           "columns": [
             "document"
-          ]
+          ],
+          "nullsNotDistinct": false
         },
         "enterprise_auth_user_id_key": {
           "name": "enterprise_auth_user_id_key",
-          "nullsNotDistinct": false,
           "columns": [
             "auth_user_id"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -685,15 +685,15 @@
         "feedback_enterprise_id_fkey": {
           "name": "feedback_enterprise_id_fkey",
           "tableFrom": "feedback",
-          "tableTo": "enterprise",
           "columnsFrom": [
             "enterprise_id"
           ],
+          "tableTo": "enterprise",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -775,15 +775,15 @@
         "feedback_analysis_feedback_id_fkey": {
           "name": "feedback_analysis_feedback_id_fkey",
           "tableFrom": "feedback_analysis",
-          "tableTo": "feedback",
           "columnsFrom": [
             "feedback_id"
           ],
+          "tableTo": "feedback",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -873,9 +873,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "uq_feedback_insights_context": {
           "name": "uq_feedback_insights_context",
@@ -900,37 +900,37 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "feedback_insights_report_enterprise_id_fkey": {
           "name": "feedback_insights_report_enterprise_id_fkey",
           "tableFrom": "feedback_insights_report",
-          "tableTo": "enterprise",
           "columnsFrom": [
             "enterprise_id"
           ],
+          "tableTo": "enterprise",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "feedback_insights_report_catalog_item_id_fkey": {
           "name": "feedback_insights_report_catalog_item_id_fkey",
           "tableFrom": "feedback_insights_report",
-          "tableTo": "catalog_items",
           "columnsFrom": [
             "catalog_item_id"
           ],
+          "tableTo": "catalog_items",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -1005,9 +1005,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_feedback_question_answers_question_id": {
           "name": "idx_feedback_question_answers_question_id",
@@ -1020,48 +1020,48 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "feedback_question_answers_feedback_id_fkey": {
           "name": "feedback_question_answers_feedback_id_fkey",
           "tableFrom": "feedback_question_answers",
-          "tableTo": "feedback",
           "columnsFrom": [
             "feedback_id"
           ],
+          "tableTo": "feedback",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "feedback_question_answers_question_id_fkey": {
           "name": "feedback_question_answers_question_id_fkey",
           "tableFrom": "feedback_question_answers",
-          "tableTo": "questions_of_feedbacks",
           "columnsFrom": [
             "question_id"
           ],
+          "tableTo": "questions_of_feedbacks",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "feedback_question_answers_feedback_question_unique": {
           "name": "feedback_question_answers_feedback_question_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "feedback_id",
             "question_id"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1152,9 +1152,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_feedback_question_subquestions_question_id": {
           "name": "idx_feedback_question_subquestions_question_id",
@@ -1167,35 +1167,35 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "feedback_question_subquestions_question_id_fkey": {
           "name": "feedback_question_subquestions_question_id_fkey",
           "tableFrom": "feedback_question_subquestions",
-          "tableTo": "questions_of_feedbacks",
           "columnsFrom": [
             "question_id"
           ],
+          "tableTo": "questions_of_feedbacks",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "feedback_question_subquestions_question_order_unique": {
           "name": "feedback_question_subquestions_question_order_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "question_id",
             "subquestion_order"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1272,9 +1272,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_feedback_subquestion_answers_subquestion_id": {
           "name": "idx_feedback_subquestion_answers_subquestion_id",
@@ -1287,48 +1287,48 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "feedback_subquestion_answers_feedback_id_fkey": {
           "name": "feedback_subquestion_answers_feedback_id_fkey",
           "tableFrom": "feedback_subquestion_answers",
-          "tableTo": "feedback",
           "columnsFrom": [
             "feedback_id"
           ],
+          "tableTo": "feedback",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "feedback_subquestion_answers_subquestion_id_fkey": {
           "name": "feedback_subquestion_answers_subquestion_id_fkey",
           "tableFrom": "feedback_subquestion_answers",
-          "tableTo": "feedback_question_subquestions",
           "columnsFrom": [
             "subquestion_id"
           ],
+          "tableTo": "feedback_question_subquestions",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "feedback_subquestion_answers_feedback_subquestion_unique": {
           "name": "feedback_subquestion_answers_feedback_subquestion_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "feedback_id",
             "subquestion_id"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1437,9 +1437,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "uq_questions_company_order": {
           "name": "uq_questions_company_order",
@@ -1458,10 +1458,10 @@
             }
           ],
           "isUnique": true,
-          "where": "((scope_type = 'COMPANY'::text) AND (catalog_item_id IS NULL))",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "((scope_type = 'COMPANY'::text) AND (catalog_item_id IS NULL))",
+          "concurrently": false
         },
         "uq_questions_item_order": {
           "name": "uq_questions_item_order",
@@ -1492,38 +1492,38 @@
             }
           ],
           "isUnique": true,
-          "where": "((scope_type = ANY (ARRAY['PRODUCT'::text, 'SERVICE'::text, 'DEPARTMENT'::text])) AND (catalog_item_id IS NOT NULL))",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "((scope_type = ANY (ARRAY['PRODUCT'::text, 'SERVICE'::text, 'DEPARTMENT'::text])) AND (catalog_item_id IS NOT NULL))",
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "questions_of_feedbacks_enterprise_id_fkey": {
           "name": "questions_of_feedbacks_enterprise_id_fkey",
           "tableFrom": "questions_of_feedbacks",
-          "tableTo": "enterprise",
           "columnsFrom": [
             "enterprise_id"
           ],
+          "tableTo": "enterprise",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "questions_of_feedbacks_catalog_item_id_fkey": {
           "name": "questions_of_feedbacks_catalog_item_id_fkey",
           "tableFrom": "questions_of_feedbacks",
-          "tableTo": "catalog_items",
           "columnsFrom": [
             "catalog_item_id"
           ],
+          "tableTo": "catalog_items",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -1606,25 +1606,25 @@
         "session_user_id_fkey": {
           "name": "session_user_id_fkey",
           "tableFrom": "session",
-          "tableTo": "user",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "session_token_key": {
           "name": "session_token_key",
-          "nullsNotDistinct": false,
           "columns": [
             "token"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1730,15 +1730,15 @@
         "tracked_devices_enterprise_id_fkey": {
           "name": "tracked_devices_enterprise_id_fkey",
           "tableFrom": "tracked_devices",
-          "tableTo": "enterprise",
           "columnsFrom": [
             "enterprise_id"
           ],
+          "tableTo": "enterprise",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -1810,17 +1810,17 @@
       "uniqueConstraints": {
         "user_email_key": {
           "name": "user_email_key",
-          "nullsNotDistinct": false,
           "columns": [
             "email"
-          ]
+          ],
+          "nullsNotDistinct": false
         },
         "user_phone_key": {
           "name": "user_phone_key",
-          "nullsNotDistinct": false,
           "columns": [
             "phone"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1882,11 +1882,10 @@
   },
   "enums": {},
   "schemas": {},
-  "sequences": {},
-  "roles": {},
-  "policies": {},
   "views": {
     "public.enterprise_public": {
+      "name": "enterprise_public",
+      "schema": "public",
       "columns": {
         "id": {
           "name": "id",
@@ -1902,12 +1901,13 @@
         }
       },
       "definition": "SELECT e.id, COALESCE(pu.name, au.raw_user_meta_data ->> 'full_name'::text) AS name FROM enterprise e LEFT JOIN \"user\" pu ON pu.id = e.auth_user_id LEFT JOIN auth.users au ON au.id = e.auth_user_id",
-      "name": "enterprise_public",
-      "schema": "public",
-      "isExisting": false,
-      "materialized": false
+      "materialized": false,
+      "isExisting": false
     }
   },
+  "sequences": {},
+  "roles": {},
+  "policies": {},
   "_meta": {
     "columns": {},
     "schemas": {},

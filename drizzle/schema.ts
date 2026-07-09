@@ -54,7 +54,7 @@ export const collectionPoints = pgTable("collection_points", {
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow(),
 }, (table) => [
-	index("idx_collection_points_catalog_item_id").using("btree", table.catalogItemId.asc().nullsLast().op("uuid_ops")),
+	index("idx_collection_points_catalog_item_id").using("btree", table.catalogItemId.asc().nullsLast()),
 	foreignKey({
 			columns: [table.catalogItemId],
 			foreignColumns: [catalogItems.id],
@@ -78,9 +78,9 @@ export const questionsOfFeedbacks = pgTable("questions_of_feedbacks", {
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	index("idx_questions_context").using("btree", table.enterpriseId.asc().nullsLast().op("text_ops"), table.scopeType.asc().nullsLast().op("text_ops"), table.catalogItemId.asc().nullsLast().op("bool_ops"), table.isActive.asc().nullsLast().op("uuid_ops")),
-	uniqueIndex("uq_questions_company_order").using("btree", table.enterpriseId.asc().nullsLast().op("int4_ops"), table.questionOrder.asc().nullsLast().op("uuid_ops")).where(sql`((scope_type = 'COMPANY'::text) AND (catalog_item_id IS NULL))`),
-	uniqueIndex("uq_questions_item_order").using("btree", table.enterpriseId.asc().nullsLast().op("uuid_ops"), table.scopeType.asc().nullsLast().op("text_ops"), table.catalogItemId.asc().nullsLast().op("text_ops"), table.questionOrder.asc().nullsLast().op("text_ops")).where(sql`((scope_type = ANY (ARRAY['PRODUCT'::text, 'SERVICE'::text, 'DEPARTMENT'::text])) AND (catalog_item_id IS NOT NULL))`),
+	index("idx_questions_context").using("btree", table.enterpriseId.asc().nullsLast(), table.scopeType.asc().nullsLast(), table.catalogItemId.asc().nullsLast(), table.isActive.asc().nullsLast()),
+	uniqueIndex("uq_questions_company_order").using("btree", table.enterpriseId.asc().nullsLast(), table.questionOrder.asc().nullsLast()).where(sql`((scope_type = 'COMPANY'::text) AND (catalog_item_id IS NULL))`),
+	uniqueIndex("uq_questions_item_order").using("btree", table.enterpriseId.asc().nullsLast(), table.scopeType.asc().nullsLast(), table.catalogItemId.asc().nullsLast(), table.questionOrder.asc().nullsLast()).where(sql`((scope_type = ANY (ARRAY['PRODUCT'::text, 'SERVICE'::text, 'DEPARTMENT'::text])) AND (catalog_item_id IS NOT NULL))`),
 	foreignKey({
 			columns: [table.enterpriseId],
 			foreignColumns: [enterprise.id],
@@ -93,7 +93,7 @@ export const questionsOfFeedbacks = pgTable("questions_of_feedbacks", {
 		}).onDelete("cascade"),
 	check("questions_of_feedbacks_scope_type_check", sql`scope_type = ANY (ARRAY['COMPANY'::text, 'PRODUCT'::text, 'SERVICE'::text, 'DEPARTMENT'::text])`),
 	check("questions_of_feedbacks_question_order_check", sql`(question_order >= 1) AND (question_order <= 3)`),
-	check("questions_of_feedbacks_question_text_length_check", sql`(char_length(btrim(question_text)) >= 20) AND (char_length(btrim(question_text)) <= 150))) NOT VALID`),
+	check("questions_of_feedbacks_question_text_length_check", sql`(char_length(btrim(question_text)) >= 20) AND (char_length(btrim(question_text)) <= 150)`),
 ]);
 
 export const feedbackQuestionSubquestions = pgTable("feedback_question_subquestions", {
@@ -105,8 +105,8 @@ export const feedbackQuestionSubquestions = pgTable("feedback_question_subquesti
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	index("idx_feedback_question_subquestions_active").using("btree", table.questionId.asc().nullsLast().op("uuid_ops"), table.isActive.asc().nullsLast().op("int4_ops"), table.subquestionOrder.asc().nullsLast().op("bool_ops")),
-	index("idx_feedback_question_subquestions_question_id").using("btree", table.questionId.asc().nullsLast().op("uuid_ops")),
+	index("idx_feedback_question_subquestions_active").using("btree", table.questionId.asc().nullsLast(), table.isActive.asc().nullsLast(), table.subquestionOrder.asc().nullsLast()),
+	index("idx_feedback_question_subquestions_question_id").using("btree", table.questionId.asc().nullsLast()),
 	foreignKey({
 			columns: [table.questionId],
 			foreignColumns: [questionsOfFeedbacks.id],
@@ -114,7 +114,7 @@ export const feedbackQuestionSubquestions = pgTable("feedback_question_subquesti
 		}).onDelete("cascade"),
 	unique("feedback_question_subquestions_question_order_unique").on(table.questionId, table.subquestionOrder),
 	check("feedback_question_subquestions_order_check", sql`(subquestion_order >= 1) AND (subquestion_order <= 3)`),
-	check("feedback_question_subquestions_text_length_check", sql`(char_length(btrim(subquestion_text)) >= 20) AND (char_length(btrim(subquestion_text)) <= 150))) NOT VALID`),
+	check("feedback_question_subquestions_text_length_check", sql`(char_length(btrim(subquestion_text)) >= 20) AND (char_length(btrim(subquestion_text)) <= 150)`),
 ]);
 
 export const user = pgTable("user", {
@@ -165,8 +165,8 @@ export const catalogItems = pgTable("catalog_items", {
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow(),
 }, (table) => [
-	index("idx_catalog_items_enterprise_kind").using("btree", table.enterpriseId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops")),
-	index("idx_catalog_items_status").using("btree", table.status.asc().nullsLast().op("text_ops")),
+	index("idx_catalog_items_enterprise_kind").using("btree", table.enterpriseId.asc().nullsLast(), table.kind.asc().nullsLast()),
+	index("idx_catalog_items_status").using("btree", table.status.asc().nullsLast()),
 	foreignKey({
 			columns: [table.enterpriseId],
 			foreignColumns: [enterprise.id],
@@ -202,8 +202,8 @@ export const feedbackQuestionAnswers = pgTable("feedback_question_answers", {
 	answerScore: integer("answer_score").notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	index("idx_feedback_question_answers_feedback_id").using("btree", table.feedbackId.asc().nullsLast().op("uuid_ops")),
-	index("idx_feedback_question_answers_question_id").using("btree", table.questionId.asc().nullsLast().op("uuid_ops")),
+	index("idx_feedback_question_answers_feedback_id").using("btree", table.feedbackId.asc().nullsLast()),
+	index("idx_feedback_question_answers_question_id").using("btree", table.questionId.asc().nullsLast()),
 	foreignKey({
 			columns: [table.feedbackId],
 			foreignColumns: [feedback.id],
@@ -228,8 +228,8 @@ export const feedbackSubquestionAnswers = pgTable("feedback_subquestion_answers"
 	answerScore: integer("answer_score").notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	index("idx_feedback_subquestion_answers_feedback_id").using("btree", table.feedbackId.asc().nullsLast().op("uuid_ops")),
-	index("idx_feedback_subquestion_answers_subquestion_id").using("btree", table.subquestionId.asc().nullsLast().op("uuid_ops")),
+	index("idx_feedback_subquestion_answers_feedback_id").using("btree", table.feedbackId.asc().nullsLast()),
+	index("idx_feedback_subquestion_answers_subquestion_id").using("btree", table.subquestionId.asc().nullsLast()),
 	foreignKey({
 			columns: [table.feedbackId],
 			foreignColumns: [feedback.id],
@@ -275,8 +275,8 @@ export const feedbackInsightsReport = pgTable("feedback_insights_report", {
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow(),
 }, (table) => [
-	index("idx_feedback_insights_report_enterprise_updated").using("btree", table.enterpriseId.asc().nullsLast().op("timestamptz_ops"), table.updatedAt.desc().nullsFirst().op("uuid_ops")),
-	uniqueIndex("uq_feedback_insights_context").using("btree", table.enterpriseId.asc().nullsLast().op("text_ops"), table.scopeType.asc().nullsLast().op("uuid_ops"), table.catalogItemId.asc().nullsLast().op("uuid_ops")),
+	index("idx_feedback_insights_report_enterprise_updated").using("btree", table.enterpriseId.asc().nullsLast(), table.updatedAt.desc().nullsFirst()),
+	uniqueIndex("uq_feedback_insights_context").using("btree", table.enterpriseId.asc().nullsLast(), table.scopeType.asc().nullsLast(), table.catalogItemId.asc().nullsLast()),
 	foreignKey({
 			columns: [table.enterpriseId],
 			foreignColumns: [enterprise.id],

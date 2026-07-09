@@ -142,7 +142,7 @@ CREATE TABLE "feedback_question_subquestions" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "feedback_question_subquestions_question_order_unique" UNIQUE("question_id","subquestion_order"),
 	CONSTRAINT "feedback_question_subquestions_order_check" CHECK ((subquestion_order >= 1) AND (subquestion_order <= 3)),
-	CONSTRAINT "feedback_question_subquestions_text_length_check" CHECK ((char_length(btrim(subquestion_text)) >= 20) AND (char_length(btrim(subquestion_text)) <= 150))) NOT VALID)
+	CONSTRAINT "feedback_question_subquestions_text_length_check" CHECK ((char_length(btrim(subquestion_text)) >= 20) AND (char_length(btrim(subquestion_text)) <= 150))
 );
 --> statement-breakpoint
 CREATE TABLE "feedback_subquestion_answers" (
@@ -170,7 +170,7 @@ CREATE TABLE "questions_of_feedbacks" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "questions_of_feedbacks_scope_type_check" CHECK (scope_type = ANY (ARRAY['COMPANY'::text, 'PRODUCT'::text, 'SERVICE'::text, 'DEPARTMENT'::text])),
 	CONSTRAINT "questions_of_feedbacks_question_order_check" CHECK ((question_order >= 1) AND (question_order <= 3)),
-	CONSTRAINT "questions_of_feedbacks_question_text_length_check" CHECK ((char_length(btrim(question_text)) >= 20) AND (char_length(btrim(question_text)) <= 150))) NOT VALID)
+	CONSTRAINT "questions_of_feedbacks_question_text_length_check" CHECK ((char_length(btrim(question_text)) >= 20) AND (char_length(btrim(question_text)) <= 150))
 );
 --> statement-breakpoint
 CREATE TABLE "session" (
@@ -242,18 +242,18 @@ ALTER TABLE "questions_of_feedbacks" ADD CONSTRAINT "questions_of_feedbacks_ente
 ALTER TABLE "questions_of_feedbacks" ADD CONSTRAINT "questions_of_feedbacks_catalog_item_id_fkey" FOREIGN KEY ("catalog_item_id") REFERENCES "public"."catalog_items"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "session" ADD CONSTRAINT "session_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tracked_devices" ADD CONSTRAINT "tracked_devices_enterprise_id_fkey" FOREIGN KEY ("enterprise_id") REFERENCES "public"."enterprise"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "idx_catalog_items_enterprise_kind" ON "catalog_items" USING btree ("enterprise_id" text_ops,"kind" text_ops);--> statement-breakpoint
-CREATE INDEX "idx_catalog_items_status" ON "catalog_items" USING btree ("status" text_ops);--> statement-breakpoint
-CREATE INDEX "idx_collection_points_catalog_item_id" ON "collection_points" USING btree ("catalog_item_id" uuid_ops);--> statement-breakpoint
-CREATE INDEX "idx_feedback_insights_report_enterprise_updated" ON "feedback_insights_report" USING btree ("enterprise_id" timestamptz_ops,"updated_at" uuid_ops);--> statement-breakpoint
-CREATE UNIQUE INDEX "uq_feedback_insights_context" ON "feedback_insights_report" USING btree ("enterprise_id" text_ops,"scope_type" uuid_ops,"catalog_item_id" uuid_ops);--> statement-breakpoint
-CREATE INDEX "idx_feedback_question_answers_feedback_id" ON "feedback_question_answers" USING btree ("feedback_id" uuid_ops);--> statement-breakpoint
-CREATE INDEX "idx_feedback_question_answers_question_id" ON "feedback_question_answers" USING btree ("question_id" uuid_ops);--> statement-breakpoint
-CREATE INDEX "idx_feedback_question_subquestions_active" ON "feedback_question_subquestions" USING btree ("question_id" uuid_ops,"is_active" int4_ops,"subquestion_order" bool_ops);--> statement-breakpoint
-CREATE INDEX "idx_feedback_question_subquestions_question_id" ON "feedback_question_subquestions" USING btree ("question_id" uuid_ops);--> statement-breakpoint
-CREATE INDEX "idx_feedback_subquestion_answers_feedback_id" ON "feedback_subquestion_answers" USING btree ("feedback_id" uuid_ops);--> statement-breakpoint
-CREATE INDEX "idx_feedback_subquestion_answers_subquestion_id" ON "feedback_subquestion_answers" USING btree ("subquestion_id" uuid_ops);--> statement-breakpoint
-CREATE INDEX "idx_questions_context" ON "questions_of_feedbacks" USING btree ("enterprise_id" text_ops,"scope_type" text_ops,"catalog_item_id" bool_ops,"is_active" uuid_ops);--> statement-breakpoint
-CREATE UNIQUE INDEX "uq_questions_company_order" ON "questions_of_feedbacks" USING btree ("enterprise_id" int4_ops,"question_order" uuid_ops) WHERE ((scope_type = 'COMPANY'::text) AND (catalog_item_id IS NULL));--> statement-breakpoint
-CREATE UNIQUE INDEX "uq_questions_item_order" ON "questions_of_feedbacks" USING btree ("enterprise_id" uuid_ops,"scope_type" text_ops,"catalog_item_id" text_ops,"question_order" text_ops) WHERE ((scope_type = ANY (ARRAY['PRODUCT'::text, 'SERVICE'::text, 'DEPARTMENT'::text])) AND (catalog_item_id IS NOT NULL));--> statement-breakpoint
+CREATE INDEX "idx_catalog_items_enterprise_kind" ON "catalog_items" USING btree ("enterprise_id","kind");--> statement-breakpoint
+CREATE INDEX "idx_catalog_items_status" ON "catalog_items" USING btree ("status");--> statement-breakpoint
+CREATE INDEX "idx_collection_points_catalog_item_id" ON "collection_points" USING btree ("catalog_item_id");--> statement-breakpoint
+CREATE INDEX "idx_feedback_insights_report_enterprise_updated" ON "feedback_insights_report" USING btree ("enterprise_id","updated_at" DESC NULLS FIRST);--> statement-breakpoint
+CREATE UNIQUE INDEX "uq_feedback_insights_context" ON "feedback_insights_report" USING btree ("enterprise_id","scope_type","catalog_item_id");--> statement-breakpoint
+CREATE INDEX "idx_feedback_question_answers_feedback_id" ON "feedback_question_answers" USING btree ("feedback_id");--> statement-breakpoint
+CREATE INDEX "idx_feedback_question_answers_question_id" ON "feedback_question_answers" USING btree ("question_id");--> statement-breakpoint
+CREATE INDEX "idx_feedback_question_subquestions_active" ON "feedback_question_subquestions" USING btree ("question_id","is_active","subquestion_order");--> statement-breakpoint
+CREATE INDEX "idx_feedback_question_subquestions_question_id" ON "feedback_question_subquestions" USING btree ("question_id");--> statement-breakpoint
+CREATE INDEX "idx_feedback_subquestion_answers_feedback_id" ON "feedback_subquestion_answers" USING btree ("feedback_id");--> statement-breakpoint
+CREATE INDEX "idx_feedback_subquestion_answers_subquestion_id" ON "feedback_subquestion_answers" USING btree ("subquestion_id");--> statement-breakpoint
+CREATE INDEX "idx_questions_context" ON "questions_of_feedbacks" USING btree ("enterprise_id","scope_type","catalog_item_id","is_active");--> statement-breakpoint
+CREATE UNIQUE INDEX "uq_questions_company_order" ON "questions_of_feedbacks" USING btree ("enterprise_id","question_order") WHERE ((scope_type = 'COMPANY'::text) AND (catalog_item_id IS NULL));--> statement-breakpoint
+CREATE UNIQUE INDEX "uq_questions_item_order" ON "questions_of_feedbacks" USING btree ("enterprise_id","scope_type","catalog_item_id","question_order") WHERE ((scope_type = ANY (ARRAY['PRODUCT'::text, 'SERVICE'::text, 'DEPARTMENT'::text])) AND (catalog_item_id IS NOT NULL));--> statement-breakpoint
 CREATE VIEW "public"."enterprise_public" AS (SELECT e.id, COALESCE(pu.name, au.raw_user_meta_data ->> 'full_name'::text) AS name FROM enterprise e LEFT JOIN "user" pu ON pu.id = e.auth_user_id LEFT JOIN auth.users au ON au.id = e.auth_user_id);
