@@ -45,7 +45,7 @@ acesso a dados é 100% via Drizzle, que ignora a RLS). É idempotente.
 
 **As mesmas 4 tabelas têm três definições mantidas à mão** — mantenha-as em sincronia:
 
-1. `src/auth/schema.ts` — descrição Drizzle que o `drizzleAdapter` usa em **runtime**.
+1. `drizzle/schema.ts` — descrição Drizzle (fonte única) que o `drizzleAdapter` usa em **runtime** (as 4 tabelas com `mode:'date'` nos timestamps).
 2. `db/cutover/betterauth-enable.sql` — cria em **produção** (Supabase, manual).
 3. `db/schema/tables/public.better_auth.sql` — cria no **banco local** (`db:reset`).
 

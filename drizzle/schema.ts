@@ -5,11 +5,13 @@
 //   (user/session/account/verification), a FK enterprise.auth_user_id → public.user
 //   (ON DELETE CASCADE) e SEM as policies RLS legadas.
 //
-//   Pendências da Fase 2:
+//   As 4 tabelas Better Auth são FONTE ÚNICA aqui e o drizzleAdapter (src/auth/auth.ts)
+//   as consome — os timestamps delas usam mode:'date' (o Better Auth passa Date, não
+//   string, diferente das tabelas de negócio).
+//
+//   Pendência da Fase 2:
 //    - A view enterprise_public ainda faz LEFT JOIN em auth.users (fallback legado):
 //      única referência a auth.users que resta — migrar no Passo 7.
-//    - As tabelas Better Auth também vivem em src/auth/schema.ts (usado pelo
-//      drizzleAdapter); consolidar numa definição só (Passo 2) — em andamento.
 // ─────────────────────────────────────────────────────────────────────────────
 import { pgTable, uuid, text, timestamp, unique, boolean, index, foreignKey, uniqueIndex, check, integer, jsonb, numeric, inet, pgView } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
@@ -20,9 +22,9 @@ export const verification = pgTable("verification", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	identifier: text().notNull(),
 	value: text().notNull(),
-	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).notNull(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'date' }).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
 });
 
 export const collectingDataEnterprise = pgTable("collecting_data_enterprise", {
@@ -122,8 +124,8 @@ export const user = pgTable("user", {
 	emailVerified: boolean("email_verified").default(false).notNull(),
 	image: text(),
 	phone: text(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
 }, (table) => [
 	unique("user_email_key").on(table.email),
 	unique("user_phone_key").on(table.phone),
@@ -325,11 +327,11 @@ export const session = pgTable("session", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	userId: uuid("user_id").notNull(),
 	token: text().notNull(),
-	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).notNull(),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'date' }).notNull(),
 	ipAddress: text("ip_address"),
 	userAgent: text("user_agent"),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
 }, (table) => [
 	foreignKey({
 			columns: [table.userId],
@@ -346,13 +348,13 @@ export const account = pgTable("account", {
 	providerId: text("provider_id").notNull(),
 	accessToken: text("access_token"),
 	refreshToken: text("refresh_token"),
-	accessTokenExpiresAt: timestamp("access_token_expires_at", { withTimezone: true, mode: 'string' }),
-	refreshTokenExpiresAt: timestamp("refresh_token_expires_at", { withTimezone: true, mode: 'string' }),
+	accessTokenExpiresAt: timestamp("access_token_expires_at", { withTimezone: true, mode: 'date' }),
+	refreshTokenExpiresAt: timestamp("refresh_token_expires_at", { withTimezone: true, mode: 'date' }),
 	scope: text(),
 	idToken: text("id_token"),
 	password: text(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
 }, (table) => [
 	foreignKey({
 			columns: [table.userId],

@@ -18,7 +18,8 @@ import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import bcrypt from 'bcryptjs';
 import { getDb } from '../db/client.js';
-import * as authSchema from './schema.js';
+// Tabelas do Better Auth vêm da FONTE ÚNICA (drizzle/schema.ts) — ADR-0001 Fase 2.
+import { user, session, account, verification } from '../../drizzle/schema.js';
 import { sendResetPasswordEmail, sendVerificationEmail } from './email.js';
 
 function buildTrustedOrigins(): string[] {
@@ -45,7 +46,7 @@ function createAuth() {
     secret: process.env.BETTER_AUTH_SECRET,
     baseURL: process.env.BETTER_AUTH_URL ?? 'http://localhost:3000',
     basePath: '/api/auth',
-    database: drizzleAdapter(getDb(), { provider: 'pg', schema: authSchema }),
+    database: drizzleAdapter(getDb(), { provider: 'pg', schema: { user, session, account, verification } }),
     advanced: {
       // Deixa o Postgres gerar o id (uuid) → preserva os UUIDs migrados.
       database: { generateId: false },
