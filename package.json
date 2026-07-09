@@ -20,9 +20,7 @@
     "db:local:down": "docker compose down",
     "db:reset": "node scripts/db-local.mjs && npm run db:seed:e2e",
     "db:seed:e2e": "tsx scripts/seed-e2e-user.ts",
-    "verify:stats": "tsx scripts/verify-stats-drizzle.ts",
-    "db:drift:snapshot": "docker exec feedback-api-db pg_dump --schema=public --schema-only --no-owner --no-privileges -U postgres -d feedback | node scripts/schema-drift.mjs --write",
-    "db:drift:check": "docker exec feedback-api-db pg_dump --schema=public --schema-only --no-owner --no-privileges -U postgres -d feedback | node scripts/schema-drift.mjs"
+    "verify:stats": "tsx scripts/verify-stats-drizzle.ts"
   },
   "dependencies": {
     "@feedback/lib-shared": "github:TCC-Feedback-Analytics/feedback-analytics-contracts#v1.0.0",
