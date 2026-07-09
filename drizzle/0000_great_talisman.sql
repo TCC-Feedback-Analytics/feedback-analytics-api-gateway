@@ -256,4 +256,4 @@ CREATE INDEX "idx_feedback_subquestion_answers_subquestion_id" ON "feedback_subq
 CREATE INDEX "idx_questions_context" ON "questions_of_feedbacks" USING btree ("enterprise_id","scope_type","catalog_item_id","is_active");--> statement-breakpoint
 CREATE UNIQUE INDEX "uq_questions_company_order" ON "questions_of_feedbacks" USING btree ("enterprise_id","question_order") WHERE ((scope_type = 'COMPANY'::text) AND (catalog_item_id IS NULL));--> statement-breakpoint
 CREATE UNIQUE INDEX "uq_questions_item_order" ON "questions_of_feedbacks" USING btree ("enterprise_id","scope_type","catalog_item_id","question_order") WHERE ((scope_type = ANY (ARRAY['PRODUCT'::text, 'SERVICE'::text, 'DEPARTMENT'::text])) AND (catalog_item_id IS NOT NULL));--> statement-breakpoint
-CREATE VIEW "public"."enterprise_public" AS (SELECT e.id, COALESCE(pu.name, au.raw_user_meta_data ->> 'full_name'::text) AS name FROM enterprise e LEFT JOIN "user" pu ON pu.id = e.auth_user_id LEFT JOIN auth.users au ON au.id = e.auth_user_id);
+CREATE VIEW "public"."enterprise_public" AS (SELECT e.id, pu.name AS name FROM enterprise e LEFT JOIN "user" pu ON pu.id = e.auth_user_id);

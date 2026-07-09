@@ -9,9 +9,10 @@
 //   as consome — os timestamps delas usam mode:'date' (o Better Auth passa Date, não
 //   string, diferente das tabelas de negócio).
 //
-//   Pendência da Fase 2:
-//    - A view enterprise_public ainda faz LEFT JOIN em auth.users (fallback legado):
-//      única referência a auth.users que resta — migrar no Passo 7.
+//   O schema NÃO depende mais de auth.users (Passo 7 concluído): a view
+//   enterprise_public lê só public.user, e as funções legadas do Supabase Auth
+//   (clean_user_metadata_before_change, create_enterprise_on_signup, jwt_custom_claims,
+//   phone_exists) foram removidas do 0001.
 // ─────────────────────────────────────────────────────────────────────────────
 import { pgTable, uuid, text, timestamp, unique, boolean, index, foreignKey, uniqueIndex, check, integer, jsonb, numeric, inet, pgView } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
@@ -364,4 +365,4 @@ export const account = pgTable("account", {
 ]);
 export const enterprisePublic = pgView("enterprise_public", {	id: uuid(),
 	name: text(),
-}).as(sql`SELECT e.id, COALESCE(pu.name, au.raw_user_meta_data ->> 'full_name'::text) AS name FROM enterprise e LEFT JOIN "user" pu ON pu.id = e.auth_user_id LEFT JOIN auth.users au ON au.id = e.auth_user_id`);
+}).as(sql`SELECT e.id, pu.name AS name FROM enterprise e LEFT JOIN "user" pu ON pu.id = e.auth_user_id`);

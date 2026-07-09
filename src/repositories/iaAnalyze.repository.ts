@@ -249,8 +249,7 @@ export async function fetchEnterpriseContextForAnalysis(params: {
     .where(eq(collectingDataEnterprise.enterpriseId, enterpriseId))
     .limit(1);
 
-  // Nome via view enterprise_public (hoje resolve por auth.users; forward-compat
-  // quando a view for reescrita para public.user no fechamento da Fase 2).
+  // Nome via view enterprise_public (resolve por public.user).
   const nameRows = await db.execute(
     sql`SELECT name FROM public.enterprise_public WHERE id = ${enterpriseId} LIMIT 1`,
   );

@@ -1,6 +1,6 @@
 {
-  "id": "52b0f752-0755-4e8e-8715-17a976a08d12",
-  "prevId": "6ec7d5a0-b782-4d9c-bdea-2256c59980e3",
+  "id": "8785cef6-a984-4603-9f5d-2f7c650ad52a",
+  "prevId": "a8f20434-d2a3-4ae4-8a87-780eec1e14e4",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1900,7 +1900,7 @@
           "notNull": false
         }
       },
-      "definition": "SELECT e.id, COALESCE(pu.name, au.raw_user_meta_data ->> 'full_name'::text) AS name FROM enterprise e LEFT JOIN \"user\" pu ON pu.id = e.auth_user_id LEFT JOIN auth.users au ON au.id = e.auth_user_id",
+      "definition": "SELECT e.id, pu.name AS name FROM enterprise e LEFT JOIN \"user\" pu ON pu.id = e.auth_user_id",
       "materialized": false,
       "isExisting": false
     }

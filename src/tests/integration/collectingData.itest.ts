@@ -63,14 +63,13 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
-  // Limpeza explícita em ordem de FK (o schema local não garante cascade a partir
-  // de auth.users): filhos → enterprise → auth.user.
+  // Limpeza explícita: filhos → enterprise → public.user.
   const db = getDb();
   await db.execute(sql`DELETE FROM public.questions_of_feedbacks WHERE enterprise_id = ${C_ENT}`);
   await db.execute(sql`DELETE FROM public.catalog_items WHERE enterprise_id = ${C_ENT}`);
   await db.execute(sql`DELETE FROM public.collecting_data_enterprise WHERE enterprise_id = ${C_ENT}`);
   await db.execute(sql`DELETE FROM public.enterprise WHERE id = ${C_ENT}`);
-  await db.execute(sql`DELETE FROM auth.users WHERE id = ${C_USER}`);
+  await db.execute(sql`DELETE FROM public."user" WHERE id = ${C_USER}`);
   await closeDb();
 });
 

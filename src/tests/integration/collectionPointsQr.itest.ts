@@ -67,7 +67,7 @@ afterAll(async () => {
   await db.execute(sql`DELETE FROM public.questions_of_feedbacks WHERE enterprise_id = ${D_ENT}`);
   await db.execute(sql`DELETE FROM public.catalog_items WHERE enterprise_id = ${D_ENT}`);
   await db.execute(sql`DELETE FROM public.enterprise WHERE id = ${D_ENT}`);
-  await db.execute(sql`DELETE FROM auth.users WHERE id = ${D_USER}`);
+  await db.execute(sql`DELETE FROM public."user" WHERE id = ${D_USER}`);
   await closeDb();
 });
 
