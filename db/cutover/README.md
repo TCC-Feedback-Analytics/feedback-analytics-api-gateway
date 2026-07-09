@@ -92,7 +92,7 @@ CREATE TABLE IF NOT EXISTS drizzle."__drizzle_migrations" (
 );
 INSERT INTO drizzle."__drizzle_migrations" (hash, created_at) VALUES
   ('b7e03e1bab11ffa2a7a389ac45ed9300256cba9714f9b6fc647ec42d7bd0ff68', 1783560212472),  -- 0000_great_talisman
-  ('b3687d600dc52840b0aa52218bc6aaf6b99aff15d01f633741669cb5ed2fd98f', 1783560214072);  -- 0001_functions_triggers_rls
+  ('2e14770d14f69fbffcbb35064fa8c372f56d01f1028505d6e0d4f1e99180572c', 1783560214072);  -- 0001_functions_triggers_rls
 ```
 
 > ⚠️ Os hashes são o **sha256** de `drizzle/0000_great_talisman.sql` e `drizzle/0001_functions_triggers_rls.sql` **deste commit**. Se as migrations forem regeneradas, recompute (`sha256sum drizzle/0000_*.sql drizzle/0001_*.sql`) e use o `when` de `drizzle/meta/_journal.json`.
