@@ -784,6 +784,16 @@ Cria uma nova conta. Por segurança (RNE-014), e-mail já cadastrado **não** é
 
 > O e-mail duplicado **não** gera erro — retorna `200 confirmation_required` (anti-enumeração).
 
+**Ordem de escrita no cadastro.** As pré-checagens (telefone, documento, e-mail) são apenas leitura. Em caso de sucesso, as tabelas são preenchidas nesta ordem:
+
+1. `public.user` — o usuário (Better Auth)
+2. `public.account` — credencial + hash de senha (provider `credential`)
+3. `public.verification` — token do e-mail de confirmação
+4. `public.enterprise` — empresa do gestor (trial de 4 meses, `TRIAL`)
+5. `public.questions_of_feedbacks` — as 3 perguntas COMPANY padrão
+
+Os passos 1–3 são do `signUpEmail` do Better Auth; os 4–5 são o provisionamento da empresa (`provisionEnterpriseForUser`), numa transação Drizzle própria.
+
 ---
 
 ### `POST /api/public/auth/forgot-password`

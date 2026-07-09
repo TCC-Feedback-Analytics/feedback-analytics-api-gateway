@@ -1,26 +1,7 @@
 import { relations } from "drizzle-orm/relations";
-import { collectionPoints, feedback, enterprise, trackedDevices, feedbackAnalysis, customer, usersInAuth, catalogItems, questionsOfFeedbacks, feedbackQuestionAnswers, collectingDataEnterprise, feedbackInsightsReport, feedbackQuestionSubquestions, feedbackSubquestionAnswers } from "./schema";
+import { catalogItems, collectionPoints, enterprise, questionsOfFeedbacks, feedbackQuestionSubquestions, user, feedback, feedbackQuestionAnswers, feedbackSubquestionAnswers, feedbackAnalysis, feedbackInsightsReport, trackedDevices, session, account } from "./schema";
 
-export const feedbackRelations = relations(feedback, ({one, many}) => ({
-	collectionPoint: one(collectionPoints, {
-		fields: [feedback.collectionPointId],
-		references: [collectionPoints.id]
-	}),
-	enterprise: one(enterprise, {
-		fields: [feedback.enterpriseId],
-		references: [enterprise.id]
-	}),
-	trackedDevice: one(trackedDevices, {
-		fields: [feedback.trackedDeviceId],
-		references: [trackedDevices.id]
-	}),
-	feedbackAnalyses: many(feedbackAnalysis),
-	feedbackQuestionAnswers: many(feedbackQuestionAnswers),
-	feedbackSubquestionAnswers: many(feedbackSubquestionAnswers),
-}));
-
-export const collectionPointsRelations = relations(collectionPoints, ({one, many}) => ({
-	feedbacks: many(feedback),
+export const collectionPointsRelations = relations(collectionPoints, ({one}) => ({
 	catalogItem: one(catalogItems, {
 		fields: [collectionPoints.catalogItemId],
 		references: [catalogItems.id]
@@ -31,78 +12,64 @@ export const collectionPointsRelations = relations(collectionPoints, ({one, many
 	}),
 }));
 
-export const enterpriseRelations = relations(enterprise, ({one, many}) => ({
-	feedbacks: many(feedback),
-	customers: many(customer),
-	trackedDevices: many(trackedDevices),
-	questionsOfFeedbacks: many(questionsOfFeedbacks),
-	usersInAuth: one(usersInAuth, {
-		fields: [enterprise.authUserId],
-		references: [usersInAuth.id]
-	}),
-	collectingDataEnterprises: many(collectingDataEnterprise),
-	collectionPoints: many(collectionPoints),
-	feedbackInsightsReports: many(feedbackInsightsReport),
-	catalogItems: many(catalogItems),
-}));
-
-export const trackedDevicesRelations = relations(trackedDevices, ({one, many}) => ({
-	feedbacks: many(feedback),
-	usersInAuth: one(usersInAuth, {
-		fields: [trackedDevices.blockedBy],
-		references: [usersInAuth.id]
-	}),
-	customer: one(customer, {
-		fields: [trackedDevices.customerId],
-		references: [customer.id]
-	}),
-	enterprise: one(enterprise, {
-		fields: [trackedDevices.enterpriseId],
-		references: [enterprise.id]
-	}),
-}));
-
-export const feedbackAnalysisRelations = relations(feedbackAnalysis, ({one}) => ({
-	feedback: one(feedback, {
-		fields: [feedbackAnalysis.feedbackId],
-		references: [feedback.id]
-	}),
-}));
-
-export const customerRelations = relations(customer, ({one, many}) => ({
-	enterprise: one(enterprise, {
-		fields: [customer.enterpriseId],
-		references: [enterprise.id]
-	}),
-	trackedDevices: many(trackedDevices),
-}));
-
-export const usersInAuthRelations = relations(usersInAuth, ({many}) => ({
-	trackedDevices: many(trackedDevices),
-	enterprises: many(enterprise),
-}));
-
-export const questionsOfFeedbacksRelations = relations(questionsOfFeedbacks, ({one, many}) => ({
-	catalogItem: one(catalogItems, {
-		fields: [questionsOfFeedbacks.catalogItemId],
-		references: [catalogItems.id]
-	}),
-	enterprise: one(enterprise, {
-		fields: [questionsOfFeedbacks.enterpriseId],
-		references: [enterprise.id]
-	}),
-	feedbackQuestionAnswers: many(feedbackQuestionAnswers),
-	feedbackQuestionSubquestions: many(feedbackQuestionSubquestions),
-}));
-
 export const catalogItemsRelations = relations(catalogItems, ({one, many}) => ({
-	questionsOfFeedbacks: many(questionsOfFeedbacks),
 	collectionPoints: many(collectionPoints),
-	feedbackInsightsReports: many(feedbackInsightsReport),
+	questionsOfFeedbacks: many(questionsOfFeedbacks),
 	enterprise: one(enterprise, {
 		fields: [catalogItems.enterpriseId],
 		references: [enterprise.id]
 	}),
+	feedbackInsightsReports: many(feedbackInsightsReport),
+}));
+
+export const enterpriseRelations = relations(enterprise, ({one, many}) => ({
+	collectionPoints: many(collectionPoints),
+	questionsOfFeedbacks: many(questionsOfFeedbacks),
+	user: one(user, {
+		fields: [enterprise.authUserId],
+		references: [user.id]
+	}),
+	catalogItems: many(catalogItems),
+	feedbacks: many(feedback),
+	feedbackInsightsReports: many(feedbackInsightsReport),
+	trackedDevices: many(trackedDevices),
+}));
+
+export const questionsOfFeedbacksRelations = relations(questionsOfFeedbacks, ({one, many}) => ({
+	enterprise: one(enterprise, {
+		fields: [questionsOfFeedbacks.enterpriseId],
+		references: [enterprise.id]
+	}),
+	catalogItem: one(catalogItems, {
+		fields: [questionsOfFeedbacks.catalogItemId],
+		references: [catalogItems.id]
+	}),
+	feedbackQuestionSubquestions: many(feedbackQuestionSubquestions),
+	feedbackQuestionAnswers: many(feedbackQuestionAnswers),
+}));
+
+export const feedbackQuestionSubquestionsRelations = relations(feedbackQuestionSubquestions, ({one, many}) => ({
+	questionsOfFeedback: one(questionsOfFeedbacks, {
+		fields: [feedbackQuestionSubquestions.questionId],
+		references: [questionsOfFeedbacks.id]
+	}),
+	feedbackSubquestionAnswers: many(feedbackSubquestionAnswers),
+}));
+
+export const userRelations = relations(user, ({many}) => ({
+	enterprises: many(enterprise),
+	sessions: many(session),
+	accounts: many(account),
+}));
+
+export const feedbackRelations = relations(feedback, ({one, many}) => ({
+	enterprise: one(enterprise, {
+		fields: [feedback.enterpriseId],
+		references: [enterprise.id]
+	}),
+	feedbackQuestionAnswers: many(feedbackQuestionAnswers),
+	feedbackSubquestionAnswers: many(feedbackSubquestionAnswers),
+	feedbackAnalyses: many(feedbackAnalysis),
 }));
 
 export const feedbackQuestionAnswersRelations = relations(feedbackQuestionAnswers, ({one}) => ({
@@ -116,32 +83,6 @@ export const feedbackQuestionAnswersRelations = relations(feedbackQuestionAnswer
 	}),
 }));
 
-export const collectingDataEnterpriseRelations = relations(collectingDataEnterprise, ({one}) => ({
-	enterprise: one(enterprise, {
-		fields: [collectingDataEnterprise.enterpriseId],
-		references: [enterprise.id]
-	}),
-}));
-
-export const feedbackInsightsReportRelations = relations(feedbackInsightsReport, ({one}) => ({
-	catalogItem: one(catalogItems, {
-		fields: [feedbackInsightsReport.catalogItemId],
-		references: [catalogItems.id]
-	}),
-	enterprise: one(enterprise, {
-		fields: [feedbackInsightsReport.enterpriseId],
-		references: [enterprise.id]
-	}),
-}));
-
-export const feedbackQuestionSubquestionsRelations = relations(feedbackQuestionSubquestions, ({one, many}) => ({
-	questionsOfFeedback: one(questionsOfFeedbacks, {
-		fields: [feedbackQuestionSubquestions.questionId],
-		references: [questionsOfFeedbacks.id]
-	}),
-	feedbackSubquestionAnswers: many(feedbackSubquestionAnswers),
-}));
-
 export const feedbackSubquestionAnswersRelations = relations(feedbackSubquestionAnswers, ({one}) => ({
 	feedback: one(feedback, {
 		fields: [feedbackSubquestionAnswers.feedbackId],
@@ -150,5 +91,44 @@ export const feedbackSubquestionAnswersRelations = relations(feedbackSubquestion
 	feedbackQuestionSubquestion: one(feedbackQuestionSubquestions, {
 		fields: [feedbackSubquestionAnswers.subquestionId],
 		references: [feedbackQuestionSubquestions.id]
+	}),
+}));
+
+export const feedbackAnalysisRelations = relations(feedbackAnalysis, ({one}) => ({
+	feedback: one(feedback, {
+		fields: [feedbackAnalysis.feedbackId],
+		references: [feedback.id]
+	}),
+}));
+
+export const feedbackInsightsReportRelations = relations(feedbackInsightsReport, ({one}) => ({
+	enterprise: one(enterprise, {
+		fields: [feedbackInsightsReport.enterpriseId],
+		references: [enterprise.id]
+	}),
+	catalogItem: one(catalogItems, {
+		fields: [feedbackInsightsReport.catalogItemId],
+		references: [catalogItems.id]
+	}),
+}));
+
+export const trackedDevicesRelations = relations(trackedDevices, ({one}) => ({
+	enterprise: one(enterprise, {
+		fields: [trackedDevices.enterpriseId],
+		references: [enterprise.id]
+	}),
+}));
+
+export const sessionRelations = relations(session, ({one}) => ({
+	user: one(user, {
+		fields: [session.userId],
+		references: [user.id]
+	}),
+}));
+
+export const accountRelations = relations(account, ({one}) => ({
+	user: one(user, {
+		fields: [account.userId],
+		references: [user.id]
 	}),
 }));
