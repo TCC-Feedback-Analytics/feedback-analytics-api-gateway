@@ -1,6 +1,6 @@
 # ADR-0001: Fonte única de schema no Drizzle (schema.ts + migrations), com guard-rail interino contra drift pós-cutover Better Auth
 
-**Status:** Proposto
+**Status:** Aceito (Fase 1 + Fase 2 implementadas localmente; Passo 8/produção pendente — ver "Estado da implementação")
 **Data:** 2026-07-08
 **Decisores:** Time do api-gateway (TCC)
 
@@ -144,6 +144,8 @@ Nota de severidade: o drift de RLS é de baixo risco funcional (runtime ignora R
 - [ ] Abrir tarefa "Fase 2 — consolidação na fonte única", com os gatilhos de revisão desta decisão.
 
 **Fase 2 — Consolidação na fonte única (pós-entrega/defesa):** — runbook passo a passo em [`0001-plano-fase2-rebaseline.md`](0001-plano-fase2-rebaseline.md)
+
+> **Estado da implementação (2026-07-08):** a Fase 2 foi **implementada e verificada localmente** — `drizzle/schema.ts` reconciliado e re-baselineado (`0000` = tabelas/FKs/índices/view; `0001` custom = funções/triggers/RLS), `db:reset` passou a rodar `drizzle-kit migrate + seed`, `db/schema/` e o shim foram **removidos**, o guard-rail golden foi **aposentado** (substituído por `.github/workflows/schema-migrations.yml`) e a dependência de `auth.users` foi **eliminada** (view lê só `public.user`; funções legadas removidas). Suíte completa verde (integração 64 + e2e 16). **Decisões refinadas na execução:** (a) RLS foi **removida** de vez (não mantida como paridade) — o runtime a ignora; (b) as 4 funções legadas do Supabase (`clean_user_metadata_before_change`, `create_enterprise_on_signup`, `jwt_custom_claims`, `phone_exists`) foram **dropadas**, não portadas; (c) o **shim foi removido** (virou código morto), não preservado; (d) `db/cutover/*` fica como **histórico** (não absorvido em migration); (e) o `db:pull` foi corrigido à mão no re-baseline (checks `NOT VALID` malformados + operator classes embaralhados). **Pendente — Passo 8 (produção):** marcar o novo baseline como aplicado, reconciliar a view e `tracked_devices.blocked_by`, dropar o `auth.users` fantasma e decidir `drizzle-kit migrate` no deploy (runbook no plano). O checklist abaixo é o **plano original** da Fase 2 (registro histórico).
 - [ ] Fazer `pg_dump` completo de produção **pós-cutover** e tag git de partida (ponto de reversão) antes de qualquer introspecção.
 - [ ] Mapear formalmente o delta entre `drizzle/schema.ts` e o banco real (FK `enterprise`, 13 policies dropadas, 4 tabelas Better Auth, view, `blocked_by`), consolidando `docs/migrations-drizzle.md:72`.
 - [ ] Incorporar as **tabelas Better Auth** (`src/auth/schema.ts`: `user`/`session`/`account`/`verification`) ao alcance do `drizzle-kit`, preservando `id uuid`/`generateId:false`; validar que o ORM continua importável em runtime.
