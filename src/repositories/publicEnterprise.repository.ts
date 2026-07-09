@@ -10,7 +10,7 @@ export interface PublicEnterprise {
 
 /**
  * Empresa pública (id + nome) via view `enterprise_public`. `null` se não existir.
- * A view resolve o nome (hoje por auth.users; forward-compat p/ public.user).
+ * A view resolve o nome por public.user.
  */
 export async function getPublicEnterpriseById(id: string): Promise<PublicEnterprise | null> {
   const rows = await getDb().execute(

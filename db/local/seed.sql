@@ -4,7 +4,7 @@
 BEGIN;
 
 TRUNCATE
-  auth.users, public."user", public.enterprise, public.collecting_data_enterprise,
+  public."user", public.enterprise, public.collecting_data_enterprise,
   public.catalog_items, public.collection_points, public.questions_of_feedbacks,
   public.feedback_question_subquestions, public.feedback,
   public.feedback_question_answers, public.feedback_subquestion_answers,
@@ -12,13 +12,8 @@ TRUNCATE
   public.customer, public.tracked_devices
   RESTART IDENTITY CASCADE;
 
--- Usuários (auth.users mínima local — mantida para a RLS via shim/auth.uid())
-INSERT INTO auth.users (id, email, phone, raw_user_meta_data, email_confirmed_at) VALUES
-  ('11111111-1111-1111-1111-111111111111', 'gestor.a@teste.local', '+5511999990001', '{"full_name":"Gestor A"}', now()),
-  ('22222222-2222-2222-2222-222222222222', 'gestor.b@teste.local', '+5511999990002', '{"full_name":"Gestor B"}', now());
-
--- Usuários do Better Auth (public.user) — MESMOS IDs de auth.users, para casar a
--- FK enterprise.auth_user_id -> public.user e manter a RLS (auth.uid()) coerente.
+-- Usuários do Better Auth (public.user) — os gestores A e B. A FK
+-- enterprise.auth_user_id -> public.user liga as empresas a eles.
 INSERT INTO public."user" (id, name, email, email_verified, phone) VALUES
   ('11111111-1111-1111-1111-111111111111', 'Gestor A', 'gestor.a@teste.local', true, '+5511999990001'),
   ('22222222-2222-2222-2222-222222222222', 'Gestor B', 'gestor.b@teste.local', true, '+5511999990002');

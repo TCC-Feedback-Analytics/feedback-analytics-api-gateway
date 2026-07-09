@@ -1,0 +1,70 @@
+name: Migrations smoke (ADR-0001)
+
+# Fase 2 do ADR-0001: o banco local nasce das migrations Drizzle (0000 + 0001).
+# Este job garante que as migrations aplicam limpo e que schema.ts <-> migrations
+# batem: sobe o Postgres do docker-compose, roda `node scripts/db-local.mjs`
+# (shim + auth.users + drizzle-kit migrate + seed) e `drizzle-kit check`.
+
+on:
+  push:
+    branches: [main, developer]
+    paths:
+      - 'db/**'
+      - 'drizzle/**'
+      - 'scripts/db-local.mjs'
+      - 'docker-compose.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/schema-migrations.yml'
+  pull_request:
+    branches: [main, developer]
+    paths:
+      - 'db/**'
+      - 'drizzle/**'
+      - 'scripts/db-local.mjs'
+      - 'docker-compose.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/schema-migrations.yml'
+
+jobs:
+  migrations:
+    name: migrations-smoke
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5433/feedback
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Resolver @feedback/lib-shared (ssh->https, repo público)
+        run: git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Subir Postgres local (docker-compose)
+        run: docker compose up -d db
+
+      - name: Aguardar Postgres aceitar conexão
+        run: |
+          for i in $(seq 1 30); do
+            if docker exec feedback-api-db pg_isready -U postgres -d feedback >/dev/null 2>&1; then
+              echo "postgres pronto (tentativa $i)"; exit 0
+            fi
+            sleep 2
+          done
+          echo "timeout aguardando postgres"; docker logs feedback-api-db; exit 1
+
+      - name: Construir schema pelas migrations (shim + auth.users + drizzle-kit migrate + seed)
+        run: node scripts/db-local.mjs
+
+      - name: Consistência schema.ts <-> migrations (drizzle-kit check)
+        run: npm run db:check

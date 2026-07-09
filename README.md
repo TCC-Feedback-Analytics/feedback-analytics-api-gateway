@@ -10,18 +10,27 @@
 
 ## Rodar localmente
 
-Este repositório **é** o serviço — os comandos rodam na raiz dele:
+Este repositório **é** o serviço — os comandos rodam na raiz dele.
+
+**Pré-requisito:** Docker Desktop no ar — o banco local (Postgres + Mailpit) sobe via Docker.
 
 ```bash
 npm install
-cp .env.example .env    # preencha DATABASE_URL, BETTER_AUTH_SECRET/URL, SMTP_*, IA_ANALYZE_*
+cp .env.example .env    # p/ dev local, use DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5433/feedback
+
+npm run db:local:up     # sobe Postgres (:5433) + Mailpit (:8025) via Docker
+npm run db:reset        # cria o schema + seed determinístico (exige DATABASE_URL local)
 npm run dev             # http://localhost:3000
+
+npm run db:local:down   # ao terminar: derruba os containers (os dados ficam no volume)
 ```
 
 ```bash
 npm test                # testes (Vitest)
 npm run lint
 ```
+
+> Em dev, os e-mails de confirmação/recuperação caem no **Mailpit** (http://localhost:8025) — não são enviados de verdade. Detalhes do banco local em [`db/local/README.md`](db/local/README.md).
 
 Migrations do banco (Drizzle): ver [`docs/migrations-drizzle.md`](docs/migrations-drizzle.md).
 
