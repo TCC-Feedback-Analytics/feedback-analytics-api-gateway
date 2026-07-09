@@ -63,4 +63,4 @@ BETTER_AUTH_URL=http://localhost:3000
 
 ## Fluxo de mudança de schema
 
-Editar `drizzle/schema.ts` → `npm run db:generate` (revisar a migration gerada) → commitar `schema.ts` + a migration + o snapshot. Não há mais espelhamento em `db/schema/` nem guard-rail golden — o CI valida via `.github/workflows/schema-migrations.yml` (sobe Postgres, roda `node scripts/db-local.mjs` e `drizzle-kit check`).
+Editar o schema em `drizzle/schema/*.ts` (por domínio; `schema.ts` é só barrel) → `npm run db:generate` (revisar a migration gerada) → commitar o schema + a migration + o snapshot. Não há mais espelhamento em `db/schema/` nem guard-rail golden — o CI valida via `.github/workflows/schema-migrations.yml` (sobe Postgres, roda `node scripts/db-local.mjs` e `drizzle-kit check`).
