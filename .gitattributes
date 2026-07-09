@@ -1,0 +1,4 @@
+# SQL sempre em LF. As migrations do Drizzle são identificadas por hash
+# (sha256 do arquivo) no drizzle.__drizzle_migrations; sem LF fixo, o hash muda
+# entre Windows (CRLF) e Linux/CI (LF) e o `drizzle-kit migrate` se confunde.
+*.sql text eol=lf
