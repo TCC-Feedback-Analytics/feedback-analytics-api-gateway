@@ -41,15 +41,14 @@ acesso a dados é 100% via Drizzle, que ignora a RLS). É idempotente.
 
 ## Governança das tabelas do Better Auth (`user`/`session`/`account`/`verification`)
 
-**Como chegam em produção:** *só* pelo `betterauth-enable.sql` acima, rodado à mão uma vez. **Não há** ferramenta de migração para elas: não existe `@better-auth/cli` nas dependências, elas ficam **fora** do `drizzle-kit` (não estão em `drizzle/schema.ts`) e o `deploy-api.yml` **não roda migration**. Em runtime o `drizzleAdapter` do Better Auth **consome** as tabelas, mas **não as cria**.
+**Como chegam em produção:** *só* pelo `betterauth-enable.sql` acima, rodado à mão uma vez. O `deploy-api.yml` **não roda migration** e não existe `@better-auth/cli` nas dependências, então nada aplica automaticamente essas tabelas em prod. Em runtime o `drizzleAdapter` do Better Auth **consome** as tabelas, mas **não as cria**.
 
-**As mesmas 4 tabelas têm três definições mantidas à mão** — mantenha-as em sincronia:
+**As mesmas 4 tabelas têm duas definições** — mantenha-as em sincronia:
 
-1. `src/auth/schema.ts` — descrição Drizzle que o `drizzleAdapter` usa em **runtime**.
+1. `drizzle/schema.ts` — **fonte única**. É a descrição Drizzle que o `drizzleAdapter` usa em **runtime** (as 4 tabelas com `mode:'date'` nos timestamps) e que o `drizzle-kit` usa para gerar as migrations em `drizzle/` e montar o banco **local** (`db:reset` → `drizzle-kit migrate`).
 2. `db/cutover/betterauth-enable.sql` — cria em **produção** (Supabase, manual).
-3. `db/schema/tables/public.better_auth.sql` — cria no **banco local** (`db:reset`).
 
-Hoje as três **coincidem** (id `uuid`/`gen_random_uuid()`, `user.phone` UNIQUE, FKs `ON DELETE CASCADE`). O guard-rail `schema-drift` cobre a definição **local** (item 3), mas **não** verifica que (1) e (2) batem com ela. Ao mudar uma dessas tabelas: espelhe nas **três** definições e rode `betterauth-enable.sql` de novo em prod.
+As duas **coincidem** (id `uuid`/`gen_random_uuid()`, `user.phone` UNIQUE, FKs `ON DELETE CASCADE`). Não há guard-rail automático verificando que (1) e (2) batem entre si: o `betterauth-enable.sql` é mantido à mão. Ao mudar uma dessas tabelas, edite primeiro `drizzle/schema.ts` (gere a migration com `npm run db:generate`), **espelhe** a alteração no `betterauth-enable.sql` e rode-o de novo em prod.
 
 > ⚠️ `CREATE TABLE IF NOT EXISTS` **não altera** uma tabela que já existe — para adicionar/alterar coluna numa dessas tabelas em produção é preciso escrever o `ALTER TABLE` correspondente (não basta editar o `CREATE`). A consolidação numa fonte única (Drizzle) está no [ADR-0001](../../docs/adr/0001-fonte-unica-de-schema.md).
 
@@ -69,7 +68,38 @@ Ele recria a FK `enterprise.auth_user_id → public.user` com **`ON DELETE CASCA
 catálogo, pontos de coleta, etc.). É seguro em bases grandes: adiciona a FK como
 `NOT VALID` e só a `VALIDATE` se não houver empresas órfãs — se houver, avisa
 quais são e como validar depois de limpá-las. No banco **local** essa FK já vem
-no dump (`db/schema/tables/public.enterprise.sql`) e é aplicada pelo `db:reset`.
+definida em `drizzle/schema.ts` (migration `0000` em `drizzle/`) e é aplicada pelo
+`db:reset` via `drizzle-kit migrate`.
+
+## Fase 2 — reconciliação em produção (Passo 8)
+
+O re-baseline da Fase 2 ([ADR-0001](../../docs/adr/0001-fonte-unica-de-schema.md)) tornou `drizzle/schema.ts` + as migrations a **fonte única**. Em produção — onde o schema foi montado à mão pelos SQLs de cutover acima — estes passos alinham prod ao novo baseline. **Faça backup antes.**
+
+**1. Backup:** `pg_dump` completo de produção (Supabase → Database → Backups, ou `pg_dump "$DATABASE_URL"`).
+
+**2. Reconciliar o schema** (remove os resíduos do Supabase Auth: view com fallback, funções legadas, FK `blocked_by`). Idempotente:
+
+```
+db/cutover/fase2-prod-reconcile.sql
+```
+
+**3. Marcar o baseline como aplicado** — para o `drizzle-kit migrate` futuro **não** tentar recriar o que já existe. Prod já tem as tabelas/funções, então registramos `0000` e `0001` como aplicados (sem rodá-los). No SQL Editor:
+
+```sql
+CREATE SCHEMA IF NOT EXISTS drizzle;
+CREATE TABLE IF NOT EXISTS drizzle."__drizzle_migrations" (
+  id SERIAL PRIMARY KEY, hash text NOT NULL, created_at bigint
+);
+INSERT INTO drizzle."__drizzle_migrations" (hash, created_at) VALUES
+  ('b7e03e1bab11ffa2a7a389ac45ed9300256cba9714f9b6fc647ec42d7bd0ff68', 1783560212472),  -- 0000_great_talisman
+  ('b3687d600dc52840b0aa52218bc6aaf6b99aff15d01f633741669cb5ed2fd98f', 1783560214072);  -- 0001_functions_triggers_rls
+```
+
+> ⚠️ Os hashes são o **sha256** de `drizzle/0000_great_talisman.sql` e `drizzle/0001_functions_triggers_rls.sql` **deste commit**. Se as migrations forem regeneradas, recompute (`sha256sum drizzle/0000_*.sql drizzle/0001_*.sql`) e use o `when` de `drizzle/meta/_journal.json`.
+
+**4. (Decisão) `deploy-api.yml` passa a rodar `drizzle-kit migrate`?** Com o baseline marcado, mudanças futuras de schema viram `0002+` e podem ser aplicadas por `drizzle-kit migrate` no deploy (fim do SQL manual). Se adotar, adicione um passo `npm run db:migrate` no `deploy-api.yml` (com a `DATABASE_URL` de prod) após o bundle. Até lá, migrations novas são aplicadas à mão.
+
+**5. Validar:** login/signup, o formulário público (QR) resolve o nome via view, e um `drizzle-kit migrate` não acusa migrations pendentes inesperadas.
 
 ## Ordem do cutover
 

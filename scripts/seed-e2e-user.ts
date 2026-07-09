@@ -4,7 +4,8 @@
  * empresa (+3 perguntas COMPANY padrão) e marca o e-mail como verificado — o
  * mesmo atalho de `src/tests/e2e/authCutover.e2e.ts` (o fluxo real clicaria no
  * link do Mailpit). Sem isso o login do e2e falha com 401, porque o seed SQL
- * (`db/local/seed.sql`) só popula o `auth.users` legado, que o Better Auth não usa.
+ * (`db/local/seed.sql`) insere linhas em `public.user` mas não cria a conta/senha
+ * do Better Auth (account) — que é o que o login exige.
  *
  * Uso (na pasta backends/api-gateway, com o Postgres local no ar):
  *   npm run db:seed:e2e

@@ -6,18 +6,14 @@
 
 ## Mudança de schema de banco? (ADR-0001)
 
-Se este PR altera o schema (tabela, coluna, FK, índice, função, trigger, policy ou view),
-o schema vive em **duas representações mantidas à mão** — espelhe nas duas e marque:
+O schema tem **fonte única**: `drizzle/schema.ts` + as migrations em `drizzle/`.
+Se este PR altera o schema (tabela, coluna, FK, índice, função, trigger, policy ou view), marque:
 
-- [ ] **`drizzle/schema.ts`** (+ `npm run db:generate` para a migration) — fonte das migrations de produção e dos **tipos que o app importa em runtime**.
-- [ ] **`db/schema/*.sql`** (banco local) e **regenerei o golden anti-drift**:
-      `npm run db:local:up && node scripts/db-local.mjs && npm run db:drift:snapshot` (commitar `db/schema/.drift-snapshot.sql`).
-- [ ] **`db/cutover/*.sql`** — se a mudança precisa ir para produção (Supabase) fora do fluxo Drizzle (SQL idempotente).
-- [ ] Se rodei `npm run db:pull`: **reapliquei as 2 linhas de `authUsers`** no topo de `drizzle/schema.ts`.
-- [ ] Se mexi nas **tabelas do Better Auth** (`user`/`session`/`account`/`verification`): espelhei nas **3** definições (`src/auth/schema.ts` + `db/cutover/betterauth-enable.sql` + `db/schema/tables/public.better_auth.sql`) — não há migration tool para elas (ver `db/cutover/README.md`).
-- [ ] O CI **`schema-drift`** está verde.
+- [ ] Editei **`drizzle/schema.ts`**, rodei **`npm run db:generate`**, **revisei** a migration gerada e **commitei** `schema.ts` + a migration + o snapshot.
+- [ ] Se mexi nas **tabelas do Better Auth** (`user`/`session`/`account`/`verification`): elas vivem em **`drizzle/schema.ts`** (fonte única, consumida pelo `drizzleAdapter`) e, em produção, são criadas pelo **`db/cutover/betterauth-enable.sql`** (manual) — espelhei nas duas (ver `db/cutover/README.md`).
+- [ ] O CI **`schema-migrations`** está verde.
 
-> Por que duas representações? Ver [ADR-0001](../docs/adr/0001-fonte-unica-de-schema.md) — a consolidação numa fonte única é a Fase 2.
+> Fluxo single-source: editar `drizzle/schema.ts` → `npm run db:generate` (revisar a migration) → commitar schema + migration + snapshot. Ver [ADR-0001](../docs/adr/0001-fonte-unica-de-schema.md).
 
 ## Checklist geral
 

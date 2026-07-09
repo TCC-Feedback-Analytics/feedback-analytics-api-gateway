@@ -1,11 +1,9 @@
-name: Schema drift (guard-rail ADR-0001)
+name: Migrations smoke (ADR-0001)
 
-# Fase 1 do ADR-0001 (docs/adr/0001-fonte-unica-de-schema.md): enquanto o schema
-# vive em duas representações (drizzle/ e db/schema/), este job torna o drift do
-# schema LOCAL uma FALHA de CI. Sobe o mesmo Postgres do docker-compose, monta o
-# schema via db/schema/ (scripts/db-local.mjs) e compara o pg_dump do schema
-# `public` com o golden versionado db/schema/.drift-snapshot.sql. Mudou o schema
-# local sem regenerar o golden (e espelhar em drizzle/ + db/cutover/) → quebra.
+# Fase 2 do ADR-0001: o banco local nasce das migrations Drizzle (0000 + 0001).
+# Este job garante que as migrations aplicam limpo e que schema.ts <-> migrations
+# batem: sobe o Postgres do docker-compose, roda `node scripts/db-local.mjs`
+# (shim + auth.users + drizzle-kit migrate + seed) e `drizzle-kit check`.
 
 on:
   push:
@@ -14,29 +12,26 @@ on:
       - 'db/**'
       - 'drizzle/**'
       - 'scripts/db-local.mjs'
-      - 'scripts/schema-drift.mjs'
       - 'docker-compose.yml'
       - 'package.json'
       - 'package-lock.json'
-      - '.github/workflows/schema-drift.yml'
+      - '.github/workflows/schema-migrations.yml'
   pull_request:
     branches: [main, developer]
     paths:
       - 'db/**'
       - 'drizzle/**'
       - 'scripts/db-local.mjs'
-      - 'scripts/schema-drift.mjs'
       - 'docker-compose.yml'
       - 'package.json'
       - 'package-lock.json'
-      - '.github/workflows/schema-drift.yml'
+      - '.github/workflows/schema-migrations.yml'
 
 jobs:
-  drift:
-    name: schema-drift
+  migrations:
+    name: migrations-smoke
     runs-on: ubuntu-latest
     env:
-      # Aponta para o Postgres do docker-compose (host 5433 -> container 5432).
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5433/feedback
     steps:
       - name: Checkout repository
@@ -55,7 +50,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Subir Postgres local (mesma imagem/porta do docker-compose)
+      - name: Subir Postgres local (docker-compose)
         run: docker compose up -d db
 
       - name: Aguardar Postgres aceitar conexão
@@ -68,8 +63,8 @@ jobs:
           done
           echo "timeout aguardando postgres"; docker logs feedback-api-db; exit 1
 
-      - name: Montar schema local (db/schema via db-local.mjs, sem seed e2e)
+      - name: Construir schema pelas migrations (shim + auth.users + drizzle-kit migrate + seed)
         run: node scripts/db-local.mjs
 
-      - name: Checar drift do schema (vs db/schema/.drift-snapshot.sql)
-        run: npm run db:drift:check
+      - name: Consistência schema.ts <-> migrations (drizzle-kit check)
+        run: npm run db:check
