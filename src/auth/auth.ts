@@ -22,6 +22,10 @@ import { getDb } from '../db/client.js';
 import { user, session, account, verification } from '../../drizzle/schema.js';
 import { sendResetPasswordEmail, sendVerificationEmail } from './email.js';
 
+export function hashBetterAuthPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, 10);
+}
+
 function buildTrustedOrigins(): string[] {
   const origins = new Set<string>(['http://localhost:5173', 'http://localhost:4173']);
   const siteUrl = process.env.PUBLIC_SITE_URL?.trim();
@@ -63,7 +67,7 @@ function createAuth() {
       autoSignIn: false,
       minPasswordLength: 8,
       password: {
-        hash: (password: string) => bcrypt.hash(password, 10),
+        hash: hashBetterAuthPassword,
         verify: ({ hash, password }: { hash: string; password: string }) =>
           bcrypt.compare(password, hash),
       },

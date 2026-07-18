@@ -16,6 +16,9 @@ git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
 | `VERCEL_TOKEN` | Token da conta/projeto Vercel |
 | `VERCEL_ORG_ID` | ID da org no Vercel |
 | `VERCEL_PROJECT_ID_API_GATEWAY` | ID do projeto Vercel da API |
+| `E2E_DATABASE_URL_DEVELOPER` | Connection string do banco developer, usada somente pelo seed E2E após o deploy da branch `developer` |
+| `BETTER_AUTH_SECRET_DEVELOPER` | Mesmo segredo Better Auth configurado no runtime developer; permite ao seed validar a sessão criada |
+| `E2E_TEST_EMAIL` · `E2E_TEST_PASSWORD` · `E2E_TEST_ENTERPRISE_ID` | Fixture obrigatória do E2E web, provisionada pelo Better Auth no ambiente developer |
 
 O **CI** (lint/typecheck/unit) **não precisa de secret** — os testes são mockados.
 
@@ -27,6 +30,12 @@ e a URL/token do serviço `ia-analyze` (`IA_ANALYZE_REMOTE_URL`/`IA_ANALYZE_REMO
 são variáveis de ambiente configuradas nas **Settings do projeto Vercel** da API —
 não entram no CI. (O Supabase entra apenas como provedor do Postgres, via `DATABASE_URL`;
 não há mais `SUPABASE_URL`/`SUPABASE_ANON_KEY`.)
+
+Para o alias developer, configure também `BETTER_AUTH_URL` como
+`https://feedback-analytics-api-developer.vercel.app`, `COOKIE_CROSS_SITE=true`
+e inclua `https://feedback-analytics-web-developer.vercel.app` em
+`CORS_ALLOWED_ORIGINS` (ou em `PUBLIC_SITE_URL`). Essas variáveis permitem que
+o navegador aceite e reenvie o cookie Better Auth entre os dois projetos.
 
 ## Deploy
 
