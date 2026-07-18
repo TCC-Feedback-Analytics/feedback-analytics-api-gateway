@@ -72,6 +72,21 @@ jobs:
         run: |
           npx vercel alias set ${{ steps.deploy-dev.outputs.url }} feedback-analytics-api-developer.vercel.app --token "$VERCEL_TOKEN"
 
+      - name: Provisionar fixture E2E Better Auth (developer)
+        if: github.ref_name == 'developer'
+        env:
+          DATABASE_URL: ${{ secrets.E2E_DATABASE_URL_DEVELOPER }}
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET_DEVELOPER }}
+          BETTER_AUTH_URL: https://feedback-analytics-api-developer.vercel.app
+          E2E_SEED_ALLOW_REMOTE: 'true'
+          E2E_SEED_ENV: developer
+          E2E_API_BASE_URL: https://feedback-analytics-api-developer.vercel.app
+          E2E_WEB_ORIGIN: https://feedback-analytics-web-developer.vercel.app
+          E2E_TEST_EMAIL: ${{ secrets.E2E_TEST_EMAIL }}
+          E2E_TEST_PASSWORD: ${{ secrets.E2E_TEST_PASSWORD }}
+          E2E_TEST_ENTERPRISE_ID: ${{ secrets.E2E_TEST_ENTERPRISE_ID }}
+        run: npm run db:seed:e2e
+
       - name: Deploy production (main)
         if: github.ref_name == 'main'
         env:
