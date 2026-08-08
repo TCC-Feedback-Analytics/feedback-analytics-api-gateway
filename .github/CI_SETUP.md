@@ -16,11 +16,8 @@ git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
 | `VERCEL_TOKEN` | Token da conta/projeto Vercel |
 | `VERCEL_ORG_ID` | ID da org no Vercel |
 | `VERCEL_PROJECT_ID_API_GATEWAY` | ID do projeto Vercel da API |
-| `E2E_DATABASE_URL_DEVELOPER` | Connection string do banco developer, usada somente pelo seed E2E após o deploy da branch `developer` |
-| `BETTER_AUTH_SECRET_DEVELOPER` | Mesmo segredo Better Auth configurado no runtime developer; permite ao seed validar a sessão criada |
-| `E2E_TEST_EMAIL` · `E2E_TEST_PASSWORD` · `E2E_TEST_ENTERPRISE_ID` | Fixture obrigatória do E2E web, provisionada pelo Better Auth no ambiente developer |
 
-O **CI** (lint/typecheck/unit) **não precisa de secret** — os testes são mockados.
+O **CI** (lint/typecheck/unit) **não precisa de secret** — os testes unitários são mockados. O smoke de migrations (`schema-migrations.yml`) sobe um Postgres efêmero no runner, também sem secret. Os testes de **integração** e **e2e** foram removidos do CI e viraram **testes manuais** (runbook: `feedback-analytics/docs/guias/testes/manuais-api-gateway.md`) — por isso não há mais secrets de banco/fixture E2E aqui.
 
 ## Env de runtime (no projeto Vercel, NÃO como GitHub secret)
 
@@ -31,18 +28,9 @@ são variáveis de ambiente configuradas nas **Settings do projeto Vercel** da A
 não entram no CI. (O Supabase entra apenas como provedor do Postgres, via `DATABASE_URL`;
 não há mais `SUPABASE_URL`/`SUPABASE_ANON_KEY`.)
 
-Para o alias developer, configure também `BETTER_AUTH_URL` como
-`https://feedback-analytics-api-developer.vercel.app`, `COOKIE_CROSS_SITE=true`
-e inclua `https://feedback-analytics-web-developer.vercel.app` em
-`CORS_ALLOWED_ORIGINS` (ou em `PUBLIC_SITE_URL`). Essas variáveis permitem que
-o navegador aceite e reenvie o cookie Better Auth entre os dois projetos.
-
 ## Deploy
 
-`workflow_dispatch` (manual, pede `confirm_deploy=ok`). Bundla com esbuild
-(`index.ts → _bundle.cjs`) e sobe via `npx vercel deploy --local-config vercel.json`.
-Reusa o mesmo projeto Vercel (`VERCEL_PROJECT_ID_API_GATEWAY`), mantendo estáveis
-o **domínio de produção** (`main`, `--prod`) e o **alias fixo de homologação** — o
-deploy de preview em si gera uma URL nova a cada run, por isso o alias é fixado. O
-frontend aponta para o alias/domínio, não para a URL de preview. Branch de staging:
-`developer` (deploya e fixa o alias `feedback-analytics-api-developer.vercel.app`).
+`workflow_dispatch` (manual, pede `confirm_deploy=ok`), aceito **apenas na branch `main`**. Bundla com esbuild
+(`index.ts → _bundle.cjs`) e sobe via `npx vercel deploy --prod --local-config vercel.json`,
+reusando o mesmo projeto Vercel (`VERCEL_PROJECT_ID_API_GATEWAY`) → o **domínio de produção** é estável.
+Não há mais deploy da branch `developer` nem alias de homologação.
