@@ -21,3 +21,15 @@ export function readBatchesPerTick(): number {
   const raw = Number(process.env.IA_WORKER_BATCHES_PER_TICK);
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 3;
 }
+
+/** Limite de chamadas ao LLM por MINUTO (RPM). 0/ausente = sem limite. */
+export function readRpmLimit(): number {
+  const raw = Number(process.env.IA_RPM_LIMIT);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0;
+}
+
+/** Limite de chamadas ao LLM por DIA (a cota que hoje estoura). 0/ausente = sem limite. */
+export function readRpdLimit(): number {
+  const raw = Number(process.env.IA_RPD_LIMIT);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0;
+}
