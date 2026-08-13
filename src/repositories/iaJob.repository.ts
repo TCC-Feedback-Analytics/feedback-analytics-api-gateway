@@ -12,7 +12,7 @@
  * As funções de consumo do worker (claimNext/updateProgress/complete/...) entram
  * na etapa 03.3 (drain).
  */
-import { desc, eq, inArray, isNull } from 'drizzle-orm';
+import { desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { getDb } from '../db/client.js';
 import { iaAnalysisJob } from '../../drizzle/schema.js';
 import { scopedByEnterprise } from '../db/tenantScope.js';
@@ -150,3 +150,106 @@ export async function getIaJobByIdScoped(params: {
 
   return rows[0] ?? null;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Consumo pelo worker/drain (etapa 03.3).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type ClaimedIaJob = {
+  id: string;
+  enterpriseId: string;
+  jobType: string;
+  scopeType: string;
+  catalogItemId: string | null;
+  options: Record<string, unknown>;
+  total: number;
+  done: number;
+  attempts: number;
+};
+
+/**
+ * Puxa o próximo job "pronto" (queued/waiting_budget com next_run_at vencido) e o
+ * marca como `running`, ATOMICAMENTE, com `FOR UPDATE SKIP LOCKED`: dois
+ * ticks/workers concorrentes nunca pegam o mesmo job. Retorna null se não há
+ * trabalho disponível.
+ */
+export async function claimNextIaJob(): Promise<ClaimedIaJob | null> {
+  const rows = (await getDb().execute(sql`
+    UPDATE ia_analysis_job
+    SET status = 'running', updated_at = now()
+    WHERE id = (
+      SELECT id FROM ia_analysis_job
+      WHERE status IN ('queued', 'waiting_budget') AND next_run_at <= now()
+      ORDER BY created_at
+      FOR UPDATE SKIP LOCKED
+      LIMIT 1
+    )
+    RETURNING id, enterprise_id, job_type, scope_type, catalog_item_id, options, total, done, attempts
+  `)) as unknown as Array<{
+    id: string;
+    enterprise_id: string;
+    job_type: string;
+    scope_type: string;
+    catalog_item_id: string | null;
+    options: Record<string, unknown> | null;
+    total: number;
+    done: number;
+    attempts: number;
+  }>;
+
+  const row = rows[0];
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    enterpriseId: row.enterprise_id,
+    jobType: row.job_type,
+    scopeType: row.scope_type,
+    catalogItemId: row.catalog_item_id,
+    options: row.options ?? {},
+    total: Number(row.total),
+    done: Number(row.done),
+    attempts: Number(row.attempts),
+  };
+}
+
+/** Define o total de passos do job (uma vez, no início do processamento). */
+export async function setIaJobTotal(jobId: string, total: number): Promise<void> {
+  await getDb().update(iaAnalysisJob).set({ total }).where(eq(iaAnalysisJob.id, jobId));
+}
+
+/** Atualiza o progresso (passos concluídos) para o polling. */
+export async function updateIaJobDone(jobId: string, done: number): Promise<void> {
+  await getDb().update(iaAnalysisJob).set({ done }).where(eq(iaAnalysisJob.id, jobId));
+}
+
+/** Marca o job como concluído. */
+export async function completeIaJob(
+  jobId: string,
+  progress: { total: number; done: number },
+): Promise<void> {
+  await getDb()
+    .update(iaAnalysisJob)
+    .set({ status: 'completed', total: progress.total, done: progress.done, errorCode: null })
+    .where(eq(iaAnalysisJob.id, jobId));
+}
+
+/** Marca o job como falho, com o código de erro tipado. */
+export async function failIaJob(jobId: string, errorCode: string): Promise<void> {
+  await getDb()
+    .update(iaAnalysisJob)
+    .set({ status: 'failed', errorCode, attempts: sql`${iaAnalysisJob.attempts} + 1` })
+    .where(eq(iaAnalysisJob.id, jobId));
+}
+
+/**
+ * Devolve o job à fila para CONTINUAR no próximo tick (orçamento de lotes do tick
+ * esgotado). Preserva `done`; volta para 'queued' com next_run_at = agora.
+ */
+export async function requeueIaJob(jobId: string): Promise<void> {
+  await getDb()
+    .update(iaAnalysisJob)
+    .set({ status: 'queued', nextRunAt: sql`now()`, attempts: sql`${iaAnalysisJob.attempts} + 1` })
+    .where(eq(iaAnalysisJob.id, jobId));
+}
+
