@@ -14,6 +14,7 @@ import {
   completeIaJob,
   failIaJob,
   requeueIaJob,
+  rescheduleForBudget,
   setIaJobTotal,
   updateIaJobDone,
   type ClaimedIaJob,
@@ -29,11 +30,12 @@ import type {
 } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/run.contract';
 import type { IaAnalyzeScopeType } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/scope.contract';
 import { readBatchesPerTick } from './config.js';
+import { reserveIaBudget } from './rateBudget.js';
 
 export type DrainJobResult = {
   jobId: string;
   jobType: string;
-  status: 'completed' | 'failed' | 'requeued';
+  status: 'completed' | 'failed' | 'requeued' | 'rescheduled';
   done: number;
   total: number;
   errorCode?: string;
@@ -58,8 +60,8 @@ export async function drainJobs(params?: { maxBatches?: number }): Promise<Drain
     results.push(result);
     remainingBatches -= result.batchesRun;
 
-    // Tick esgotado no meio de um job → o job foi re-enfileirado; para de puxar.
-    if (result.status === 'requeued') break;
+    // Tick esgotado (requeued) OU orçamento de IA estourado (rescheduled) → para de puxar.
+    if (result.status === 'requeued' || result.status === 'rescheduled') break;
   }
 
   return { processed: results.length, results };
@@ -125,6 +127,13 @@ async function processAnalyzeRawJob(job: ClaimedIaJob, batchBudget: number): Pro
       return { jobId: job.id, jobType: job.jobType, status: 'requeued', done, total, batchesRun };
     }
 
+    const budget = await reserveIaBudget();
+    if (!budget.ok) {
+      // Sem orçamento de IA — espera a próxima janela (back-pressure).
+      await rescheduleForBudget(job.id, budget.reason);
+      return { jobId: job.id, jobType: job.jobType, status: 'rescheduled', done, total, batchesRun };
+    }
+
     await runOneBatch({
       enterpriseContext: prepared.enterpriseContext,
       batch,
@@ -150,6 +159,12 @@ async function processRegenerateJob(job: ClaimedIaJob): Promise<DrainJobResult> 
     catalog_item_id: job.catalogItemId ?? undefined,
     force: job.options.force === true,
   };
+
+  const budget = await reserveIaBudget();
+  if (!budget.ok) {
+    await rescheduleForBudget(job.id, budget.reason);
+    return { jobId: job.id, jobType: job.jobType, status: 'rescheduled', done: job.done, total: job.total || 1, batchesRun: 0 };
+  }
 
   if (job.total === 0) await setIaJobTotal(job.id, 1);
   await regenerateFeedbackInsights({ enterpriseId: job.enterpriseId, options });
