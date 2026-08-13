@@ -253,3 +253,20 @@ export async function requeueIaJob(jobId: string): Promise<void> {
     .where(eq(iaAnalysisJob.id, jobId));
 }
 
+/**
+ * Back-pressure do rate limiter: sem orçamento de IA, o job espera a próxima
+ * janela (`waiting_budget`, `next_run_at` = início da próxima janela). NÃO conta
+ * como falha nem tentativa — o ritmo é ditado pelo orçamento, não pelos cliques.
+ */
+export async function rescheduleForBudget(jobId: string, reason: 'minute' | 'day'): Promise<void> {
+  const nextRunAt =
+    reason === 'day'
+      ? sql`date_trunc('day', now()) + interval '1 day'`
+      : sql`date_trunc('minute', now()) + interval '1 minute'`;
+
+  await getDb()
+    .update(iaAnalysisJob)
+    .set({ status: 'waiting_budget', nextRunAt })
+    .where(eq(iaAnalysisJob.id, jobId));
+}
+
