@@ -34,6 +34,7 @@ export const API_ERROR_FAILED_TO_FETCH_FEEDBACK_ANALYSIS =
 
 // Fila de análise assíncrona (etapa 03).
 export const API_ERROR_IA_JOB_NOT_FOUND = 'ia_job_not_found' as const;
+export const API_ERROR_UNAUTHORIZED_WORKER_REQUEST = 'unauthorized_worker_request' as const;
 
 export const API_ERROR_PHONE_TAKEN = 'phone_taken' as const;
 export const API_ERROR_DOCUMENT_TAKEN = 'document_taken' as const;
