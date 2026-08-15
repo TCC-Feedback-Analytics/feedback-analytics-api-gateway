@@ -13,6 +13,9 @@ import { resolvePrimaryBaseUrl } from '../libs/iaAnalyze/resolvePrimaryBaseUrl.j
 // URL padrão do serviço IA local, usada como fallback quando o serviço remoto está indisponível.
 const DEFAULT_LOCAL_IA_ANALYZE_URL = 'http://localhost:4100';
 
+/** Credenciais de LLM por empresa (BYO-key, etapa 04), enviadas ao ia-analyze via header. */
+export type IaCreds = { provider: string; apiKey: string; model?: string };
+
 /**
  * Envia a requisição de análise IA para o serviço remoto e trata a resposta.
  *
@@ -28,6 +31,7 @@ const DEFAULT_LOCAL_IA_ANALYZE_URL = 'http://localhost:4100';
 async function postAnalysisToService(
   baseUrl: string,
   requestBody: IaAnalyzeRemoteRunRequest,
+  creds?: IaCreds,
 ): Promise<IaAnalyzeRemoteRunResponse> {
   const endpoint = buildRemoteEndpoint(baseUrl);
   const timeoutMs = readRemoteTimeoutMs();
@@ -38,6 +42,14 @@ async function postAnalysisToService(
 
   if (remoteToken) {
     headers['x-ia-analyze-token'] = remoteToken;
+  }
+
+  // BYO-key (etapa 04): chave/modelo da empresa vão por header — fora do corpo e
+  // dos logs de payload. Ausentes ⇒ o ia-analyze usa a config do env (fallback).
+  if (creds) {
+    headers['x-llm-provider'] = creds.provider;
+    headers['x-llm-api-key'] = creds.apiKey;
+    if (creds.model) headers['x-llm-model'] = creds.model;
   }
 
   const abortController = new AbortController();
@@ -102,11 +114,12 @@ async function postAnalysisToService(
  */
 export async function runIaAnalyzeAnalysis(
   requestBody: IaAnalyzeRemoteRunRequest,
+  creds?: IaCreds,
 ): Promise<IaAnalyzeRemoteRunResponse> {
   const primaryBaseUrl = resolvePrimaryBaseUrl();
 
   try {
-    return await postAnalysisToService(primaryBaseUrl, requestBody);
+    return await postAnalysisToService(primaryBaseUrl, requestBody, creds);
   } catch (error) {
     const isServerless = process.env.VERCEL === '1';
     const canFallbackToLocal =
@@ -122,6 +135,6 @@ export async function runIaAnalyzeAnalysis(
       `[IA Analyze] Falha ao chamar ${primaryBaseUrl}. Tentando fallback local ${DEFAULT_LOCAL_IA_ANALYZE_URL}.`,
     );
 
-    return postAnalysisToService(DEFAULT_LOCAL_IA_ANALYZE_URL, requestBody);
+    return postAnalysisToService(DEFAULT_LOCAL_IA_ANALYZE_URL, requestBody, creds);
   }
 }

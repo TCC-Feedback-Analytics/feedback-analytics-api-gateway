@@ -1,4 +1,5 @@
-import { runIaAnalyzeAnalysis } from '../providers/iaAnalyze.provider.js';
+import { runIaAnalyzeAnalysis, type IaCreds } from '../providers/iaAnalyze.provider.js';
+import { resolveIaCredsForEnterprise, requireUserIaKey } from '../libs/iaConfig/resolveIaCreds.js';
 import { IaAnalyzeServiceError } from '../libs/iaAnalyze/errors.js';
 import {
   fetchAlreadyAnalyzedFeedbackIds,
@@ -26,6 +27,19 @@ import type { IaAnalyzeSentiment } from '@feedback/lib-shared/interfaces/contrac
 import { buildEnterpriseContext, buildAnalysisBatches } from '../libs/iaAnalyze/build.js';
 import { hasRequiredEnterpriseInfoForAnalysis, MIN_FEEDBACKS_FOR_RELEVANT_ANALYSIS } from '../libs/iaAnalyze/rules.js';
 import { applyExecutionFilter } from '../libs/iaAnalyze/filter.js';
+
+/**
+ * Resolve as creds de IA da empresa (BYO-key). Se não houver config E
+ * `REQUIRE_USER_IA_KEY` estiver ligada, lança `ia_config_required`; senão,
+ * `undefined` ⇒ o ia-analyze usa a chave global do env (fallback da transição).
+ */
+export async function resolveIaCredsOrThrow(enterpriseId: string): Promise<IaCreds | undefined> {
+  const creds = await resolveIaCredsForEnterprise(enterpriseId);
+  if (!creds && requireUserIaKey()) {
+    throw new IaAnalyzeServiceError('ia_config_required', 400, 'ia_config_required');
+  }
+  return creds ?? undefined;
+}
 
 export type PreparedAnalyzeRawJob = {
   enterpriseContext: ReturnType<typeof buildEnterpriseContext>;
@@ -111,8 +125,9 @@ export async function runOneBatch(params: {
   enterpriseContext: ReturnType<typeof buildEnterpriseContext>;
   batch: ReturnType<typeof buildAnalysisBatches>[number];
   allowedFeedbackIds: Set<string>;
+  creds?: IaCreds;
 }): Promise<number> {
-  const { enterpriseContext, batch, allowedFeedbackIds } = params;
+  const { enterpriseContext, batch, allowedFeedbackIds, creds } = params;
 
   const remotePayload: IaAnalyzeRemoteRunRequest = {
     enterprise_context: enterpriseContext,
@@ -126,7 +141,7 @@ export async function runOneBatch(params: {
     ],
   };
 
-  const remoteResult = await runIaAnalyzeAnalysis(remotePayload);
+  const remoteResult = await runIaAnalyzeAnalysis(remotePayload, creds);
 
   const validSentimentsSet = new Set<IaAnalyzeSentiment>(['positive', 'negative', 'neutral']);
   const rowsToInsert = remoteResult.analyses
@@ -190,7 +205,8 @@ export async function analyzeRawFeedbacks(params: {
     })),
   };
 
-  const remoteResult = await runIaAnalyzeAnalysis(remotePayload);
+  const creds = await resolveIaCredsOrThrow(params.enterpriseId);
+  const remoteResult = await runIaAnalyzeAnalysis(remotePayload, creds);
 
   const validSentimentsSet = new Set<IaAnalyzeSentiment>(['positive', 'negative', 'neutral']);
 
@@ -327,7 +343,8 @@ export async function regenerateFeedbackInsights(params: {
     })),
   };
 
-  const remoteResult = await runIaAnalyzeAnalysis(remotePayload);
+  const creds = await resolveIaCredsOrThrow(enterpriseId);
+  const remoteResult = await runIaAnalyzeAnalysis(remotePayload, creds);
   const insightsContexts = remoteResult.contexts;
 
   const globalInsights =
