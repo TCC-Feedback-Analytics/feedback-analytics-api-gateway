@@ -20,17 +20,18 @@ class BudgetExhausted extends Error {
   }
 }
 
-const SCOPE = 'global';
-
 /**
  * Reserva UMA "ficha" para uma chamada ao LLM, nas duas janelas. Tudo numa
  * transação: se a janela de DIA ou de MINUTO estourou, faz rollback (não vaza
  * ficha) e devolve `{ ok:false, reason }`. Limites 0/ausentes = sem limite.
  *
+ * `scope` isola o balde: `'global'` (chave compartilhada) ou o `enterprise_id`
+ * (BYO-key da etapa 04 — cada empresa passa a ter a própria cota).
+ *
  * A reserva usa `INSERT ... ON CONFLICT DO UPDATE ... WHERE used < limite`: se a
  * cota já estourou, o UPDATE não afeta linha e o RETURNING volta vazio.
  */
-export async function reserveIaBudget(): Promise<BudgetReservation> {
+export async function reserveIaBudget(scope: string = 'global'): Promise<BudgetReservation> {
   const rpm = readRpmLimit();
   const rpd = readRpdLimit();
 
@@ -41,7 +42,7 @@ export async function reserveIaBudget(): Promise<BudgetReservation> {
       if (rpd > 0) {
         const day = (await tx.execute(sql`
           INSERT INTO ia_rate_budget (scope, window_kind, window_start, used)
-          VALUES (${SCOPE}, 'day', date_trunc('day', now()), 1)
+          VALUES (${scope},'day', date_trunc('day', now()), 1)
           ON CONFLICT (scope, window_kind, window_start)
           DO UPDATE SET used = ia_rate_budget.used + 1 WHERE ia_rate_budget.used < ${rpd}
           RETURNING used
@@ -52,7 +53,7 @@ export async function reserveIaBudget(): Promise<BudgetReservation> {
       if (rpm > 0) {
         const minute = (await tx.execute(sql`
           INSERT INTO ia_rate_budget (scope, window_kind, window_start, used)
-          VALUES (${SCOPE}, 'minute', date_trunc('minute', now()), 1)
+          VALUES (${scope},'minute', date_trunc('minute', now()), 1)
           ON CONFLICT (scope, window_kind, window_start)
           DO UPDATE SET used = ia_rate_budget.used + 1 WHERE ia_rate_budget.used < ${rpm}
           RETURNING used

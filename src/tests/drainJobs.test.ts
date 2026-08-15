@@ -17,6 +17,7 @@ vi.mock('../services/iaAnalyze.service.js', () => ({
   prepareAnalyzeRawJob: vi.fn(),
   runOneBatch: vi.fn(),
   regenerateFeedbackInsights: vi.fn(),
+  resolveIaCredsOrThrow: vi.fn(),
 }));
 vi.mock('../libs/iaJob/rateBudget.js', () => ({ reserveIaBudget: vi.fn() }));
 vi.mock('../libs/iaJob/config.js', () => ({ readBatchesPerTick: vi.fn(() => 10) }));

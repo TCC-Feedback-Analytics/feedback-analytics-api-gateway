@@ -34,6 +34,12 @@ vi.mock('../libs/iaAnalyze/build.js', () => ({
   ],
 }));
 
+// BYO-key (etapa 04): isola a resolução de creds para não tocar o banco aqui.
+vi.mock('../libs/iaConfig/resolveIaCreds.js', () => ({
+  resolveIaCredsForEnterprise: vi.fn(async () => null),
+  requireUserIaKey: () => false,
+}));
+
 import { regenerateFeedbackInsights } from '../services/iaAnalyze.service.js';
 import {
   fetchEnterpriseContextForAnalysis,

@@ -22,6 +22,7 @@ import {
 import {
   prepareAnalyzeRawJob,
   regenerateFeedbackInsights,
+  resolveIaCredsOrThrow,
   runOneBatch,
 } from '../../services/iaAnalyze.service.js';
 import type {
@@ -110,6 +111,10 @@ async function processAnalyzeRawJob(job: ClaimedIaJob, batchBudget: number): Pro
     };
   }
 
+  // Creds da empresa (BYO-key), resolvidas uma vez por job. Sem config +
+  // REQUIRE_USER_IA_KEY → lança ia_config_required (o catch de processJob marca failed).
+  const creds = await resolveIaCredsOrThrow(job.enterpriseId);
+
   // `total` (em feedbacks) é fixado só na 1ª vez; nas retomadas preserva o original.
   let total = job.total;
   if (total === 0) {
@@ -127,7 +132,7 @@ async function processAnalyzeRawJob(job: ClaimedIaJob, batchBudget: number): Pro
       return { jobId: job.id, jobType: job.jobType, status: 'requeued', done, total, batchesRun };
     }
 
-    const budget = await reserveIaBudget();
+    const budget = await reserveIaBudget(job.enterpriseId);
     if (!budget.ok) {
       // Sem orçamento de IA — espera a próxima janela (back-pressure).
       await rescheduleForBudget(job.id, budget.reason);
@@ -138,6 +143,7 @@ async function processAnalyzeRawJob(job: ClaimedIaJob, batchBudget: number): Pro
       enterpriseContext: prepared.enterpriseContext,
       batch,
       allowedFeedbackIds: prepared.allowedFeedbackIds,
+      creds,
     });
 
     done += batch.feedbacks.length;
@@ -160,7 +166,7 @@ async function processRegenerateJob(job: ClaimedIaJob): Promise<DrainJobResult> 
     force: job.options.force === true,
   };
 
-  const budget = await reserveIaBudget();
+  const budget = await reserveIaBudget(job.enterpriseId);
   if (!budget.ok) {
     await rescheduleForBudget(job.id, budget.reason);
     return { jobId: job.id, jobType: job.jobType, status: 'rescheduled', done: job.done, total: job.total || 1, batchesRun: 0 };
