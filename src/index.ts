@@ -11,6 +11,7 @@ import collectionPointsQrRoutes from './routes/protected/collectionPointsQr.rout
 import feedbacksRoutes from './routes/protected/feedbacks.routes.js';
 import userRoutes from './routes/protected/user.routes.js';
 import iaAnalyzeRoutes from './routes/protected/iaAnalyze.routes.js';
+import iaConfigRoutes from './routes/protected/iaConfig.routes.js';
 import workerInternalRoutes from './routes/internal/worker.routes.js';
 import resendConfirmationRoutes from './routes/public/resendConfirmation.routes.js';
 import forgotPasswordRoutes from './routes/public/forgotPassword.routes.js';
@@ -274,6 +275,7 @@ app.use('/api', enterpriseProtectedRoutes);
 app.use('/api', feedbacksRoutes);
 app.use('/api', userRoutes);
 app.use('/api', iaAnalyzeRoutes);
+app.use('/api', iaConfigRoutes);
 
 // Endpoint interno do worker (protegido por token, não por auth de usuário).
 app.use('/api', workerInternalRoutes);
