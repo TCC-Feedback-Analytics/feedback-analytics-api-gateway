@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { API_ERROR_INTERNAL_SERVER_ERROR } from '../../config/errors.js';
+import { API_ERROR_INTERNAL_SERVER_ERROR, API_ERROR_IA_JOB_NOT_FOUND } from '../../config/errors.js';
 import { sendTypedError } from '../../utils/sendTypedError.js';
 import type {
   IaAnalyzeRawRunRequest,
@@ -16,6 +16,8 @@ import { IaAnalyzeServiceError } from '../../libs/iaAnalyze/errors.js';
 import { parseScopeType } from '../../libs/iaAnalyze/parse.js';
 import { readExecutionMode } from '../../libs/iaAnalyze/readEnvs.js';
 import { resolvePrimaryBaseUrl } from '../../libs/iaAnalyze/resolvePrimaryBaseUrl.js';
+import { enqueueIaJob, getIaJobByIdScoped } from '../../repositories/iaJob.repository.js';
+import { isAsyncEnabled } from '../../libs/iaJob/config.js';
 
 /**
  * Loga, de forma estruturada, o contexto de uma falha no fluxo de IA. Inclui o
@@ -72,6 +74,18 @@ export async function analyzeRawFeedbacksController(req: Request, res: Response)
       throw new IaAnalyzeServiceError('Enterprise not found', 404, 'enterprise_not_found');
     }
 
+    if (isAsyncEnabled()) {
+      const { jobId, status } = await enqueueIaJob({
+        enterpriseId,
+        jobType: 'analyze_raw',
+        scopeType: scope_type,
+        catalogItemId: catalog_item_id ?? null,
+        requestedBy: user.id,
+        options: { limit },
+      });
+      return res.status(202).json({ jobId, status });
+    }
+
     const result = await analyzeRawFeedbacks({
       enterpriseId,
       options: { limit, scope_type, catalog_item_id },
@@ -118,6 +132,18 @@ export async function regenerateFeedbackInsightsController(req: Request, res: Re
       throw new IaAnalyzeServiceError('Enterprise not found', 404, 'enterprise_not_found');
     }
 
+    if (isAsyncEnabled()) {
+      const { jobId, status } = await enqueueIaJob({
+        enterpriseId,
+        jobType: 'regenerate_insights',
+        scopeType: scope_type,
+        catalogItemId: catalog_item_id ?? null,
+        requestedBy: user.id,
+        options: { force },
+      });
+      return res.status(202).json({ jobId, status });
+    }
+
     const result = await regenerateFeedbackInsights({
       enterpriseId,
       options: { scope_type, catalog_item_id, force },
@@ -131,6 +157,43 @@ export async function regenerateFeedbackInsightsController(req: Request, res: Re
       return sendTypedError(res, error.statusCode, error.code);
     }
 
+    return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
+  }
+}
+
+// Regex leve para barrar ids não-uuid antes de tocar o banco (evita erro de
+// sintaxe uuid do Postgres e responde 404 limpo).
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Polling do progresso de um job de análise (etapa 03). Escopado por empresa:
+ * um gestor nunca enxerga o job de outra empresa (isolamento app-level por
+ * enterprise_id). Responde `{ id, status, total, done, ... }`.
+ */
+export async function getIaJobController(req: Request, res: Response) {
+  const user = req.user!;
+  const jobId = String(req.params.id ?? '');
+
+  try {
+    const enterpriseId = req.enterpriseId ?? (await resolveEnterpriseIdByUser(user.id));
+    if (!enterpriseId) {
+      throw new IaAnalyzeServiceError('Enterprise not found', 404, 'enterprise_not_found');
+    }
+
+    if (!UUID_RE.test(jobId)) {
+      return sendTypedError(res, 404, API_ERROR_IA_JOB_NOT_FOUND);
+    }
+
+    const job = await getIaJobByIdScoped({ enterpriseId, jobId });
+    if (!job) {
+      return sendTypedError(res, 404, API_ERROR_IA_JOB_NOT_FOUND);
+    }
+
+    return res.json(job);
+  } catch (error) {
+    if (error instanceof IaAnalyzeServiceError) {
+      return sendTypedError(res, error.statusCode, error.code);
+    }
     return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
   }
 }

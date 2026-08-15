@@ -295,6 +295,9 @@ export async function insertFeedbackAnalysisRows(params: {
   const inserted = await getDb()
     .insert(feedbackAnalysis)
     .values(values)
+    // Idempotência (etapa 03): se o feedback já foi analisado (retomada de job ou
+    // corrida), ignora em vez de estourar o unique(feedback_id).
+    .onConflictDoNothing({ target: feedbackAnalysis.feedbackId })
     .returning({
       id: feedbackAnalysis.id,
       feedbackId: feedbackAnalysis.feedbackId,
