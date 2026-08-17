@@ -22,10 +22,12 @@ Antes da Fase 2 o schema vivia em **dois lugares** que precisavam ser espelhados
 | Arquivo | Papel |
 |---|---|
 | `schema.ts` | **Barrel** — só re-exporta as tabelas de `schema/*.ts`. É o que o `drizzle-kit` e o app (`src/db/client.ts`) importam. |
-| `schema/*.ts` | **Fonte única** do schema, organizada por **domínio**: `auth`, `enterprise`, `questions`, `feedback`, `devices`, `views`. Mantida à mão; alimenta o `generate` e os tipos do runtime. |
+| `schema/*.ts` | **Fonte única** do schema, organizada por **domínio**: `auth`, `enterprise`, `questions`, `feedback`, `devices`, `views`, `iaJobs` (etapa 03 — fila de análise) e `iaConfig` (etapa 04 — config de IA por empresa). Mantida à mão; alimenta o `generate` e os tipos do runtime. |
 | `relations.ts` + `relations/*.ts` | Relações da query API do Drizzle (barrel + arquivos por domínio). **Opcional** — o app não carrega relations hoje. |
 | `0000_great_talisman.sql` | **Baseline (re-baseline da Fase 2)** — tabelas, FKs, índices e a view `enterprise_public`, refletindo o estado **pós-cutover** (inclui as tabelas Better Auth; sem dependência de `auth.users`). |
 | `0001_functions_triggers_rls.sql` | Migration **custom** — funções (plpgsql/sql), triggers e `ENABLE RLS` que o `drizzle-kit` não deriva. |
+| `0002_fat_chronomancer.sql` | **Etapa 03 (análise assíncrona):** tabelas `ia_analysis_job` (fila + status de progresso) e `ia_rate_budget` (token bucket do rate limiter); `unique(feedback_id)` em `feedback_analysis` (idempotência). Índice parcial único de dedup (`COALESCE` no `catalog_item_id`) e trigger `set_updated_at` entram como **SQL manual** no fim da migration. |
+| `0003_amusing_radioactive_man.sql` | **Etapa 04 (BYO-key):** tabela `enterprise_ia_config` (chave OpenRouter por empresa, **cifrada** — ciphertext/iv/authTag + `key_hint`) + trigger `set_updated_at` (SQL manual). |
 | `meta/_journal.json` + `meta/*_snapshot.json` | Histórico e snapshots usados pelo `generate` para fazer o diff. |
 
 ## Scripts (`package.json` da raiz)
