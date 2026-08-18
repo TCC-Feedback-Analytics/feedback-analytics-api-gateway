@@ -616,6 +616,10 @@ Desativa o QR Code de um item de catálogo específico.
 
 ## IA Analyze
 
+> **Síncrono × assíncrono.** Por padrão (`IA_ASYNC_ENABLED` off), `analyze-raw` e `regenerate-insights` rodam **síncronos** e respondem `200` com o resultado (abaixo). Com **`IA_ASYNC_ENABLED=true`**, os mesmos endpoints **enfileiram** um job e respondem **`202 { "jobId": "uuid", "status": "queued" }`** — o cliente acompanha por `GET /ia-analyze/jobs/:id`. O body é o mesmo nos dois modos.
+>
+> **BYO-key.** A chave de LLM da análise é a **da empresa** quando configurada (ver seção **Configuração de IA (BYO-key)** abaixo); senão, a chave global do `ia-analyze`.
+
 ### `POST /api/protected/ia-analyze/analyze-raw`
 
 Analisa feedbacks **ainda não analisados** e persiste os resultados.
@@ -716,6 +720,79 @@ Regenera os insights globais com base nos feedbacks **já analisados**.
 > `fromCache` (boolean) indica se o relatório retornado veio do **cache** (sem chamar o LLM) — `true` quando já havia relatório salvo e `force` não foi usado.
 
 **Erros Possíveis** — mesmos códigos de `analyze-raw`.
+
+---
+
+### `GET /api/protected/ia-analyze/jobs/:id`
+
+Status/progresso de um job de análise (modo assíncrono). O front consulta a cada poucos segundos até um `status` terminal.
+
+**Response 200**
+```json
+{ "id": "uuid", "jobType": "analyze_raw", "scopeType": "COMPANY", "catalogItemId": null, "status": "running", "total": 40, "done": 12, "errorCode": null, "updatedAt": "2026-08-16T12:00:00Z" }
+```
+
+- `status`: `queued` → `running` → (`waiting_budget` ⇄ `running`) → `completed` | `failed`. `waiting_budget` = rate limiter segurando o ritmo (não é erro; o job retoma na próxima janela).
+- `done`/`total` (em feedbacks) = a barra "X de Y". Para `regenerate_insights`, `total = 1`.
+- `errorCode` só vem quando `failed` (ex.: `insufficient_feedbacks_for_analysis`, `ia_config_required`).
+
+**Response 404** `ia_job_not_found` — id inválido ou job de outra empresa (isolamento por `enterprise_id`).
+
+---
+
+## Configuração de IA (BYO-key)
+
+Cada empresa pode usar a **própria chave OpenRouter** + modelo. A chave é **cifrada** (AES-256-GCM) no banco e **nunca** volta na resposta.
+
+### `GET /api/protected/user/ia-config`
+
+**Response 200**
+```json
+{ "hasKey": true, "provider": "openrouter", "model": "openrouter/auto", "keyHint": "xyz9" }
+```
+> Sem config: `{ "hasKey": false, "provider": null, "model": null, "keyHint": null }`. `keyHint` = últimos 4 caracteres (a chave em si nunca é retornada).
+
+### `PUT /api/protected/user/ia-config`
+
+Salva/atualiza a chave. **Valida a chave no provedor antes de gravar** (OpenRouter → `/auth/key`).
+
+**Body**
+```json
+{ "provider": "openrouter", "model": "openrouter/auto", "apiKey": "sk-or-..." }
+```
+
+| Campo | Tipo | Obrigatório | Padrão |
+|---|---|---|---|
+| `provider` | `openrouter \| gemini` | Não | `openrouter` |
+| `model` | `string` | Não | — |
+| `apiKey` | `string` | Sim | — |
+
+**Response 200** — `{ "hasKey": true, "provider": "openrouter", "model": "openrouter/auto", "keyHint": "1234" }`
+
+**Erros Possíveis**
+
+| Status | Código | Descrição |
+|---|---|---|
+| `400` | `invalid_payload` | Body fora do schema (ex.: sem `apiKey`) |
+| `400` | `ia_config_invalid_key` | Chave reprovada na validação do OpenRouter |
+| `404` | `enterprise_not_found` | Nenhuma empresa resolvida para o usuário |
+| `500` | `internal_server_error` | Falha ao cifrar/salvar (ex.: `IA_CONFIG_ENCRYPTION_KEY` ausente) |
+
+### `DELETE /api/protected/user/ia-config`
+
+Remove a config (a empresa volta ao **fallback global**). **Response 200** — `{ "hasKey": false, "provider": null, "model": null, "keyHint": null }`.
+
+---
+
+## Interno (token, não sessão)
+
+### `POST /api/internal/worker/tick`
+
+Drena a fila de análise (etapa 03): processa um lote de jobs e volta. **Não** usa sessão — protegido pelo `WORKER_TICK_TOKEN` (header `x-worker-token`), chamado por um **cron externo** (~1 min). Ver [operação do worker](./etapa-03-operacao-worker.md).
+
+**Response 200** — `{ "processed": 2, "results": [ ... ] }`
+
+**Response 401** `unauthorized_worker_request` — token ausente/incorreto (quando `WORKER_TICK_TOKEN` está setado).
 
 ---
 
@@ -974,6 +1051,8 @@ Submete um feedback via formulário público. Não requer autenticação. O `dev
 | `401` em qualquer endpoint protegido | Sessão expirada ou ausente | Refaça o login; garanta que as requisições vão com `credentials: 'include'` (a sessão é cookie HttpOnly — **não** há header `Authorization`) |
 | `422 collecting_data_required` | Empresa sem dados de contexto | Preencha os três campos obrigatórios (`company_objective`, `analytics_goal` e `business_summary`) em Configurações da empresa |
 | `422 insufficient_feedbacks_for_analysis` | Base de feedbacks pequena | Colete pelo menos 10 feedbacks antes de analisar |
-| `502` nos endpoints de IA | Serviço `ia-analyze` offline ou provedor LLM com erro | Verifique se o serviço `ia-analyze` está rodando e se `IA_ANALYZE_REMOTE_URL` / `IA_ANALYZE_REMOTE_TOKEN` estão configurados no gateway (a `GEMINI_API_KEY` é do serviço `ia-analyze`, não do gateway) |
+| `502` nos endpoints de IA | Serviço `ia-analyze` offline ou provedor LLM com erro | Verifique se o `ia-analyze` está rodando e se `IA_ANALYZE_REMOTE_URL`/`IA_ANALYZE_REMOTE_TOKEN` estão configurados. A chave do LLM é a **da empresa** (se configurada em `/user/ia-config`) ou a global do `ia-analyze` (`GEMINI_API_KEY`/`OPENROUTER_API_KEY`) |
+| `400 ia_config_invalid_key` no `PUT /user/ia-config` | Chave OpenRouter inválida | Confira/gere a chave em https://openrouter.ai/keys |
+| Job assíncrono fica `failed` | Erro capturado no worker | Veja `errorCode` no `GET /ia-analyze/jobs/:id` (ex.: `ia_config_required`, `insufficient_feedbacks_for_analysis`) e confirme que o cron está batendo em `/internal/worker/tick` |
 | `409` no POST público | Fingerprint já registrado hoje neste ponto de coleta | Aguarde até o próximo dia ou use outro ponto de coleta |
 | `403` no POST público | Dispositivo permanentemente bloqueado | Dispositivo marcado como `is_blocked` — requer intervenção manual |
