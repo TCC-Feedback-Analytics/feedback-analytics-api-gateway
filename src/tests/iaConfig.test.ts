@@ -110,14 +110,15 @@ describe('[Integração] PUT /api/protected/user/ia-config', () => {
     expect(res.body.error).toBe('invalid_payload');
   });
 
-  it('provider gemini não valida no OpenRouter, mas faz upsert', async () => {
+  it('rejeita provider diferente de OpenRouter', async () => {
     const res = await request(app)
       .put('/api/protected/user/ia-config')
       .send({ provider: 'gemini', apiKey: 'gemini-key-abcd' });
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_payload');
     expect(mValidate).not.toHaveBeenCalled();
-    expect(mUpsert).toHaveBeenCalledWith(expect.objectContaining({ provider: 'gemini' }));
+    expect(mUpsert).not.toHaveBeenCalled();
   });
 });
 

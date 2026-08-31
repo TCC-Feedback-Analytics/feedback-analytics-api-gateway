@@ -24,7 +24,7 @@ async function resolveEnterpriseId(req: Request): Promise<string | null> {
 }
 
 const updateSchema = z.object({
-  provider: z.enum(['gemini', 'openrouter']).default('openrouter'),
+  provider: z.literal('openrouter').default('openrouter'),
   model: z.string().trim().max(120).optional(),
   apiKey: z.string().trim().min(1),
 });
@@ -51,7 +51,7 @@ export async function getIaConfigController(req: Request, res: Response) {
 }
 
 /**
- * Salva/atualiza a config: valida a chave no provedor (OpenRouter → /auth/key),
+ * Salva/atualiza a config OpenRouter: valida a chave no provedor (/auth/key),
  * cifra (AES-256-GCM) e faz upsert. Responde sem a chave (só hasKey/provider/model/keyHint).
  */
 export async function putIaConfigController(req: Request, res: Response) {
@@ -64,10 +64,8 @@ export async function putIaConfigController(req: Request, res: Response) {
   const { provider, model, apiKey } = parsed.data;
 
   // Feedback imediato: valida a chave antes de salvar (OpenRouter tem /auth/key).
-  if (provider === 'openrouter') {
-    const valid = await validateOpenRouterKey(apiKey);
-    if (!valid) return sendTypedError(res, 400, API_ERROR_IA_CONFIG_INVALID_KEY);
-  }
+  const valid = await validateOpenRouterKey(apiKey);
+  if (!valid) return sendTypedError(res, 400, API_ERROR_IA_CONFIG_INVALID_KEY);
 
   try {
     const encrypted = encryptSecret(apiKey);
@@ -91,7 +89,7 @@ export async function putIaConfigController(req: Request, res: Response) {
   }
 }
 
-/** Remove a config de IA da empresa (volta ao fallback global). */
+/** Remove a config de IA da empresa (as análises ficam bloqueadas até nova configuração). */
 export async function deleteIaConfigController(req: Request, res: Response) {
   const enterpriseId = await resolveEnterpriseId(req);
   if (!enterpriseId) return sendTypedError(res, 404, API_ERROR_ENTERPRISE_NOT_FOUND);
