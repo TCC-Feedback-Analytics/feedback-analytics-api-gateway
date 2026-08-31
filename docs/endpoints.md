@@ -763,7 +763,7 @@ Salva/atualiza a chave. **Valida a chave no provedor antes de gravar** (OpenRout
 
 | Campo | Tipo | Obrigatório | Padrão |
 |---|---|---|---|
-| `provider` | `openrouter \| gemini` | Não | `openrouter` |
+| `provider` | `openrouter` | Não | `openrouter` |
 | `model` | `string` | Não | — |
 | `apiKey` | `string` | Sim | — |
 
@@ -780,7 +780,7 @@ Salva/atualiza a chave. **Valida a chave no provedor antes de gravar** (OpenRout
 
 ### `DELETE /api/protected/user/ia-config`
 
-Remove a config (a empresa volta ao **fallback global**). **Response 200** — `{ "hasKey": false, "provider": null, "model": null, "keyHint": null }`.
+Remove a config. As análises ficam bloqueadas com `ia_config_required` até uma nova chave ser configurada. **Response 200** — `{ "hasKey": false, "provider": null, "model": null, "keyHint": null }`.
 
 ---
 

@@ -51,7 +51,7 @@ Centralizar o backend permite:
 | `GET` | `/api/protected/ia-analyze/jobs/:id` | Status/progresso de um job de análise (polling) |
 | `GET` | `/api/protected/user/ia-config` | Config de IA da empresa (BYO-key) — `hasKey`/provedor/modelo (**nunca** a chave) |
 | `PUT` | `/api/protected/user/ia-config` | Salva/atualiza a chave OpenRouter (cifrada) + modelo |
-| `DELETE` | `/api/protected/user/ia-config` | Remove a config de IA (volta ao fallback global) |
+| `DELETE` | `/api/protected/user/ia-config` | Remove a config de IA (bloqueia análises até nova configuração) |
 
 ### Públicos (sem autenticação)
 
