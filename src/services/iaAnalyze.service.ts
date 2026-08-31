@@ -29,9 +29,9 @@ import { hasRequiredEnterpriseInfoForAnalysis, MIN_FEEDBACKS_FOR_RELEVANT_ANALYS
 import { applyExecutionFilter } from '../libs/iaAnalyze/filter.js';
 
 /**
- * Resolve as creds de IA da empresa (BYO-key). Se não houver config E
- * `REQUIRE_USER_IA_KEY` estiver ligada, lança `ia_config_required`; senão,
- * `undefined` ⇒ o ia-analyze usa a chave global do env (fallback da transição).
+ * Resolve as creds OpenRouter da empresa (BYO-key). Sem config, lança
+ * `ia_config_required` por padrão. O fallback global legado só é permitido
+ * quando `REQUIRE_USER_IA_KEY=false` estiver definido explicitamente.
  */
 export async function resolveIaCredsOrThrow(enterpriseId: string): Promise<IaCreds | undefined> {
   const creds = await resolveIaCredsForEnterprise(enterpriseId);
