@@ -4,10 +4,12 @@
  * fica cifrada; a decifra é responsabilidade da camada de serviço, não daqui.
  */
 import { getDb } from '../db/client.js';
+import { eq, isNull } from 'drizzle-orm';
 import { enterpriseIaConfig } from '../../drizzle/schema.js';
 import { scopedByEnterprise } from '../db/tenantScope.js';
 
 export type IaConfigRow = {
+  id: string;
   enterpriseId: string;
   provider: string;
   model: string | null;
@@ -20,6 +22,7 @@ export type IaConfigRow = {
 export async function getIaConfigByEnterprise(enterpriseId: string): Promise<IaConfigRow | null> {
   const rows = await getDb()
     .select({
+      id: enterpriseIaConfig.id,
       enterpriseId: enterpriseIaConfig.enterpriseId,
       provider: enterpriseIaConfig.provider,
       model: enterpriseIaConfig.model,
@@ -72,4 +75,28 @@ export async function deleteIaConfig(enterpriseId: string): Promise<void> {
   await getDb()
     .delete(enterpriseIaConfig)
     .where(scopedByEnterprise(enterpriseIaConfig.enterpriseId, enterpriseId));
+}
+
+/** UPDATE atômico, nunca upsert: remoção/recriação ou troca concorrente → null. */
+export async function updateIaModel(enterpriseId: string, expected: IaConfigRow, model: string) {
+  if (!expected.apiKeyCiphertext || !expected.apiKeyIv || !expected.apiKeyAuthTag) return null;
+  const rows = await getDb()
+    .update(enterpriseIaConfig)
+    .set({ model })
+    .where(scopedByEnterprise(
+      enterpriseIaConfig.enterpriseId,
+      enterpriseId,
+      eq(enterpriseIaConfig.id, expected.id),
+      eq(enterpriseIaConfig.provider, 'openrouter'),
+      eq(enterpriseIaConfig.apiKeyCiphertext, expected.apiKeyCiphertext),
+      eq(enterpriseIaConfig.apiKeyIv, expected.apiKeyIv),
+      eq(enterpriseIaConfig.apiKeyAuthTag, expected.apiKeyAuthTag),
+      expected.model === null ? isNull(enterpriseIaConfig.model) : eq(enterpriseIaConfig.model, expected.model),
+    ))
+    .returning({
+      provider: enterpriseIaConfig.provider,
+      model: enterpriseIaConfig.model,
+      keyHint: enterpriseIaConfig.keyHint,
+    });
+  return rows[0] ? { hasKey: true, ...rows[0] } : null;
 }
