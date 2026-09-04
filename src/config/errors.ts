@@ -39,6 +39,10 @@ export const API_ERROR_UNAUTHORIZED_WORKER_REQUEST = 'unauthorized_worker_reques
 // Provedor de LLM configurável / BYO-key (etapa 04).
 export const API_ERROR_IA_CONFIG_INVALID_KEY = 'ia_config_invalid_key' as const;
 export const API_ERROR_IA_CONFIG_REQUIRED = 'ia_config_required' as const;
+export const API_ERROR_IA_CONFIG_CHANGED = 'ia_config_changed' as const;
+export const API_ERROR_IA_MODEL_UNAVAILABLE = 'ia_model_unavailable' as const;
+export const API_ERROR_IA_MODELS_UNAVAILABLE = 'ia_models_unavailable' as const;
+export const API_ERROR_IA_MODELS_FORBIDDEN = 'ia_models_forbidden' as const;
 
 export const API_ERROR_PHONE_TAKEN = 'phone_taken' as const;
 export const API_ERROR_DOCUMENT_TAKEN = 'document_taken' as const;
