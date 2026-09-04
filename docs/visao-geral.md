@@ -16,7 +16,7 @@ Centralizar o backend permite:
 1. **Validar autenticação** lendo a sessão do cookie httpOnly via Better Auth (`getAuth().api.getSession()`, no middleware `requireAuth`)
 2. **Expor endpoints REST** para o frontend React
 3. **Ler e escrever** no banco de dados (Postgres, via Drizzle)
-4. **Orquestrar serviços** — busca feedbacks, monta batches, chama `ia-analyze` (síncrono ou via **fila + worker**), persiste resultados
+4. **Orquestrar serviços** — enfileira pedidos; o worker busca feedbacks, monta batches, chama `ia-analyze` e persiste resultados
 
 ## Endpoints Disponíveis
 
@@ -46,8 +46,8 @@ Centralizar o backend permite:
 | `POST` | `/api/protected/user/collection-points/qr/catalog/questions/upsert` | Upsert das perguntas de um item de catálogo |
 | `POST` | `/api/protected/user/collection-points/qr/catalog/enable` | Ativa o QR Code de um item de catálogo |
 | `POST` | `/api/protected/user/collection-points/qr/catalog/disable` | Desativa o QR Code de um item de catálogo |
-| `POST` | `/api/protected/ia-analyze/analyze-raw` | Analisa feedbacks brutos (síncrono; com `IA_ASYNC_ENABLED` responde **`202` + `jobId`**) |
-| `POST` | `/api/protected/ia-analyze/regenerate-insights` | Regenera insights (idem: síncrono ou `202` + `jobId`) |
+| `POST` | `/api/protected/ia-analyze/analyze-raw` | Sempre enfileira análise de pendentes: **`202` + `jobId`** |
+| `POST` | `/api/protected/ia-analyze/regenerate-insights` | Sempre enfileira relatório; `analyze_pending: true` inclui a análise prévia |
 | `GET` | `/api/protected/ia-analyze/jobs/:id` | Status/progresso de um job de análise (polling) |
 | `GET` | `/api/protected/user/ia-config` | Config de IA da empresa (BYO-key) — `hasKey`/provedor/modelo (**nunca** a chave) |
 | `PUT` | `/api/protected/user/ia-config` | Salva/atualiza a chave OpenRouter (cifrada) + modelo |

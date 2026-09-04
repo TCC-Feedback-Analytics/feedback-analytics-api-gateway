@@ -45,14 +45,14 @@ Um exemplo prático dessa aplicação no nosso sistema é o serviço Serverless 
 
 ## Processamento Assíncrono: Fila + Worker (etapa 03)
 
-A análise de IA pode rodar **fora da requisição HTTP**, num padrão **produtor–consumidor** — resolve o timeout serverless e o estouro de cota:
+A análise de IA sempre roda **fora da requisição HTTP do usuário**, num padrão **produtor–consumidor**. O worker ainda respeita os limites de tempo e de cota do provedor:
 
-- **Produtor:** os controllers de análise (`analyze-raw` / `regenerate-insights`), quando `IA_ASYNC_ENABLED=true`, **enfileiram** um job (tabela `ia_analysis_job`, que é a fila **e** o status) e respondem `202 + jobId` na hora, sem esperar a IA.
-- **Consumidor (worker):** o `drainJobs()` (`src/libs/iaJob/`) puxa jobs com `SELECT ... FOR UPDATE SKIP LOCKED`, processa **lote a lote** (retomando de onde parou entre execuções) e grava o progresso. É acionado por um endpoint interno `POST /internal/worker/tick` (token) chamado por um **cron externo** — não exige um host sempre-ligado.
+- **Produtor:** os controllers de análise (`analyze-raw` / `regenerate-insights`) sempre **enfileiram** um job (tabela `ia_analysis_job`, que é a fila **e** o status) e respondem `202 + jobId`, sem esperar a IA.
+- **Consumidor (worker):** o `drainJobs()` (`src/libs/iaJob/`) puxa jobs com `SELECT ... FOR UPDATE SKIP LOCKED`, processa **lote a lote** e depois executa um **reduce final por relatório**, retomando de onde parou entre execuções. É acionado por um endpoint interno `POST /internal/worker/tick` (token) chamado por um **cron externo** — não exige um host sempre-ligado.
 - **Rate limiter:** um *token bucket* durável (`ia_rate_budget`, por minuto/dia **e por empresa**) dita o ritmo das chamadas ao LLM (back-pressure) em vez de estourar a cota; jobs sem orçamento aguardam a próxima janela.
 - **Idempotência/resiliência:** dedup do pedido (índice parcial único em `ia_analysis_job`), `unique(feedback_id)` em `feedback_analysis` e retomada por lote.
 
-O frontend acompanha o progresso por **polling** (`GET /ia-analyze/jobs/:id`). O caminho **síncrono** antigo permanece atrás da flag `IA_ASYNC_ENABLED` durante a transição.
+O frontend acompanha o progresso por **polling** (`GET /ia-analyze/jobs/:id`) e recupera trabalhos ativos em `GET /ia-analyze/jobs`. Não existe seleção de modo síncrono. Fora da Vercel, o worker inicia com o Gateway; na Vercel, requer cron externo. Consulte [operação do worker](etapa-03-operacao-worker.md).
 
 ## Provedor de LLM Configurável / BYO-key (etapa 04)
 

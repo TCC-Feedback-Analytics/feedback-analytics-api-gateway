@@ -616,127 +616,80 @@ Desativa o QR Code de um item de catálogo específico.
 
 ## IA Analyze
 
-> **Síncrono × assíncrono.** Por padrão (`IA_ASYNC_ENABLED` off), `analyze-raw` e `regenerate-insights` rodam **síncronos** e respondem `200` com o resultado (abaixo). Com **`IA_ASYNC_ENABLED=true`**, os mesmos endpoints **enfileiram** um job e respondem **`202 { "jobId": "uuid", "status": "queued" }`** — o cliente acompanha por `GET /ia-analyze/jobs/:id`. O body é o mesmo nos dois modos.
->
-> **BYO-key.** A chave de LLM da análise é a **da empresa** quando configurada (ver seção **Configuração de IA (BYO-key)** abaixo); senão, a chave global do `ia-analyze`.
+As duas operações **sempre enfileiram** e respondem `202`. Não há modo síncrono
+selecionável por ambiente. O frontend consulta o job, sem esperar a IA no POST.
 
 ### `POST /api/protected/ia-analyze/analyze-raw`
 
-Analisa feedbacks **ainda não analisados** e persiste os resultados.
+Enfileira análise dos feedbacks ainda não analisados. Body:
 
-**Body**
 ```json
-{
-  "limit": 50,
-  "scope_type": "PRODUCT",
-  "catalog_item_id": "uuid-do-produto"
-}
+{ "scope_type": "PRODUCT", "catalog_item_id": "uuid-do-produto", "limit": 50 }
 ```
 
-| Campo | Tipo | Obrigatório | Padrão |
-|---|---|---|---|
-| `limit` | `number` | Não | `50` (máx. `100`) |
-| `scope_type` | `COMPANY \| PRODUCT \| SERVICE \| DEPARTMENT` | Não | todos |
-| `catalog_item_id` | `string (UUID)` | Não | todos |
+- `scope_type`: COMPANY (padrão), PRODUCT, SERVICE ou DEPARTMENT.
+- `catalog_item_id`: item do escopo, se aplicável.
+- `limit`: opcional, máximo explícito 100. Sem limite, inclui todos os pendentes
+  do escopo no snapshot.
+- Validação de contexto/mínimo de dez feedbacks ocorre no worker. Sem pendentes,
+  o job conclui com zero; não chama a IA.
 
-**Response 200**
+Resposta:
+
 ```json
-{
-  "analyzedCount": 23,
-  "feedbacksAnalyzed": [
-    {
-      "id": "uuid-analysis",
-      "feedback_id": "uuid-feedback",
-      "sentiment": "positive",
-      "categories": ["atendimento", "rapidez"],
-      "keywords": ["excelente", "equipe"],
-      "aspects": [
-        { "aspect": "atendimento", "sentiment": "positive", "sentiment_score": 0.8 }
-      ],
-      "sentiment_score": 0.75,
-      "confidence": 0.92
-    }
-  ]
-}
+{ "jobId": "uuid", "status": "queued" }
 ```
 
-> Os itens persistidos carregam também `aspects[]` (ABSA por aspecto), `sentiment_score` (intensidade do sentimento geral em [-1, 1]) e `confidence` (confiança da classificação em [0, 1]). O mínimo de **10 feedbacks é por escopo**: com **1 a 9** feedbacks retorna `422`; com **0** feedbacks retorna `200` com `analyzedCount: 0` e `feedbacksAnalyzed: []` (não há nada a analisar).
-
-**Erros Possíveis**
-
-| Status | Código | Descrição |
-|---|---|---|
-| `401` | `unauthorized` | Sessão ausente ou inválida |
-| `404` | `enterprise_not_found` | Nenhuma empresa resolvida para o usuário autenticado |
-| `422` | `collecting_data_required_for_analysis` | Dados de contexto da empresa não preenchidos |
-| `422` | `insufficient_feedbacks_for_analysis` | 1 a 9 feedbacks no escopo (com **0** feedbacks retorna `200` vazio, sem erro) |
-| `500` | `missing_ia_analyze_remote_url` | Em runtime serverless (`VERCEL=1`) sem `IA_ANALYZE_REMOTE_URL` configurada |
-| `500` | `failed_to_fetch_feedbacks_for_ia` | Falha ao buscar/resolver o escopo dos feedbacks a analisar |
-| `500` | `failed_to_fetch_analyzed_feedbacks` | Falha ao buscar/resolver o escopo dos feedbacks já analisados |
-| `502` | `failed_remote_ia_analyze_request` | Falha na comunicação com o serviço `ia-analyze` |
-| `502` | `remote_ia_analyze_error` | Serviço `ia-analyze` retornou status de erro |
-| `502` | `invalid_remote_ia_analyze_response_shape` | Resposta do serviço `ia-analyze` com formato inválido |
-
----
+Um pedido duplicado devolve o job ativo existente, que pode já estar running.
 
 ### `POST /api/protected/ia-analyze/regenerate-insights`
 
-Regenera os insights globais com base nos feedbacks **já analisados**.
-
-**Body**
 ```json
 {
   "scope_type": "COMPANY",
   "catalog_item_id": null,
-  "force": false
+  "force": false,
+  "analyze_pending": true
 }
 ```
 
-> `force` (boolean, opcional — padrão `false`): quando `true`, **ignora o cache** de relatórios e força a regeneração no LLM mesmo que já exista relatório salvo para o escopo.
+- `analyze_pending` (padrão false): quando true, o mesmo job primeiro analisa
+  pendentes e depois produz o relatório. Essa sequência não depende do navegador.
+- `force` (padrão false): ignora o cache de relatório.
+- Usa todos os analisados do escopo, em lotes retomáveis. O relatório só é
+  publicado após todos os lotes concluírem.
+- Resposta: `202 { "jobId": "uuid", "status": "queued" }`.
 
-**Response 200**
+Falhas de autenticação/empresa/fila podem retornar 401/404/500 no POST. Erros de
+IA e validação de negócio são informados no job, não como resposta tardia 502
+dessa requisição. Resultados são lidos pelos endpoints existentes de análise e
+relatório após o job concluir.
+
+### `GET /api/protected/ia-analyze/jobs`
+
+Recupera jobs ativos da empresa autenticada, inclusive após reload/outro dispositivo:
+
 ```json
-{
-  "globalInsights": {
-    "summary": "...",
-    "recommendations": ["..."]
-  },
-  "contexts": [
-    {
-      "scope_type": "COMPANY",
-      "catalog_item_id": null,
-      "catalog_item_name": null,
-      "analyzedCount": 87,
-      "globalInsights": { "summary": "...", "recommendations": ["..."] }
-    }
-  ],
-  "reportGenerated": true,
-  "fromCache": false
-}
+{ "jobs": [{ "id": "uuid", "jobType": "regenerate_insights", "scopeType": "COMPANY", "catalogItemId": null, "phase": "generating", "status": "running", "total": 6, "done": 2, "errorCode": null, "updatedAt": "2026-09-04T12:00:00Z" }] }
 ```
-
-> `reportGenerated` é `true` **somente** quando um relatório foi de fato persistido para o escopo pedido (com escopo informado: existe relatório salvo para `scope_type` + item; sem escopo: ao menos um relatório foi salvo). Permite ao cliente detectar o "falso sucesso" — quando nada é gerado por falta de feedbacks com texto analisados suficientes.
->
-> `fromCache` (boolean) indica se o relatório retornado veio do **cache** (sem chamar o LLM) — `true` quando já havia relatório salvo e `force` não foi usado.
-
-**Erros Possíveis** — mesmos códigos de `analyze-raw`.
-
----
 
 ### `GET /api/protected/ia-analyze/jobs/:id`
 
-Status/progresso de um job de análise (modo assíncrono). O front consulta a cada poucos segundos até um `status` terminal.
+Retorna o objeto de status acima, incluindo jobs terminados.
 
-**Response 200**
-```json
-{ "id": "uuid", "jobType": "analyze_raw", "scopeType": "COMPANY", "catalogItemId": null, "status": "running", "total": 40, "done": 12, "errorCode": null, "updatedAt": "2026-08-16T12:00:00Z" }
-```
+- `phase`: analyzing ou generating.
+- `done/total`: feedbacks na fase analyzing; lotes na fase generating.
+  Os contadores passam a representar a nova fase quando o job unificado avança.
+- `status`: queued, running, waiting_budget, completed ou failed.
+- `waiting_budget`: espera automática pela próxima janela de cota.
+- `errorCode`: causa da última falha; em queued pode indicar tentativa transitória
+  agendada. Só failed é falha terminal.
+- `404 ia_job_not_found`: ID inválido/inexistente ou de outra empresa.
+- Nunca retorna credenciais, textos do snapshot ou options/checkpoints.
 
-- `status`: `queued` → `running` → (`waiting_budget` ⇄ `running`) → `completed` | `failed`. `waiting_budget` = rate limiter segurando o ritmo (não é erro; o job retoma na próxima janela).
-- `done`/`total` (em feedbacks) = a barra "X de Y". Para `regenerate_insights`, `total = 1`.
-- `errorCode` só vem quando `failed` (ex.: `insufficient_feedbacks_for_analysis`, `ia_config_required`).
-
-**Response 404** `ia_job_not_found` — id inválido ou job de outra empresa (isolamento por `enterprise_id`).
+O cliente deve aguardar completed; 202 não comprova conclusão. Perda de conexão
+no polling deve reconectar, não declarar falha do job. Operação local e de produção:
+[runbook do worker](etapa-03-operacao-worker.md).
 
 ---
 

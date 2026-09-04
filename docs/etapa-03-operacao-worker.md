@@ -1,79 +1,77 @@
-# Etapa 03 — Operação do worker (drain por cron)
+# Operação da IA — sempre assíncrona
 
-> Como a análise assíncrona **roda em produção** sem um host always-on. O worker é
-> um endpoint que um **cron externo** "cutuca" periodicamente; cada chamada drena
-> um lote de jobs da fila e volta — cabe no modelo serverless da Vercel.
+Análise e relatório sempre respondem HTTP 202 com `jobId`. Não existe opção de
+execução síncrona no ambiente; a variável legada `IA_ASYNC_ENABLED` é ignorada
+e pode ser removida.
 
-## Como funciona
+## Desenvolvimento local
 
-```
-Cron externo (a cada ~1 min)
-   → POST https://<gateway>/api/internal/worker/tick   (header x-worker-token)
-   → drainJobs(): processa até IA_WORKER_BATCHES_PER_TICK lotes, respeitando o
-     rate limiter; jobs que não cabem continuam no próximo tick.
-```
+1. No Gateway: `npm run db:local:up` (PostgreSQL Docker).
+2. No ia-analyze: `npm run dev`.
+3. No Gateway: `npm run dev`.
+4. No web: `npm run dev`.
 
-Nada de processo sempre-ligado, container ou Dockerfile. O mesmo `drainJobs()` pode
-virar um loop always-on num host externo no futuro (ver etapa 08) — sem reescrita.
+O Gateway fora da Vercel inicia o worker automaticamente e imprime
+`[ia-worker] Processamento assíncrono ativo.`. Não é preciso outro terminal
+com loop de curl, nem flag para ativar a fila. A migration 0002 precisa estar
+aplicada; em bancos existentes, use `npm run db:migrate`, nunca `db:reset`
+para habilitar a fila. Esta alteração não adiciona migration e não apaga análises.
 
-## Variáveis de ambiente (na Vercel, projeto `api-gateway`)
+## Produção
 
-| Var | Papel | Sugestão |
-|---|---|---|
-| `IA_ASYNC_ENABLED` | Liga o modo assíncrono (senão, síncrono antigo) | `true` só depois de validar |
-| `WORKER_TICK_TOKEN` | Protege o `/tick` (o cron envia no header `x-worker-token`) | `openssl rand -hex 32` |
-| `IA_WORKER_BATCHES_PER_TICK` | Máx. de lotes (chamadas ao LLM) por tick | `3` (ajuste ao `maxDuration`/plano) |
-| `IA_RPM_LIMIT` | Chamadas ao LLM por minuto (0 = sem limite) | conforme a cota do provedor |
-| `IA_RPD_LIMIT` | Chamadas ao LLM por dia (a cota que hoje estoura) | conforme a cota do provedor |
+- Host persistente (Node/Express): o mesmo Gateway inicia seu worker.
+- Vercel: configure um cron externo para enviar POST a
+  `/api/internal/worker/tick`, com header `x-worker-token`.
+- `WORKER_TICK_TOKEN` deve ser definido no Gateway e no cron. Em produção/Vercel,
+  um token não configurado **recusa** o tick. Localmente ele pode ficar vazio.
+- Não há loop de background dentro da função serverless. Sem cron, os jobs ficam
+  na fila; o deploy do código não configura esse serviço externo automaticamente.
 
-## Configurar o cron externo
+## Configurações operacionais (não selecionam modo síncrono/assíncrono)
 
-**Opção A — cron-job.org (grátis, granularidade de 1 min — recomendado):**
-1. Crie um cronjob apontando para `POST https://<gateway>/api/internal/worker/tick`.
-2. Intervalo: a cada 1 minuto.
-3. Header: `x-worker-token: <WORKER_TICK_TOKEN>`.
+| Variável | Papel |
+|---|---|
+| `IA_WORKER_BATCHES_PER_TICK` | Limite de passos por tick, padrão 1; cada passo faz no máximo uma chamada ao ia-analyze |
+| `IA_MAX_FEEDBACKS_PER_BATCH` | Feedbacks por chamada de IA, padrão 20 |
+| `IA_RPM_LIMIT` / `IA_RPD_LIMIT` | Reservas por minuto/dia e por empresa; zero/ausente não limita |
+| `IA_ANALYZE_REMOTE_TIMEOUT_MS` | Timeout Gateway → ia-analyze, inclusive leitura da resposta |
+| `WORKER_TICK_TOKEN` | Autorização do endpoint interno do worker |
 
-**Opção B — GitHub Actions (mínimo ~5 min, pode atrasar):**
-```yaml
-# .github/workflows/worker-tick.yml
-name: worker-tick
-on:
-  schedule:
-    - cron: '*/5 * * * *' # a cada 5 min (mínimo do GitHub)
-  workflow_dispatch:
-jobs:
-  tick:
-    runs-on: ubuntu-latest
-    steps:
-      - run: |
-          curl -fsS -X POST "$GATEWAY_URL/api/internal/worker/tick" \
-            -H "x-worker-token: $WORKER_TICK_TOKEN"
-        env:
-          GATEWAY_URL: ${{ secrets.GATEWAY_URL }}
-          WORKER_TICK_TOKEN: ${{ secrets.WORKER_TICK_TOKEN }}
-```
-(Requer os secrets `GATEWAY_URL` e `WORKER_TICK_TOKEN` no repositório.)
+## Fluxo durável
 
-## Ajuste de ritmo (tuning)
+- O botão unificado envia `regenerate-insights` com `analyze_pending: true`.
+  O próprio worker faz análise → insights parciais por lote → síntese final,
+  mantendo empresa/escopo/item do job.
+- O snapshot e o cursor ficam em `ia_analysis_job.options.checkpoint`.
+  Pendentes que chegam depois do snapshot ficam para outra execução.
+- Análises são salvas por lote. Uma retomada consulta os IDs já persistidos
+  antes de chamar a IA, inclusive se houve crash entre INSERT e checkpoint.
+- Relatórios usam todos os analisados do escopo (sem o corte legado em 100),
+  em lotes. Os insights parciais são acumulados no checkpoint e enviados a uma
+  API exclusiva de síntese. O reduce cria um único resumo em pt-BR e consolida
+  recomendações semanticamente equivalentes antes da publicação.
+- A síntese final é um passo separado e checkpointado. Se ela falhar, o worker
+  retoma somente o reduce; os lotes anteriores não são enviados novamente.
+- Cache considera a data das análises, não apenas a data de coleta. O relatório
+  usa a data do snapshot para não esconder análises que chegaram durante a execução.
+- Cada claim usa `SKIP LOCKED`, incrementa uma revisão de posse e ganha lease
+  de 10 minutos. Heartbeat a cada 30 segundos renova a posse. Um running abandonado
+  pode ser retomado após expirar; worker antigo não pode gravar checkpoint/status.
+- Falhas transitórias reconhecidas recebem até 3 tentativas por passo, com espera
+  e preservação do último checkpoint. Falhas definitivas ficam em `failed`.
+  Uma nova submissão após falha definitiva cria novo job; lotes de análise já
+  salvos são pulados, mas a síntese pode precisar ser refeita.
+- O frontend recupera IDs por empresa no navegador e consulta
+  `GET /api/protected/ia-analyze/jobs` para recuperar trabalhos ativos.
+  Fechar o modal, mudar de página ou fechar a aba não interrompe o servidor.
+  Falha de conexão no polling gera reconexão, não falha artificial do job.
 
-- **`IA_WORKER_BATCHES_PER_TICK` × `maxDuration`:** cada lote é uma chamada ao LLM
-  (~10–30s). No plano free (corte ~60s) prefira `2–3`; com `maxDuration:300` (Pro),
-  pode subir. O que não couber num tick continua no próximo — sem perda.
-- **Frequência do cron × rate limit:** o `IA_RPM_LIMIT` é a trava real de cota; o
-  cron só define a latência de início. Um tick por minuto é suficiente para o TCC.
-- **Back-pressure:** se a cota estourar, os jobs viram `waiting_budget` e retomam
-  sozinhos na próxima janela — nenhum job falha por cota.
+## Limites e verificação
 
-## Dev local
+Assíncrono elimina a espera longa da requisição do usuário; não elimina falhas
+do provedor nem o limite de duração do host do worker/ia-analyze. Ajuste o tamanho
+dos lotes ao runtime. Retentativas internas do provedor também consomem cota.
 
-Não há cron em dev. Enquanto testa, cutuque o tick num loop (token vazio em dev):
-```bash
-while true; do curl -s -X POST http://localhost:3000/api/internal/worker/tick; echo; sleep 3; done
-```
-
-## Verificação em produção (smoke)
-
-1. Ligue `IA_ASYNC_ENABLED=true` e o cron.
-2. Dispare uma análise pela UI → deve responder na hora (202) e a barra "X de Y" avançar.
-3. Confira nos logs do tick o `{ processed, results }`.
-4. Uma análise com 40+ feedbacks conclui **sem timeout**.
+Os testes simulam IA/banco: seis lotes para 105 analisados, retomada de 102
+pendentes, falha parcial, lease, cache, navegação e recuperação após reload.
+Validar em produção exige observar o cron e as chamadas reais do provedor.
