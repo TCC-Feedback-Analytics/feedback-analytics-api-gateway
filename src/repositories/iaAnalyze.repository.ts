@@ -7,7 +7,7 @@ import type {
   IaAnalyzeScopeType,
   IaAnalyzeSentiment,
 } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/scope.contract';
-import { and, asc, desc, eq, exists, inArray, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, exists, notExists, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { IaAnalyzeServiceError } from '../libs/iaAnalyze/errors.js';
 import { normalizeScopeType } from '../libs/iaAnalyze/normalize.js';
 import type { SavedInsightsReport } from '../libs/iaAnalyze/insightsCache.js';
@@ -45,7 +45,7 @@ async function fetchSubanswersForFeedbacks(feedbackIds: string[]) {
 }
 
 /**
- * Núcleo compartilhado por fetchFeedbacksForAnalysis (todos) e
+ * Núcleo compartilhado por fetchFeedbacksForAnalysis (todos/pendentes) e
  * fetchAlreadyAnalyzedFeedbacks (só os com análise). Monta os IaAnalyzeFeedbackInput
  * (feedback + ponto de coleta + item de catálogo + respostas/subrespostas),
  * SEMPRE tenant-scoped. O catálogo por id ganha `eq(enterprise_id)` explícito
@@ -54,10 +54,11 @@ async function fetchSubanswersForFeedbacks(feedbackIds: string[]) {
 async function buildFeedbackInputs(params: {
   enterpriseId: string;
   scopedCollectionPointIds: string[] | null;
-  limit: number;
+  limit?: number;
   onlyAnalyzed: boolean;
+  onlyPending?: boolean;
 }): Promise<IaAnalyzeFeedbackInput[]> {
-  const { enterpriseId, scopedCollectionPointIds, limit, onlyAnalyzed } = params;
+  const { enterpriseId, scopedCollectionPointIds, limit, onlyAnalyzed, onlyPending } = params;
   const db = getDb();
 
   const conds: SQL[] = [scopedFeedbackWhere(enterpriseId, scopedCollectionPointIds)];
@@ -68,8 +69,13 @@ async function buildFeedbackInputs(params: {
       ),
     );
   }
+  if (onlyPending) {
+    conds.push(notExists(
+      db.select({ x: sql`1` }).from(feedbackAnalysis).where(eq(feedbackAnalysis.feedbackId, feedback.id)),
+    ));
+  }
 
-  const feedbackRows = await db
+  const query = db
     .select({
       id: feedback.id,
       message: feedback.message,
@@ -84,8 +90,8 @@ async function buildFeedbackInputs(params: {
     .from(feedback)
     .leftJoin(collectionPoints, eq(collectionPoints.id, feedback.collectionPointId))
     .where(conds.length === 1 ? conds[0] : and(...conds))
-    .orderBy(desc(feedback.createdAt))
-    .limit(limit);
+    .orderBy(onlyPending ? asc(feedback.createdAt) : desc(feedback.createdAt), asc(feedback.id));
+  const feedbackRows = await (limit === undefined ? query : query.limit(limit));
 
   // Enriquecimento de catálogo (só itens não-COMPANY), COM eq(enterprise_id).
   const catalogItemIds = [
@@ -185,14 +191,15 @@ async function buildFeedbackInputs(params: {
   });
 }
 
-/** Feedbacks (todos) prontos para análise IA, restritos ao escopo. */
+/** Feedbacks restritos ao escopo. onlyPending exclui analisados ANTES do limite. */
 export async function fetchFeedbacksForAnalysis(params: {
   enterpriseId: string;
-  limit: number;
+  limit?: number;
+  onlyPending?: boolean;
   scopeType?: IaAnalyzeScopeType;
   catalogItemId?: string | null;
 }): Promise<IaAnalyzeFeedbackInput[]> {
-  const { enterpriseId, limit, scopeType, catalogItemId = null } = params;
+  const { enterpriseId, limit, onlyPending, scopeType, catalogItemId = null } = params;
 
   const scopeResolution = await resolveScopeCollectionPointIds({ enterpriseId, scopeType, catalogItemId });
   if (scopeResolution.error) {
@@ -205,6 +212,7 @@ export async function fetchFeedbacksForAnalysis(params: {
     scopedCollectionPointIds: scopeResolution.ids,
     limit,
     onlyAnalyzed: false,
+    onlyPending,
   });
 }
 
@@ -214,6 +222,7 @@ export async function fetchAlreadyAnalyzedFeedbacks(params: {
   scopeType?: IaAnalyzeScopeType;
   catalogItemId?: string | null;
   limit?: number;
+  all?: boolean;
 }): Promise<IaAnalyzeFeedbackInput[]> {
   const { enterpriseId, scopeType, catalogItemId = null, limit = 100 } = params;
 
@@ -226,7 +235,7 @@ export async function fetchAlreadyAnalyzedFeedbacks(params: {
   return buildFeedbackInputs({
     enterpriseId,
     scopedCollectionPointIds: scopeResolution.ids,
-    limit,
+    limit: params.all ? undefined : limit,
     onlyAnalyzed: true,
   });
 }
@@ -319,6 +328,7 @@ export async function insertFeedbackAnalysisRows(params: {
 export async function upsertFeedbackInsightsReports(params: {
   enterpriseId: string;
   contexts: IaAnalyzeContext[];
+  asOf?: string;
 }): Promise<IaAnalyzeContext[]> {
   const { enterpriseId, contexts } = params;
   const persisted: IaAnalyzeContext[] = [];
@@ -330,7 +340,7 @@ export async function upsertFeedbackInsightsReports(params: {
 
     if (!summary && recommendations.length === 0) continue;
 
-    const now = new Date().toISOString();
+    const now = params.asOf ?? new Date().toISOString();
     try {
       await getDb()
         .insert(feedbackInsightsReport)
@@ -364,6 +374,15 @@ export async function upsertFeedbackInsightsReports(params: {
   }
 
   return persisted;
+}
+
+/** Data das análises (não apenas da coleta), para invalidar corretamente o cache. */
+export async function latestAnalysisForFeedbacks(enterpriseId: string, feedbackIds: string[]): Promise<string | null> {
+  if (!feedbackIds.length) return null;
+  const [row] = await getDb().select({ latest: sql<string | null>`max(${feedbackAnalysis.createdAt})` })
+    .from(feedbackAnalysis).innerJoin(feedback, eq(feedbackAnalysis.feedbackId, feedback.id))
+    .where(scopedByEnterprise(feedback.enterpriseId, enterpriseId, inArray(feedback.id, feedbackIds)));
+  return row?.latest ?? null;
 }
 
 /** Relatórios salvos do escopo (base do cache de leitura da regeneração). */

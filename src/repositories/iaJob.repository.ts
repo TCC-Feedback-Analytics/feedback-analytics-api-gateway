@@ -12,7 +12,7 @@
  * As funções de consumo do worker (claimNext/updateProgress/complete/...) entram
  * na etapa 03.3 (drain).
  */
-import { desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { getDb } from '../db/client.js';
 import { iaAnalysisJob } from '../../drizzle/schema.js';
 import { scopedByEnterprise } from '../db/tenantScope.js';
@@ -44,6 +44,7 @@ export type IaJobStatus = {
   done: number;
   errorCode: string | null;
   updatedAt: string | null;
+  phase?: string;
 };
 
 type ActiveKey = {
@@ -141,6 +142,7 @@ export async function getIaJobByIdScoped(params: {
       done: iaAnalysisJob.done,
       errorCode: iaAnalysisJob.errorCode,
       updatedAt: iaAnalysisJob.updatedAt,
+      phase: sql<string>`coalesce(${iaAnalysisJob.options}->'checkpoint'->>'phase', ${iaAnalysisJob.options}->>'phase', case when ${iaAnalysisJob.jobType} = 'analyze_raw' or ${iaAnalysisJob.options}->>'analyzePending' = 'true' then 'analyzing' else 'generating' end)`,
     })
     .from(iaAnalysisJob)
     .where(
@@ -149,6 +151,16 @@ export async function getIaJobByIdScoped(params: {
     .limit(1);
 
   return rows[0] ?? null;
+}
+
+/** Nunca devolve options/checkpoints: podem conter o texto original dos feedbacks. */
+export async function listActiveIaJobsScoped(enterpriseId: string): Promise<IaJobStatus[]> {
+  const rows = await getDb().select({ id: iaAnalysisJob.id }).from(iaAnalysisJob)
+    .where(scopedByEnterprise(iaAnalysisJob.enterpriseId, enterpriseId,
+      inArray(iaAnalysisJob.status, [...ACTIVE_IA_JOB_STATUSES])))
+    .orderBy(desc(iaAnalysisJob.createdAt));
+  const jobs = await Promise.all(rows.map(row => getIaJobByIdScoped({ enterpriseId, jobId: row.id })));
+  return jobs.filter((job): job is IaJobStatus => job !== null);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -168,19 +180,20 @@ export type ClaimedIaJob = {
 };
 
 /**
- * Puxa o próximo job "pronto" (queued/waiting_budget com next_run_at vencido) e o
+ * Puxa o próximo job pronto (queued/waiting_budget ou running com lease vencido) e o
  * marca como `running`, ATOMICAMENTE, com `FOR UPDATE SKIP LOCKED`: dois
- * ticks/workers concorrentes nunca pegam o mesmo job. Retorna null se não há
- * trabalho disponível.
+ * ticks/workers concorrentes nunca pegam a mesma revisão. Running abandonado
+ * pode ser retomado; attempts distingue a nova posse. Retorna null se não há trabalho.
  */
 export async function claimNextIaJob(): Promise<ClaimedIaJob | null> {
   const rows = (await getDb().execute(sql`
     UPDATE ia_analysis_job
-    SET status = 'running', updated_at = now()
+    SET status = 'running', updated_at = now(), attempts = attempts + 1,
+        next_run_at = now() + interval '10 minutes'
     WHERE id = (
       SELECT id FROM ia_analysis_job
-      WHERE status IN ('queued', 'waiting_budget') AND next_run_at <= now()
-      ORDER BY created_at
+      WHERE status IN ('queued', 'waiting_budget', 'running') AND next_run_at <= now()
+      ORDER BY next_run_at, created_at
       FOR UPDATE SKIP LOCKED
       LIMIT 1
     )
@@ -211,6 +224,27 @@ export async function claimNextIaJob(): Promise<ClaimedIaJob | null> {
     done: Number(row.done),
     attempts: Number(row.attempts),
   };
+}
+
+export class IaJobLeaseLostError extends Error {}
+
+/** attempts é a revisão da posse. Um worker antigo não pode atualizar um job retomado. */
+export async function saveClaimedIaJob(job: ClaimedIaJob, update: {
+  options?: Record<string, unknown>;
+  total?: number;
+  done?: number;
+  status?: 'running' | 'queued' | 'waiting_budget' | 'completed' | 'failed';
+  errorCode?: string | null;
+  delaySeconds?: number;
+}): Promise<void> {
+  const { delaySeconds = 600, ...values } = update;
+  const rows = await getDb().update(iaAnalysisJob).set({
+    ...values,
+    nextRunAt: sql`now() + ${delaySeconds} * interval '1 second'`,
+    updatedAt: sql`now()`,
+  }).where(and(eq(iaAnalysisJob.id, job.id), eq(iaAnalysisJob.status, 'running'),
+    eq(iaAnalysisJob.attempts, job.attempts))).returning({ id: iaAnalysisJob.id });
+  if (!rows.length) throw new IaJobLeaseLostError('ia_job_lease_lost');
 }
 
 /** Define o total de passos do job (uma vez, no início do processamento). */
