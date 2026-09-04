@@ -15,6 +15,20 @@
       "when": 1783560214072,
       "tag": "0001_functions_triggers_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786620005803,
+      "tag": "0002_fat_chronomancer",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786831316410,
+      "tag": "0003_amusing_radioactive_man",
+      "breakpoints": true
     }
   ]
 }

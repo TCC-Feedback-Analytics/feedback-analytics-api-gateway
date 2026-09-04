@@ -1,4 +1,5 @@
-import { runIaAnalyzeAnalysis } from '../providers/iaAnalyze.provider.js';
+import { runIaAnalyzeAnalysis, type IaCreds } from '../providers/iaAnalyze.provider.js';
+import { resolveIaCredsForEnterprise, requireUserIaKey } from '../libs/iaConfig/resolveIaCreds.js';
 import { IaAnalyzeServiceError } from '../libs/iaAnalyze/errors.js';
 import {
   fetchAlreadyAnalyzedFeedbackIds,
@@ -26,6 +27,160 @@ import type { IaAnalyzeSentiment } from '@feedback/lib-shared/interfaces/contrac
 import { buildEnterpriseContext, buildAnalysisBatches } from '../libs/iaAnalyze/build.js';
 import { hasRequiredEnterpriseInfoForAnalysis, MIN_FEEDBACKS_FOR_RELEVANT_ANALYSIS } from '../libs/iaAnalyze/rules.js';
 import { applyExecutionFilter } from '../libs/iaAnalyze/filter.js';
+import { assertCompleteAnalyses } from '../libs/iaAnalyze/validateCompletion.js';
+
+/**
+ * Resolve as creds OpenRouter da empresa (BYO-key). Sem config, lança
+ * `ia_config_required` por padrão. O fallback global legado só é permitido
+ * quando `REQUIRE_USER_IA_KEY=false` estiver definido explicitamente.
+ */
+export async function resolveIaCredsOrThrow(enterpriseId: string): Promise<IaCreds | undefined> {
+  const creds = await resolveIaCredsForEnterprise(enterpriseId);
+  if (!creds && requireUserIaKey()) {
+    throw new IaAnalyzeServiceError('ia_config_required', 400, 'ia_config_required');
+  }
+  return creds ?? undefined;
+}
+
+export type PreparedAnalyzeRawJob = {
+  enterpriseContext: ReturnType<typeof buildEnterpriseContext>;
+  batches: ReturnType<typeof buildAnalysisBatches>;
+  allowedFeedbackIds: Set<string>;
+};
+
+/**
+ * Fase de PREPARO da análise de feedbacks brutos, compartilhada pelo caminho
+ * síncrono e pelo worker assíncrono (etapa 03): valida a empresa, busca os
+ * pendentes do escopo (antes do limite), aplica filtros e fatia em lotes.
+ * NÃO chama o LLM nem persiste.
+ *
+ * - Retorna `null` quando não há nada NOVO para analisar (escopo vazio ou tudo
+ *   já analisado) — o chamador trata como "0 analisados".
+ * - Lança `IaAnalyzeServiceError` (422) nas validações de negócio (sem dados de
+ *   coleta / feedbacks insuficientes) — o worker mapeia isso para o job falho.
+ */
+export async function prepareAnalyzeRawJob(params: {
+  enterpriseId: string;
+  options?: IaAnalyzeRawRunRequest;
+  /** Retomada do worker: não ultrapassar o total originalmente selecionado. */
+  remainingLimit?: number;
+}): Promise<PreparedAnalyzeRawJob | null> {
+  const { enterpriseId, options } = params;
+
+  const { collecting, enterpriseName } = await fetchEnterpriseContextForAnalysis({ enterpriseId });
+
+  if (!hasRequiredEnterpriseInfoForAnalysis(collecting)) {
+    throw new IaAnalyzeServiceError(
+      'collecting_data_required_for_analysis',
+      422,
+      'collecting_data_required_for_analysis',
+    );
+  }
+
+  const limit = params.remainingLimit ?? (
+    typeof options?.limit === 'number' && options.limit > 0
+      ? Math.min(options.limit, 100)
+      : undefined
+  );
+
+  const feedbacksForAnalysis = await fetchFeedbacksForAnalysis({
+    enterpriseId,
+    limit,
+    onlyPending: true,
+    scopeType: options?.scope_type,
+    catalogItemId: options?.catalog_item_id?.trim() || null,
+  });
+  const feedbacksForExecution = applyExecutionFilter(feedbacksForAnalysis, options);
+
+  if (feedbacksForExecution.length === 0) return null;
+
+  if (feedbacksForExecution.length < MIN_FEEDBACKS_FOR_RELEVANT_ANALYSIS) {
+    // O mínimo vale para o escopo, não para os pendentes de uma retomada.
+    const scopeFeedbacks = await fetchFeedbacksForAnalysis({
+      enterpriseId,
+      limit: MIN_FEEDBACKS_FOR_RELEVANT_ANALYSIS,
+      scopeType: options?.scope_type,
+      catalogItemId: options?.catalog_item_id?.trim() || null,
+    });
+    if (applyExecutionFilter(scopeFeedbacks, options).length < MIN_FEEDBACKS_FOR_RELEVANT_ANALYSIS) {
+      throw new IaAnalyzeServiceError(
+        'insufficient_feedbacks_for_analysis',
+        422,
+        'insufficient_feedbacks_for_analysis',
+      );
+    }
+  }
+
+  const alreadyAnalyzedIds = await fetchAlreadyAnalyzedFeedbackIds({
+    feedbackIds: feedbacksForExecution.map((f) => f.id),
+  });
+  const feedbacksToAnalyze = feedbacksForExecution.filter((f) => !alreadyAnalyzedIds.has(f.id));
+
+  if (feedbacksToAnalyze.length === 0) return null;
+
+  const enterpriseContext = buildEnterpriseContext({ enterpriseName, collecting });
+  const batches = buildAnalysisBatches(feedbacksToAnalyze, options);
+
+  if (batches.length === 0) return null;
+
+  return {
+    enterpriseContext,
+    batches,
+    allowedFeedbackIds: new Set(feedbacksToAnalyze.map((f) => f.id)),
+  };
+}
+
+/**
+ * Analisa UM lote no serviço de IA e PERSISTE o resultado (idempotente via
+ * `insertFeedbackAnalysisRows`). Devolve quantas linhas realmente gravou. É a
+ * unidade de trabalho do worker: 1 lote = 1 chamada ao LLM = 1 passo de progresso.
+ */
+export async function runOneBatch(params: {
+  enterpriseContext: ReturnType<typeof buildEnterpriseContext>;
+  batch: ReturnType<typeof buildAnalysisBatches>[number];
+  allowedFeedbackIds: Set<string>;
+  creds?: IaCreds;
+}): Promise<number> {
+  const { enterpriseContext, batch, allowedFeedbackIds, creds } = params;
+
+  const remotePayload: IaAnalyzeRemoteRunRequest = {
+    enterprise_context: enterpriseContext,
+    batches: [
+      {
+        scope_type: batch.scopeType,
+        catalog_item_id: batch.catalogItemId,
+        catalog_item_name: batch.catalogItemName,
+        feedbacks: batch.feedbacks,
+      },
+    ],
+  };
+
+  const remoteResult = await runIaAnalyzeAnalysis(remotePayload, creds);
+  assertCompleteAnalyses(remoteResult.analyses, new Set(batch.feedbacks.map(feedback => feedback.id)));
+
+  const validSentimentsSet = new Set<IaAnalyzeSentiment>(['positive', 'negative', 'neutral']);
+  const rowsToInsert = remoteResult.analyses
+    .filter(
+      (item) =>
+        typeof item.feedback_id === 'string' &&
+        validSentimentsSet.has(item.sentiment) &&
+        allowedFeedbackIds.has(item.feedback_id),
+    )
+    .map((item) => ({
+      feedback_id: item.feedback_id,
+      sentiment: item.sentiment,
+      categories: Array.isArray(item.categories) ? item.categories : [],
+      keywords: Array.isArray(item.keywords) ? item.keywords : [],
+      aspects: Array.isArray(item.aspects) ? item.aspects : [],
+      sentiment_score: typeof item.sentiment_score === 'number' ? item.sentiment_score : null,
+      confidence: typeof item.confidence === 'number' ? item.confidence : null,
+    }));
+
+  if (rowsToInsert.length === 0) return 0;
+
+  const inserted = await insertFeedbackAnalysisRows({ rows: rowsToInsert });
+  return inserted.length;
+}
 
 /**
  * Realiza a análise IA de feedbacks brutos, orquestrando todo o fluxo de validação, filtragem, batching e persistência dos resultados.
@@ -46,62 +201,15 @@ export async function analyzeRawFeedbacks(params: {
   enterpriseId: string;
   options?: IaAnalyzeRawRunRequest;
 }): Promise<IaAnalyzeRawRunResponse> {
-  const { enterpriseId, options } = params;
-
-  const { collecting, enterpriseName } = await fetchEnterpriseContextForAnalysis({ enterpriseId });
-
-  if (!hasRequiredEnterpriseInfoForAnalysis(collecting)) {
-    throw new IaAnalyzeServiceError(
-      'collecting_data_required_for_analysis',
-      422,
-      'collecting_data_required_for_analysis',
-    );
-  }
-
-  const limit =
-    typeof options?.limit === 'number' && options.limit > 0
-      ? Math.min(options.limit, 100)
-      : 50;
-
-  // Busca já restrita ao escopo pedido: a janela de `limit` vale DENTRO do escopo
-  // (evita "fome de escopo") e o filtro em memória abaixo só refina.
-  const feedbacksForAnalysis = await fetchFeedbacksForAnalysis({
-    enterpriseId,
-    limit,
-    scopeType: options?.scope_type,
-    catalogItemId: options?.catalog_item_id?.trim() || null,
-  });
-  const feedbacksForExecution = applyExecutionFilter(feedbacksForAnalysis, options);
-
-  if (feedbacksForExecution.length === 0) {
+  const prepared = await prepareAnalyzeRawJob(params);
+  if (!prepared) {
     return { analyzedCount: 0, feedbacksAnalyzed: [] };
   }
+  const { enterpriseContext, batches: analysisBatches, allowedFeedbackIds } = prepared;
 
-  if (feedbacksForExecution.length < MIN_FEEDBACKS_FOR_RELEVANT_ANALYSIS) {
-    throw new IaAnalyzeServiceError(
-      'insufficient_feedbacks_for_analysis',
-      422,
-      'insufficient_feedbacks_for_analysis',
-    );
-  }
-
-  const alreadyAnalyzedIds = await fetchAlreadyAnalyzedFeedbackIds({
-    feedbackIds: feedbacksForExecution.map((f) => f.id),
-  });
-
-  const feedbacksToAnalyze = feedbacksForExecution.filter((f) => !alreadyAnalyzedIds.has(f.id));
-
-  if (feedbacksToAnalyze.length === 0) {
-    return { analyzedCount: 0, feedbacksAnalyzed: [] };
-  }
-
-  const enterpriseContext = buildEnterpriseContext({ enterpriseName, collecting });
-  const analysisBatches = buildAnalysisBatches(feedbacksToAnalyze, options);
-
-  if (analysisBatches.length === 0) {
-    return { analyzedCount: 0, feedbacksAnalyzed: [] };
-  }
-
+  // Caminho síncrono: manda TODOS os lotes numa única chamada (o ia-analyze
+  // paraleliza internamente) — preserva o comportamento atual. O worker (etapa 03)
+  // usa runOneBatch por lote, com progresso e rate limit.
   const remotePayload: IaAnalyzeRemoteRunRequest = {
     enterprise_context: enterpriseContext,
     batches: analysisBatches.map((batch) => ({
@@ -112,10 +220,11 @@ export async function analyzeRawFeedbacks(params: {
     })),
   };
 
-  const remoteResult = await runIaAnalyzeAnalysis(remotePayload);
+  const creds = await resolveIaCredsOrThrow(params.enterpriseId);
+  const remoteResult = await runIaAnalyzeAnalysis(remotePayload, creds);
+  assertCompleteAnalyses(remoteResult.analyses, allowedFeedbackIds);
 
   const validSentimentsSet = new Set<IaAnalyzeSentiment>(['positive', 'negative', 'neutral']);
-  const allowedFeedbackIds = new Set(feedbacksToAnalyze.map((f) => f.id));
 
   const rowsToInsert = remoteResult.analyses
     .filter(
@@ -250,7 +359,8 @@ export async function regenerateFeedbackInsights(params: {
     })),
   };
 
-  const remoteResult = await runIaAnalyzeAnalysis(remotePayload);
+  const creds = await resolveIaCredsOrThrow(enterpriseId);
+  const remoteResult = await runIaAnalyzeAnalysis(remotePayload, creds);
   const insightsContexts = remoteResult.contexts;
 
   const globalInsights =

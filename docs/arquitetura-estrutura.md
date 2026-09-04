@@ -42,3 +42,21 @@ Ao invés de processar tudo no mesmo lugar e sobrecarregar o API Gateway, nossa 
 - **Responsividade:** Permite que o Gateway continue rápido e responsivo para as requisições do Frontend, mesmo lidando com tarefas demoradas.
 
 Um exemplo prático dessa aplicação no nosso sistema é o serviço Serverless `ia-analyze`, que lida com a inteligência artificial. Ele isola as chamadas à API do provedor LLM externo, reduzindo o risco de gargalos no Gateway durante análises massivas de texto.
+
+## Processamento Assíncrono: Fila + Worker (etapa 03)
+
+A análise de IA sempre roda **fora da requisição HTTP do usuário**, num padrão **produtor–consumidor**. O worker ainda respeita os limites de tempo e de cota do provedor:
+
+- **Produtor:** os controllers de análise (`analyze-raw` / `regenerate-insights`) sempre **enfileiram** um job (tabela `ia_analysis_job`, que é a fila **e** o status) e respondem `202 + jobId`, sem esperar a IA.
+- **Consumidor (worker):** o `drainJobs()` (`src/libs/iaJob/`) puxa jobs com `SELECT ... FOR UPDATE SKIP LOCKED`, processa **lote a lote** e depois executa um **reduce final por relatório**, retomando de onde parou entre execuções. É acionado por um endpoint interno `POST /internal/worker/tick` (token) chamado por um **cron externo** — não exige um host sempre-ligado.
+- **Rate limiter:** um *token bucket* durável (`ia_rate_budget`, por minuto/dia **e por empresa**) dita o ritmo das chamadas ao LLM (back-pressure) em vez de estourar a cota; jobs sem orçamento aguardam a próxima janela.
+- **Idempotência/resiliência:** dedup do pedido (índice parcial único em `ia_analysis_job`), `unique(feedback_id)` em `feedback_analysis` e retomada por lote.
+
+O frontend acompanha o progresso por **polling** (`GET /ia-analyze/jobs/:id`) e recupera trabalhos ativos em `GET /ia-analyze/jobs`. Não existe seleção de modo síncrono. Fora da Vercel, o worker inicia com o Gateway; na Vercel, requer cron externo. Consulte [operação do worker](etapa-03-operacao-worker.md).
+
+## Provedor de LLM Configurável / BYO-key (etapa 04)
+
+O motor de análise depende de uma **porta** (`IaApiClient`), não de um provedor concreto — padrão **Strategy/Adapter** (implementado no `ia-analyze`): dá para usar **Gemini** ou **OpenRouter** por configuração. Além disso, cada empresa pode trazer a **própria chave** (BYO-key), o que isola cota e custo por tenant:
+
+- A chave/modelo por empresa ficam em `enterprise_ia_config`, **cifrados** (AES-256-GCM — `src/utils/crypto.ts`). Os endpoints `/user/ia-config` (`controllers/protected/iaConfig.controller.ts` + `repositories/iaConfig.repository.ts`) fazem o CRUD e **nunca** retornam a chave (só `hasKey`/provedor/modelo/`keyHint`).
+- Na análise, o Gateway resolve e decifra a config OpenRouter da empresa (`src/libs/iaConfig/`) e a envia ao `ia-analyze` por **header** (`x-llm-*`) — fora do corpo e dos logs. Sem config, responde `ia_config_required` por padrão; o fallback global legado só é reativado explicitamente com `REQUIRE_USER_IA_KEY=false`.

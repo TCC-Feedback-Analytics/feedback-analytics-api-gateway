@@ -616,106 +616,219 @@ Desativa o QR Code de um item de catálogo específico.
 
 ## IA Analyze
 
+As duas operações **sempre enfileiram** e respondem `202`. Não há modo síncrono
+selecionável por ambiente. O frontend consulta o job, sem esperar a IA no POST.
+
 ### `POST /api/protected/ia-analyze/analyze-raw`
 
-Analisa feedbacks **ainda não analisados** e persiste os resultados.
+Enfileira análise dos feedbacks ainda não analisados. Body:
+
+```json
+{ "scope_type": "PRODUCT", "catalog_item_id": "uuid-do-produto", "limit": 50 }
+```
+
+- `scope_type`: COMPANY (padrão), PRODUCT, SERVICE ou DEPARTMENT.
+- `catalog_item_id`: item do escopo, se aplicável.
+- `limit`: opcional, máximo explícito 100. Sem limite, inclui todos os pendentes
+  do escopo no snapshot.
+- Validação de contexto/mínimo de dez feedbacks ocorre no worker. Sem pendentes,
+  o job conclui com zero; não chama a IA.
+
+Resposta:
+
+```json
+{ "jobId": "uuid", "status": "queued" }
+```
+
+Um pedido duplicado devolve o job ativo existente, que pode já estar running.
+
+### `POST /api/protected/ia-analyze/regenerate-insights`
+
+```json
+{
+  "scope_type": "COMPANY",
+  "catalog_item_id": null,
+  "force": false,
+  "analyze_pending": true
+}
+```
+
+- `analyze_pending` (padrão false): quando true, o mesmo job primeiro analisa
+  pendentes e depois produz o relatório. Essa sequência não depende do navegador.
+- `force` (padrão false): ignora o cache de relatório.
+- Usa todos os analisados do escopo, em lotes retomáveis. O relatório só é
+  publicado após todos os lotes concluírem.
+- Resposta: `202 { "jobId": "uuid", "status": "queued" }`.
+
+Falhas de autenticação/empresa/fila podem retornar 401/404/500 no POST. Erros de
+IA e validação de negócio são informados no job, não como resposta tardia 502
+dessa requisição. Resultados são lidos pelos endpoints existentes de análise e
+relatório após o job concluir.
+
+### `GET /api/protected/ia-analyze/jobs`
+
+Recupera jobs ativos da empresa autenticada, inclusive após reload/outro dispositivo:
+
+```json
+{ "jobs": [{ "id": "uuid", "jobType": "regenerate_insights", "scopeType": "COMPANY", "catalogItemId": null, "phase": "generating", "status": "running", "total": 6, "done": 2, "errorCode": null, "updatedAt": "2026-09-04T12:00:00Z" }] }
+```
+
+### `GET /api/protected/ia-analyze/jobs/:id`
+
+Retorna o objeto de status acima, incluindo jobs terminados.
+
+- `phase`: analyzing ou generating.
+- `done/total`: feedbacks na fase analyzing; lotes na fase generating.
+  Os contadores passam a representar a nova fase quando o job unificado avança.
+- `status`: queued, running, waiting_budget, completed ou failed.
+- `waiting_budget`: espera automática pela próxima janela de cota.
+- `errorCode`: causa da última falha; em queued pode indicar tentativa transitória
+  agendada. Só failed é falha terminal.
+- `404 ia_job_not_found`: ID inválido/inexistente ou de outra empresa.
+- Nunca retorna credenciais, textos do snapshot ou options/checkpoints.
+
+O cliente deve aguardar completed; 202 não comprova conclusão. Perda de conexão
+no polling deve reconectar, não declarar falha do job. Operação local e de produção:
+[runbook do worker](etapa-03-operacao-worker.md).
+
+---
+
+## Configuração de IA (BYO-key)
+
+Cada empresa pode usar a **própria chave OpenRouter** + modelo. A chave é **cifrada** (AES-256-GCM) no banco e **nunca** volta na resposta.
+
+Todas as rotas desta seção exigem sessão (`credentials: 'include'`) e resolvem a empresa pelo usuário autenticado, nunca pelo body/query. As respostas usam `Cache-Control: private, no-store`.
+
+### `GET /api/protected/user/ia-config`
+
+**Response 200**
+```json
+{ "hasKey": true, "provider": "openrouter", "model": "openrouter/auto", "keyHint": "xyz9" }
+```
+> Sem config: `{ "hasKey": false, "provider": null, "model": null, "keyHint": null }`. `keyHint` = últimos 4 caracteres (a chave em si nunca é retornada).
+
+### `PUT /api/protected/user/ia-config`
+
+Salva/atualiza a chave. **Valida a chave e o modelo antes de gravar**, consultando `GET https://openrouter.ai/api/v1/models/user?output_modalities=text` com a chave enviada. A escolha deve constar no catálogo compatível da conta (mesmos filtros descritos abaixo). Não realiza geração paga e não comprova saldo disponível.
 
 **Body**
 ```json
-{
-  "limit": 50,
-  "scope_type": "PRODUCT",
-  "catalog_item_id": "uuid-do-produto"
-}
+{ "provider": "openrouter", "model": "openrouter/auto", "apiKey": "sk-or-..." }
 ```
 
 | Campo | Tipo | Obrigatório | Padrão |
 |---|---|---|---|
-| `limit` | `number` | Não | `50` (máx. `100`) |
-| `scope_type` | `COMPANY \| PRODUCT \| SERVICE \| DEPARTMENT` | Não | todos |
-| `catalog_item_id` | `string (UUID)` | Não | todos |
+| `provider` | `openrouter` | Não | `openrouter` |
+| `model` | `string` (até 120 caracteres; trim) | Não | `openrouter/auto` (também para string vazia) |
+| `apiKey` | `string` | Sim | — |
 
-**Response 200**
-```json
-{
-  "analyzedCount": 23,
-  "feedbacksAnalyzed": [
-    {
-      "id": "uuid-analysis",
-      "feedback_id": "uuid-feedback",
-      "sentiment": "positive",
-      "categories": ["atendimento", "rapidez"],
-      "keywords": ["excelente", "equipe"],
-      "aspects": [
-        { "aspect": "atendimento", "sentiment": "positive", "sentiment_score": 0.8 }
-      ],
-      "sentiment_score": 0.75,
-      "confidence": 0.92
-    }
-  ]
-}
-```
-
-> Os itens persistidos carregam também `aspects[]` (ABSA por aspecto), `sentiment_score` (intensidade do sentimento geral em [-1, 1]) e `confidence` (confiança da classificação em [0, 1]). O mínimo de **10 feedbacks é por escopo**: com **1 a 9** feedbacks retorna `422`; com **0** feedbacks retorna `200` com `analyzedCount: 0` e `feedbacksAnalyzed: []` (não há nada a analisar).
+**Response 200** — `{ "hasKey": true, "provider": "openrouter", "model": "openrouter/auto", "keyHint": "1234" }`
 
 **Erros Possíveis**
 
 | Status | Código | Descrição |
 |---|---|---|
+| `400` | `invalid_payload` | Body fora do schema (ex.: sem `apiKey`) |
+| `400` | `ia_config_invalid_key` | Chave reprovada na validação do OpenRouter |
+| `400` | `ia_model_unavailable` | Modelo ausente, restrito ou incompatível com o executor |
 | `401` | `unauthorized` | Sessão ausente ou inválida |
-| `404` | `enterprise_not_found` | Nenhuma empresa resolvida para o usuário autenticado |
-| `422` | `collecting_data_required_for_analysis` | Dados de contexto da empresa não preenchidos |
-| `422` | `insufficient_feedbacks_for_analysis` | 1 a 9 feedbacks no escopo (com **0** feedbacks retorna `200` vazio, sem erro) |
-| `500` | `missing_ia_analyze_remote_url` | Em runtime serverless (`VERCEL=1`) sem `IA_ANALYZE_REMOTE_URL` configurada |
-| `500` | `failed_to_fetch_feedbacks_for_ia` | Falha ao buscar/resolver o escopo dos feedbacks a analisar |
-| `500` | `failed_to_fetch_analyzed_feedbacks` | Falha ao buscar/resolver o escopo dos feedbacks já analisados |
-| `502` | `failed_remote_ia_analyze_request` | Falha na comunicação com o serviço `ia-analyze` |
-| `502` | `remote_ia_analyze_error` | Serviço `ia-analyze` retornou status de erro |
-| `502` | `invalid_remote_ia_analyze_response_shape` | Resposta do serviço `ia-analyze` com formato inválido |
+| `403` | `ia_models_forbidden` | OpenRouter recusou acesso ao catálogo da conta |
+| `404` | `enterprise_not_found` | Nenhuma empresa resolvida para o usuário |
+| `503` | `ia_models_unavailable` | Não foi possível obter catálogo atualizado; nada foi gravado |
+| `500` | `internal_server_error` | Falha ao cifrar/salvar (ex.: `IA_CONFIG_ENCRYPTION_KEY` ausente) |
+
+### `GET /api/protected/user/ia-models`
+
+Catálogo dinâmico para preencher o seletor de modelo no frontend, sem manter uma lista manual.
+
+- Sem chave cadastrada: consulta o catálogo público `GET https://openrouter.ai/api/v1/models?output_modalities=text`, sem token.
+- Com chave cadastrada: decifra somente no servidor e consulta `/api/v1/models/user?output_modalities=text`, respeitando as preferências, políticas de privacidade e guardrails da conta OpenRouter.
+- Ambos são consultados sem `offset` e `limit` para obter a lista completa. **Não** há fallback do catálogo da conta para o público em caso de erro ou restrição.
+
+**Response 200** (exemplo ilustrativo)
+
+```json
+{
+  "models": [
+    {
+      "id": "openrouter/auto",
+      "name": "Auto Router",
+      "contextLength": null,
+      "maxCompletionTokens": null,
+      "isAutomatic": true
+    }
+  ],
+  "source": "user",
+  "fetchedAt": "2026-09-04T12:00:00.000Z",
+  "stale": false,
+  "currentModel": "openrouter/auto",
+  "currentModelAvailable": true
+}
+```
+
+`source` é `public` ou `user`. Sem chave, `currentModel` e `currentModelAvailable` são `null`. Se um modelo salvo desaparecer do catálogo, `currentModel` mantém seu ID e `currentModelAvailable` será `false`; o Gateway não troca nem apaga a escolha. Um catálogo válido pode retornar `models: []`.
+
+**Compatibilidade com o executor atual (`ia-analyze`)**
+
+- Entrada e saída devem incluir texto; `supported_parameters` deve incluir `response_format` (o executor pede `json_object`).
+- Modelos comuns precisam declarar `max_completion_tokens >= 16384` e `context_length > 16384`, além de não estarem expirados. Modelos com limites desconhecidos são omitidos por segurança.
+- `openrouter/auto` aparece primeiro **somente se retornado pelo OpenRouter e aprovado nos filtros de texto/JSON**. Por ser roteamento automático, admite limites desconhecidos; limites explícitos insuficientes continuam sendo rejeitados. Os limites efetivos dependem do destino escolhido pelo roteador.
+- Os metadados reduzem incompatibilidades, mas não garantem disponibilidade, saldo, qualidade da análise nem que qualquer prompt caiba na janela de contexto. Se o orçamento de saída do executor mudar, atualizar o filtro `REQUIRED_OUTPUT_TOKENS` no Gateway.
+
+**Cache e falhas**
+
+Cache em memória por instância, TTL de 5 minutos e máximo de 100 entradas. Catálogos autenticados são separados por empresa e hash da chave; não se usa o token puro como chave de cache. PUT/DELETE bem-sucedidos invalidam as entradas da empresa na instância atual. O cache não é distribuído entre instâncias Vercel.
+
+Cada consulta ao provedor tem timeout de 8 segundos. Em erro transitório (rede, timeout, 429, 5xx ou resposta malformada), a leitura pode retornar o último catálogo com menos de 30 minutos de idade, marcado `stale: true` e mantendo o `fetchedAt` original. Sem cache utilizável retorna `503 ia_models_unavailable`. Falhas 401/403 do provedor invalidam a entrada e não usam stale: retornam respectivamente `400 ia_config_invalid_key` e `403 ia_models_forbidden`. O 401 da API fica reservado à sessão do aplicativo. Respostas de erro nunca incluem headers, corpo do provedor ou credenciais.
+
+Também pode retornar `404 enterprise_not_found`, `409 ia_config_required` (configuração legada de outro provedor) ou `500 internal_server_error` (falha de banco/decifra).
+
+### `PATCH /api/protected/user/ia-config/model`
+
+Altera **somente o modelo**, utilizando a chave já cadastrada. Não requer reenviar token, não recifra a chave e não faz upsert. `provider`, chave cifrada/IV/tag e `keyHint` permanecem intactos.
+
+**Body** — somente este campo; campos extras são rejeitados.
+
+```json
+{ "model": "openrouter/auto" }
+```
+
+`model` é obrigatório, não vazio, com até 120 caracteres após trim. O Gateway consulta um catálogo atualizado da conta antes de gravar (inclusive no PUT): ignora cache recente e **nunca aceita stale para autorizar a escolha**. Consultas simultâneas para a mesma empresa/chave podem compartilhar uma requisição em andamento.
+
+**Response 200**
+
+```json
+{ "hasKey": true, "provider": "openrouter", "model": "openrouter/auto", "keyHint": "xyz9" }
+```
+
+Além dos erros de validação/autenticação/catálogo do PUT:
+
+| Status | Código | Descrição |
+|---|---|---|
+| `409` | `ia_config_required` | Não há chave OpenRouter cadastrada; é necessário usar PUT primeiro |
+| `409` | `ia_config_changed` | Configuração foi removida ou alterada durante a operação; recarregar antes de tentar novamente |
+
+O UPDATE exige a mesma empresa, ID da configuração, chave cifrada/IV/tag e modelo lidos antes da validação externa. Isso impede que a operação sobrescreva uma troca concorrente ou recrie uma configuração removida. Em qualquer falha, a configuração anterior é preservada.
+
+### `DELETE /api/protected/user/ia-config`
+
+Remove a config. As análises ficam bloqueadas com `ia_config_required` até uma nova chave ser configurada. **Response 200** — `{ "hasKey": false, "provider": null, "model": null, "keyHint": null }`.
+
+**Integração do frontend (próxima etapa):** carregar `ia-models` para preencher o select; usar PUT no cadastro inicial e PATCH para trocar modelo com chave já salva. Preservar a seleção atual ausente do catálogo com aviso, informar `stale` e tratar catálogo vazio/erro. Não oferecer um modelo removido como nova escolha nem enviar token no PATCH. Nenhuma migration ou variável de ambiente nova é necessária nesta etapa.
+
+Referências: [catálogo público OpenRouter](https://openrouter.ai/docs/api/api-reference/models/list-all-models-and-their-properties), [catálogo filtrado por conta](https://openrouter.ai/docs/api/api-reference/models/list-models-filtered-by-user-provider-preferences-privacy-settings-and-guardrails).
 
 ---
 
-### `POST /api/protected/ia-analyze/regenerate-insights`
+## Interno (token, não sessão)
 
-Regenera os insights globais com base nos feedbacks **já analisados**.
+### `POST /api/internal/worker/tick`
 
-**Body**
-```json
-{
-  "scope_type": "COMPANY",
-  "catalog_item_id": null,
-  "force": false
-}
-```
+Drena a fila de análise (etapa 03): processa um lote de jobs e volta. **Não** usa sessão — protegido pelo `WORKER_TICK_TOKEN` (header `x-worker-token`), chamado por um **cron externo** (~1 min). Ver [operação do worker](./etapa-03-operacao-worker.md).
 
-> `force` (boolean, opcional — padrão `false`): quando `true`, **ignora o cache** de relatórios e força a regeneração no LLM mesmo que já exista relatório salvo para o escopo.
+**Response 200** — `{ "processed": 2, "results": [ ... ] }`
 
-**Response 200**
-```json
-{
-  "globalInsights": {
-    "summary": "...",
-    "recommendations": ["..."]
-  },
-  "contexts": [
-    {
-      "scope_type": "COMPANY",
-      "catalog_item_id": null,
-      "catalog_item_name": null,
-      "analyzedCount": 87,
-      "globalInsights": { "summary": "...", "recommendations": ["..."] }
-    }
-  ],
-  "reportGenerated": true,
-  "fromCache": false
-}
-```
-
-> `reportGenerated` é `true` **somente** quando um relatório foi de fato persistido para o escopo pedido (com escopo informado: existe relatório salvo para `scope_type` + item; sem escopo: ao menos um relatório foi salvo). Permite ao cliente detectar o "falso sucesso" — quando nada é gerado por falta de feedbacks com texto analisados suficientes.
->
-> `fromCache` (boolean) indica se o relatório retornado veio do **cache** (sem chamar o LLM) — `true` quando já havia relatório salvo e `force` não foi usado.
-
-**Erros Possíveis** — mesmos códigos de `analyze-raw`.
+**Response 401** `unauthorized_worker_request` — token ausente/incorreto (quando `WORKER_TICK_TOKEN` está setado).
 
 ---
 
@@ -974,6 +1087,8 @@ Submete um feedback via formulário público. Não requer autenticação. O `dev
 | `401` em qualquer endpoint protegido | Sessão expirada ou ausente | Refaça o login; garanta que as requisições vão com `credentials: 'include'` (a sessão é cookie HttpOnly — **não** há header `Authorization`) |
 | `422 collecting_data_required` | Empresa sem dados de contexto | Preencha os três campos obrigatórios (`company_objective`, `analytics_goal` e `business_summary`) em Configurações da empresa |
 | `422 insufficient_feedbacks_for_analysis` | Base de feedbacks pequena | Colete pelo menos 10 feedbacks antes de analisar |
-| `502` nos endpoints de IA | Serviço `ia-analyze` offline ou provedor LLM com erro | Verifique se o serviço `ia-analyze` está rodando e se `IA_ANALYZE_REMOTE_URL` / `IA_ANALYZE_REMOTE_TOKEN` estão configurados no gateway (a `GEMINI_API_KEY` é do serviço `ia-analyze`, não do gateway) |
+| `502` nos endpoints de IA | Serviço `ia-analyze` offline ou provedor LLM com erro | Verifique se o `ia-analyze` está rodando e se `IA_ANALYZE_REMOTE_URL`/`IA_ANALYZE_REMOTE_TOKEN` estão configurados. A chave do LLM é a **da empresa** (se configurada em `/user/ia-config`) ou a global do `ia-analyze` (`GEMINI_API_KEY`/`OPENROUTER_API_KEY`) |
+| `400 ia_config_invalid_key` no `PUT /user/ia-config` | Chave OpenRouter inválida | Confira/gere a chave em https://openrouter.ai/keys |
+| Job assíncrono fica `failed` | Erro capturado no worker | Veja `errorCode` no `GET /ia-analyze/jobs/:id` (ex.: `ia_config_required`, `insufficient_feedbacks_for_analysis`) e confirme que o cron está batendo em `/internal/worker/tick` |
 | `409` no POST público | Fingerprint já registrado hoje neste ponto de coleta | Aguarde até o próximo dia ou use outro ponto de coleta |
 | `403` no POST público | Dispositivo permanentemente bloqueado | Dispositivo marcado como `is_blocked` — requer intervenção manual |

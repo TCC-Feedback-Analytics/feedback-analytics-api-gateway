@@ -36,7 +36,7 @@ Migrations do banco (Drizzle): ver [`docs/migrations-drizzle.md`](docs/migration
 
 ## Superfície HTTP
 
-Todas as rotas são montadas sob **`/api`** (`app.use('/api', ...)` em `index.ts`), com sub-superfícies **pública** (`/api/public/...`) e **protegida** (`/api/protected/...`, exige sessão via cookie). Referência completa em [`docs/endpoints.md`](docs/endpoints.md).
+Todas as rotas são montadas sob **`/api`** (`app.use('/api', ...)` em `index.ts`), com sub-superfícies **pública** (`/api/public/...`), **protegida** (`/api/protected/...`, sessão via cookie) e **interna** (`/api/internal/...`, token — ex.: o tick do worker assíncrono). Referência completa em [`docs/endpoints.md`](docs/endpoints.md).
 
 ## Arquitetura BFF em camadas
 
@@ -47,6 +47,8 @@ Todas as rotas são montadas sob **`/api`** (`app.use('/api', ...)` em `index.ts
    - **Providers (`providers/`)** — adaptadores de rede para serviços externos (ex.: `iaAnalyze.provider.ts`, o ponto que faz a chamada HTTP ao serviço `ia-analyze`).
    - **Repositories (`repositories/`)** — acesso a dados via **Drizzle** (`DATABASE_URL`), com isolamento por `enterprise_id` forçado na aplicação (a role do Drizzle ignora a RLS). Detalhes em [Arquitetura e estrutura](docs/arquitetura-estrutura.md).
 4. **Contratos e respostas tipadas** — payloads e erros padronizados (`sendTypedError`), com schemas Zod de `@feedback/lib-shared`.
+
+A análise de IA pode rodar **assíncrona** (fila `ia_analysis_job` + worker `drainJobs`, drenado por cron via `/api/internal/worker/tick`) e cada empresa pode usar a **própria chave de LLM** (BYO-key, cifrada em `enterprise_ia_config`). Ver [Arquitetura e estrutura](docs/arquitetura-estrutura.md).
 
 ## Documentação
 

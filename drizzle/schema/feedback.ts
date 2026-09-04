@@ -90,6 +90,9 @@ export const feedbackAnalysis = pgTable("feedback_analysis", {
 			foreignColumns: [feedback.id],
 			name: "feedback_analysis_feedback_id_fkey"
 		}).onDelete("cascade"),
+	// Idempotência (etapa 03): 1 análise por feedback → habilita
+	// INSERT ... ON CONFLICT (feedback_id) DO NOTHING no reprocessamento de jobs.
+	unique("feedback_analysis_feedback_id_unique").on(table.feedbackId),
 ]);
 
 export const feedbackInsightsReport = pgTable("feedback_insights_report", {

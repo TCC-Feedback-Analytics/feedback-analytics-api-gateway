@@ -4,6 +4,7 @@
 - [Arquitetura e estrutura](arquitetura-estrutura.md)
 - [Endpoints](endpoints.md)
 - [Migrations (Drizzle)](migrations-drizzle.md)
+- [Operação do worker assíncrono (etapa 03)](etapa-03-operacao-worker.md)
 - [Decisões de arquitetura (ADR)](adr/0001-fonte-unica-de-schema.md)
 
 Como rodar e variáveis de ambiente: [README do repositório](../README.md). Banco local (Docker): [`db/local/README.md`](../db/local/README.md). CI/CD e deploy: [`.github/CI_SETUP.md`](../.github/CI_SETUP.md).

@@ -9,14 +9,14 @@ O `api-gateway` é o **Backend-for-Frontend (BFF)** do sistema. Ele é o único 
 Centralizar o backend permite:
 - **Autenticação uniforme** — um único middleware valida a sessão do Better Auth (cookie HttpOnly) para todos os endpoints **protegidos** (os públicos não passam por `requireAuth`)
 - **Isolamento do banco** — as queries ficam no backend; o frontend não precisa de acesso direto ao banco
-- **Orquestração da IA** — o Gateway prepara os dados, chama o `ia-analyze` e persiste os resultados sem expor a complexidade ao cliente
+- **Orquestração da IA** — o Gateway prepara os dados, chama o `ia-analyze` e persiste os resultados. A análise pode rodar **de forma assíncrona** (fila + worker, etapa 03) e cada empresa pode usar a **própria chave de LLM** (BYO-key, etapa 04) — sem expor a complexidade ao cliente
 
 ## Responsabilidades
 
 1. **Validar autenticação** lendo a sessão do cookie httpOnly via Better Auth (`getAuth().api.getSession()`, no middleware `requireAuth`)
 2. **Expor endpoints REST** para o frontend React
 3. **Ler e escrever** no banco de dados (Postgres, via Drizzle)
-4. **Orquestrar serviços** — busca feedbacks, monta batches, chama `ia-analyze`, persiste resultados
+4. **Orquestrar serviços** — enfileira pedidos; o worker busca feedbacks, monta batches, chama `ia-analyze` e persiste resultados
 
 ## Endpoints Disponíveis
 
@@ -46,8 +46,12 @@ Centralizar o backend permite:
 | `POST` | `/api/protected/user/collection-points/qr/catalog/questions/upsert` | Upsert das perguntas de um item de catálogo |
 | `POST` | `/api/protected/user/collection-points/qr/catalog/enable` | Ativa o QR Code de um item de catálogo |
 | `POST` | `/api/protected/user/collection-points/qr/catalog/disable` | Desativa o QR Code de um item de catálogo |
-| `POST` | `/api/protected/ia-analyze/analyze-raw` | Analisa feedbacks brutos |
-| `POST` | `/api/protected/ia-analyze/regenerate-insights` | Regenera insights |
+| `POST` | `/api/protected/ia-analyze/analyze-raw` | Sempre enfileira análise de pendentes: **`202` + `jobId`** |
+| `POST` | `/api/protected/ia-analyze/regenerate-insights` | Sempre enfileira relatório; `analyze_pending: true` inclui a análise prévia |
+| `GET` | `/api/protected/ia-analyze/jobs/:id` | Status/progresso de um job de análise (polling) |
+| `GET` | `/api/protected/user/ia-config` | Config de IA da empresa (BYO-key) — `hasKey`/provedor/modelo (**nunca** a chave) |
+| `PUT` | `/api/protected/user/ia-config` | Salva/atualiza a chave OpenRouter (cifrada) + modelo |
+| `DELETE` | `/api/protected/user/ia-config` | Remove a config de IA (bloqueia análises até nova configuração) |
 
 ### Públicos (sem autenticação)
 
@@ -62,6 +66,12 @@ Centralizar o backend permite:
 | `GET` | `/api/public/auth/callback` | Callback de confirmação/recuperação (redireciona) |
 | `GET` | `/api/public/enterprise/:id` | Dados públicos da empresa + perguntas para o formulário |
 | `POST` | `/api/public/qrcode/feedback` | Submissão de feedback via QR Code |
+
+### Interno (token, não sessão)
+
+| Método | Caminho | Descrição |
+|---|---|---|
+| `POST` | `/api/internal/worker/tick` | Drena a fila de análise (etapa 03). Protegido por `WORKER_TICK_TOKEN` (header `x-worker-token`), chamado por um cron externo. |
 
 ## Tecnologias
 

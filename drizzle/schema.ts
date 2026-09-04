@@ -9,3 +9,5 @@ export * from "./schema/questions.js";
 export * from "./schema/feedback.js";
 export * from "./schema/devices.js";
 export * from "./schema/views.js";
+export * from "./schema/iaJobs.js";
+export * from "./schema/iaConfig.js";

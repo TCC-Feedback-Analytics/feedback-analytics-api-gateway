@@ -11,6 +11,8 @@ import collectionPointsQrRoutes from './routes/protected/collectionPointsQr.rout
 import feedbacksRoutes from './routes/protected/feedbacks.routes.js';
 import userRoutes from './routes/protected/user.routes.js';
 import iaAnalyzeRoutes from './routes/protected/iaAnalyze.routes.js';
+import iaConfigRoutes from './routes/protected/iaConfig.routes.js';
+import workerInternalRoutes from './routes/internal/worker.routes.js';
 import resendConfirmationRoutes from './routes/public/resendConfirmation.routes.js';
 import forgotPasswordRoutes from './routes/public/forgotPassword.routes.js';
 import { toNodeHandler } from 'better-auth/node';
@@ -273,10 +275,31 @@ app.use('/api', enterpriseProtectedRoutes);
 app.use('/api', feedbacksRoutes);
 app.use('/api', userRoutes);
 app.use('/api', iaAnalyzeRoutes);
+app.use('/api', iaConfigRoutes);
 
-if (process.env.VERCEL !== '1') {
+// Endpoint interno do worker (protegido por token, não por auth de usuário).
+app.use('/api', workerInternalRoutes);
+
+if (process.env.VERCEL !== '1' && process.env.NODE_ENV !== 'test') {
   const port = Number(process.env.PORT ?? 3000);
-  app.listen(port);
+  const server = app.listen(port);
+  void import('./libs/iaJob/workerLoop.js').then(({ startIaWorker }) => {
+    const stopWorker = startIaWorker();
+    console.info('[ia-worker] Processamento assíncrono ativo.');
+    let stopping = false;
+    const stop = () => {
+      if (stopping) return;
+      stopping = true;
+      server.close();
+      void stopWorker().finally(async () => {
+        const { closeDb } = await import('./db/client.js');
+        await closeDb();
+        process.exit(0);
+      });
+    };
+    process.once('SIGINT', stop);
+    process.once('SIGTERM', stop);
+  });
 }
 
 export default app;

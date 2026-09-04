@@ -32,6 +32,18 @@ export const API_ERROR_FAILED_TO_FETCH_FEEDBACK_INSIGHTS_REPORT =
 export const API_ERROR_FAILED_TO_FETCH_FEEDBACK_ANALYSIS =
 	'failed_to_fetch_feedback_analysis' as const;
 
+// Fila de análise assíncrona (etapa 03).
+export const API_ERROR_IA_JOB_NOT_FOUND = 'ia_job_not_found' as const;
+export const API_ERROR_UNAUTHORIZED_WORKER_REQUEST = 'unauthorized_worker_request' as const;
+
+// Provedor de LLM configurável / BYO-key (etapa 04).
+export const API_ERROR_IA_CONFIG_INVALID_KEY = 'ia_config_invalid_key' as const;
+export const API_ERROR_IA_CONFIG_REQUIRED = 'ia_config_required' as const;
+export const API_ERROR_IA_CONFIG_CHANGED = 'ia_config_changed' as const;
+export const API_ERROR_IA_MODEL_UNAVAILABLE = 'ia_model_unavailable' as const;
+export const API_ERROR_IA_MODELS_UNAVAILABLE = 'ia_models_unavailable' as const;
+export const API_ERROR_IA_MODELS_FORBIDDEN = 'ia_models_forbidden' as const;
+
 export const API_ERROR_PHONE_TAKEN = 'phone_taken' as const;
 export const API_ERROR_DOCUMENT_TAKEN = 'document_taken' as const;
 export const API_ERROR_SIGNUP_FAILED = 'signup_failed' as const;

@@ -4,14 +4,18 @@ import type {
   IaAnalyzeRemoteRunRequest,
   IaAnalyzeRemoteRunResponse,
 } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/remote.contract';
-import { buildRemoteEndpoint } from '../libs/iaAnalyze/build.js';
+import { buildRemoteEndpoint, buildRemoteSynthesisEndpoint } from '../libs/iaAnalyze/build.js';
 import { readFallbackEnabled, readRemoteTimeoutMs, readRemoteToken } from '../libs/iaAnalyze/readEnvs.js';
 import { parseJsonSafe } from '../libs/iaAnalyze/parse.js';
 import { normalizeIaAnalyzeServiceError } from '../libs/iaAnalyze/normalize.js';
 import { resolvePrimaryBaseUrl } from '../libs/iaAnalyze/resolvePrimaryBaseUrl.js';
+import type { IaInsightsSynthesisRequest, IaInsightsSynthesisResponse } from '../../types/insightsSynthesis.types.js';
 
 // URL padrão do serviço IA local, usada como fallback quando o serviço remoto está indisponível.
 const DEFAULT_LOCAL_IA_ANALYZE_URL = 'http://localhost:4100';
+
+/** Credenciais de LLM por empresa (BYO-key, etapa 04), enviadas ao ia-analyze via header. */
+export type IaCreds = { provider: string; apiKey: string; model?: string };
 
 /**
  * Envia a requisição de análise IA para o serviço remoto e trata a resposta.
@@ -28,6 +32,7 @@ const DEFAULT_LOCAL_IA_ANALYZE_URL = 'http://localhost:4100';
 async function postAnalysisToService(
   baseUrl: string,
   requestBody: IaAnalyzeRemoteRunRequest,
+  creds?: IaCreds,
 ): Promise<IaAnalyzeRemoteRunResponse> {
   const endpoint = buildRemoteEndpoint(baseUrl);
   const timeoutMs = readRemoteTimeoutMs();
@@ -40,12 +45,21 @@ async function postAnalysisToService(
     headers['x-ia-analyze-token'] = remoteToken;
   }
 
+  // BYO-key (etapa 04): chave/modelo da empresa vão por header — fora do corpo e
+  // dos logs de payload. Ausentes ⇒ o ia-analyze usa a config do env (fallback).
+  if (creds) {
+    headers['x-llm-provider'] = creds.provider;
+    headers['x-llm-api-key'] = creds.apiKey;
+    if (creds.model) headers['x-llm-model'] = creds.model;
+  }
+
   const abortController = new AbortController();
   const timeoutHandle = setTimeout(() => {
     abortController.abort();
   }, timeoutMs);
 
   let response: Response;
+  let payload: Awaited<ReturnType<typeof parseJsonSafe>>;
 
   try {
     response = await fetch(endpoint, {
@@ -54,6 +68,9 @@ async function postAnalysisToService(
       body: JSON.stringify(requestBody),
       signal: abortController.signal,
     });
+    // O limite cobre também a leitura do corpo, não só a chegada dos headers.
+    payload = await parseJsonSafe(response);
+    if (abortController.signal.aborted) throw new Error('ia_request_timeout');
   } catch {
     clearTimeout(timeoutHandle);
     throw new IaAnalyzeServiceError(
@@ -64,8 +81,6 @@ async function postAnalysisToService(
   }
 
   clearTimeout(timeoutHandle);
-
-  const payload = await parseJsonSafe(response);
 
   if (!response.ok) {
     throw normalizeIaAnalyzeServiceError({
@@ -87,6 +102,52 @@ async function postAnalysisToService(
   return payload as unknown as IaAnalyzeRemoteRunResponse;
 }
 
+async function postSynthesisToService(
+  baseUrl: string,
+  requestBody: IaInsightsSynthesisRequest,
+  creds?: IaCreds,
+): Promise<IaInsightsSynthesisResponse> {
+  const endpoint = buildRemoteSynthesisEndpoint(baseUrl);
+  const timeoutMs = readRemoteTimeoutMs();
+  const remoteToken = readRemoteToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (remoteToken) headers['x-ia-analyze-token'] = remoteToken;
+  if (creds) {
+    headers['x-llm-provider'] = creds.provider;
+    headers['x-llm-api-key'] = creds.apiKey;
+    if (creds.model) headers['x-llm-model'] = creds.model;
+  }
+
+  const abortController = new AbortController();
+  const timeoutHandle = setTimeout(() => abortController.abort(), timeoutMs);
+  let response: Response;
+  let payload: Awaited<ReturnType<typeof parseJsonSafe>>;
+  try {
+    response = await fetch(endpoint, {
+      method: 'POST', headers, body: JSON.stringify(requestBody), signal: abortController.signal,
+    });
+    payload = await parseJsonSafe(response);
+    if (abortController.signal.aborted) throw new Error('ia_request_timeout');
+  } catch {
+    clearTimeout(timeoutHandle);
+    throw new IaAnalyzeServiceError(`Failed to call IA Analyze service at ${baseUrl}`, 502, 'failed_remote_ia_analyze_request');
+  }
+  clearTimeout(timeoutHandle);
+
+  if (!response.ok) {
+    throw normalizeIaAnalyzeServiceError({
+      status: response.status, payload, defaultCode: 'remote_ia_analyze_error',
+      defaultMessage: `IA Analyze service returned status ${response.status}`,
+    });
+  }
+  const insights = isObject(payload) ? payload.global_insights : undefined;
+  if (!isObject(insights) || typeof insights.summary !== 'string' || !insights.summary.trim() ||
+      !Array.isArray(insights.recommendations) || insights.recommendations.some(item => typeof item !== 'string')) {
+    throw new IaAnalyzeServiceError('Invalid remote IA synthesis response shape', 502, 'invalid_remote_ia_analyze_response_shape');
+  }
+  return payload as unknown as IaInsightsSynthesisResponse;
+}
+
 /**
  * Executa a análise IA remotamente, com fallback local se necessário.
  *
@@ -102,11 +163,12 @@ async function postAnalysisToService(
  */
 export async function runIaAnalyzeAnalysis(
   requestBody: IaAnalyzeRemoteRunRequest,
+  creds?: IaCreds,
 ): Promise<IaAnalyzeRemoteRunResponse> {
   const primaryBaseUrl = resolvePrimaryBaseUrl();
 
   try {
-    return await postAnalysisToService(primaryBaseUrl, requestBody);
+    return await postAnalysisToService(primaryBaseUrl, requestBody, creds);
   } catch (error) {
     const isServerless = process.env.VERCEL === '1';
     const canFallbackToLocal =
@@ -122,6 +184,23 @@ export async function runIaAnalyzeAnalysis(
       `[IA Analyze] Falha ao chamar ${primaryBaseUrl}. Tentando fallback local ${DEFAULT_LOCAL_IA_ANALYZE_URL}.`,
     );
 
-    return postAnalysisToService(DEFAULT_LOCAL_IA_ANALYZE_URL, requestBody);
+    return postAnalysisToService(DEFAULT_LOCAL_IA_ANALYZE_URL, requestBody, creds);
+  }
+}
+
+/** Executa o reduce final usando as mesmas regras de timeout, BYO-key e fallback. */
+export async function runIaInsightsSynthesis(
+  requestBody: IaInsightsSynthesisRequest,
+  creds?: IaCreds,
+): Promise<IaInsightsSynthesisResponse> {
+  const primaryBaseUrl = resolvePrimaryBaseUrl();
+  try {
+    return await postSynthesisToService(primaryBaseUrl, requestBody, creds);
+  } catch (error) {
+    const canFallbackToLocal = process.env.VERCEL !== '1' && readFallbackEnabled() &&
+      primaryBaseUrl !== DEFAULT_LOCAL_IA_ANALYZE_URL;
+    if (!canFallbackToLocal) throw error;
+    console.warn(`[IA Analyze] Falha ao chamar ${primaryBaseUrl}. Tentando fallback local ${DEFAULT_LOCAL_IA_ANALYZE_URL}.`);
+    return postSynthesisToService(DEFAULT_LOCAL_IA_ANALYZE_URL, requestBody, creds);
   }
 }
