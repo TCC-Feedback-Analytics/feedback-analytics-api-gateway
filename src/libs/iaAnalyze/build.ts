@@ -13,6 +13,10 @@ export function buildRemoteEndpoint(baseUrl: string): string {
   return `${baseUrl}/internal/ia-analyze/analyze`;
 }
 
+export function buildRemoteSynthesisEndpoint(baseUrl: string): string {
+  return `${baseUrl}/internal/ia-analyze/synthesize-insights`;
+}
+
 /**
  * Monta o contexto da empresa para ser enviado à IA.
  *
@@ -40,7 +44,7 @@ export function buildEnterpriseContext(params: {
 const DEFAULT_MAX_FEEDBACKS_PER_BATCH = 20;
 
 /**
- * Máximo de feedbacks em UMA chamada ao Gemini (configurável via
+ * Máximo de feedbacks em UMA chamada ao LLM (configurável via
  * IA_MAX_FEEDBACKS_PER_BATCH). Limita o tamanho da SAÍDA — o modelo emite um
  * objeto JSON por feedback, então lotes grandes estouram o teto de tokens de
  * saída e truncam o JSON (→ erro de parse → 502). Lotes menores mantêm a saída
