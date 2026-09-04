@@ -3,21 +3,14 @@ import { API_ERROR_INTERNAL_SERVER_ERROR, API_ERROR_IA_JOB_NOT_FOUND } from '../
 import { sendTypedError } from '../../utils/sendTypedError.js';
 import type {
   IaAnalyzeRawRunRequest,
-  IaAnalyzeRawRunResponse,
   IaAnalyzeRegenerateInsightsRequest,
-  IaAnalyzeRegenerateInsightsResponse,
 } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/run.contract';
-import {
-  analyzeRawFeedbacks,
-  regenerateFeedbackInsights,
-} from '../../services/iaAnalyze.service.js';
 import { resolveEnterpriseIdByUser } from '../../repositories/enterprise.repository.js';
 import { IaAnalyzeServiceError } from '../../libs/iaAnalyze/errors.js';
 import { parseScopeType } from '../../libs/iaAnalyze/parse.js';
 import { readExecutionMode } from '../../libs/iaAnalyze/readEnvs.js';
 import { resolvePrimaryBaseUrl } from '../../libs/iaAnalyze/resolvePrimaryBaseUrl.js';
-import { enqueueIaJob, getIaJobByIdScoped } from '../../repositories/iaJob.repository.js';
-import { isAsyncEnabled } from '../../libs/iaJob/config.js';
+import { enqueueIaJob, getIaJobByIdScoped, listActiveIaJobsScoped } from '../../repositories/iaJob.repository.js';
 
 /**
  * Loga, de forma estruturada, o contexto de uma falha no fluxo de IA. Inclui o
@@ -49,8 +42,8 @@ function logIaAnalyzeFailure(label: string, startedAt: number, error: unknown) {
  *
  * Etapas principais:
  * 1. Extrai e valida parâmetros do corpo da requisição.
- * 2. Chama o serviço de análise IA para feedbacks brutos.
- * 3. Retorna o resultado da análise ou erro tipado.
+ * 2. Enfileira o pedido para o worker, sem chamar a IA.
+ * 3. Retorna HTTP 202 com jobId ou erro de enfileiramento.
  *
  * Útil para expor a análise IA de feedbacks brutos via API REST, garantindo tratamento de erros e validação de entrada.
  */
@@ -74,24 +67,16 @@ export async function analyzeRawFeedbacksController(req: Request, res: Response)
       throw new IaAnalyzeServiceError('Enterprise not found', 404, 'enterprise_not_found');
     }
 
-    if (isAsyncEnabled()) {
-      const { jobId, status } = await enqueueIaJob({
-        enterpriseId,
-        jobType: 'analyze_raw',
-        scopeType: scope_type,
-        catalogItemId: catalog_item_id ?? null,
-        requestedBy: user.id,
-        options: { limit },
-      });
-      return res.status(202).json({ jobId, status });
-    }
-
-    const result = await analyzeRawFeedbacks({
+    const { jobId, status } = await enqueueIaJob({
       enterpriseId,
-      options: { limit, scope_type, catalog_item_id },
+      jobType: 'analyze_raw',
+      scopeType: scope_type,
+      catalogItemId: catalog_item_id ?? null,
+      requestedBy: user.id,
+      options: { limit },
     });
+    return res.status(202).json({ jobId, status });
 
-    return res.json(result satisfies IaAnalyzeRawRunResponse);
   } catch (error) {
     logIaAnalyzeFailure('analyze-raw', startedAt, error);
 
@@ -108,14 +93,14 @@ export async function analyzeRawFeedbacksController(req: Request, res: Response)
  *
  * Etapas principais:
  * 1. Extrai e valida parâmetros do corpo da requisição.
- * 2. Chama o serviço para regenerar os insights IA.
- * 3. Retorna o resultado da operação ou erro tipado.
+ * 2. Enfileira a geração (opcionalmente precedida da análise de pendentes).
+ * 3. Retorna HTTP 202 com jobId; a conclusão vem pelo polling.
  *
  * Útil para atualizar os insights globais/segmentados de feedbacks via API REST, garantindo tratamento de erros e validação de entrada.
  */
 export async function regenerateFeedbackInsightsController(req: Request, res: Response) {
   const user = req.user!;
-  const body = (req.body ?? {}) as IaAnalyzeRegenerateInsightsRequest;
+  const body = (req.body ?? {}) as IaAnalyzeRegenerateInsightsRequest & { analyze_pending?: boolean };
 
   const scope_type = parseScopeType(body.scope_type);
   const catalog_item_id =
@@ -132,24 +117,16 @@ export async function regenerateFeedbackInsightsController(req: Request, res: Re
       throw new IaAnalyzeServiceError('Enterprise not found', 404, 'enterprise_not_found');
     }
 
-    if (isAsyncEnabled()) {
-      const { jobId, status } = await enqueueIaJob({
-        enterpriseId,
-        jobType: 'regenerate_insights',
-        scopeType: scope_type,
-        catalogItemId: catalog_item_id ?? null,
-        requestedBy: user.id,
-        options: { force },
-      });
-      return res.status(202).json({ jobId, status });
-    }
-
-    const result = await regenerateFeedbackInsights({
+    const { jobId, status } = await enqueueIaJob({
       enterpriseId,
-      options: { scope_type, catalog_item_id, force },
+      jobType: 'regenerate_insights',
+      scopeType: scope_type,
+      catalogItemId: catalog_item_id ?? null,
+      requestedBy: user.id,
+      options: { force, analyzePending: body.analyze_pending === true },
     });
+    return res.status(202).json({ jobId, status });
 
-    return res.json(result satisfies IaAnalyzeRegenerateInsightsResponse);
   } catch (error) {
     logIaAnalyzeFailure('regenerate-insights', startedAt, error);
 
@@ -165,12 +142,25 @@ export async function regenerateFeedbackInsightsController(req: Request, res: Re
 // sintaxe uuid do Postgres e responde 404 limpo).
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** Recupera trabalhos em andamento ao abrir/recarregar o sistema. */
+export async function listActiveIaJobsController(req: Request, res: Response) {
+  res.setHeader('Cache-Control', 'private, no-store');
+  try {
+    const enterpriseId = req.enterpriseId ?? await resolveEnterpriseIdByUser(req.user!.id);
+    if (!enterpriseId) return sendTypedError(res, 404, 'enterprise_not_found');
+    return res.json({ jobs: await listActiveIaJobsScoped(enterpriseId) });
+  } catch {
+    return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
+  }
+}
+
 /**
  * Polling do progresso de um job de análise (etapa 03). Escopado por empresa:
  * um gestor nunca enxerga o job de outra empresa (isolamento app-level por
  * enterprise_id). Responde `{ id, status, total, done, ... }`.
  */
 export async function getIaJobController(req: Request, res: Response) {
+  res.setHeader('Cache-Control', 'private, no-store');
   const user = req.user!;
   const jobId = String(req.params.id ?? '');
 
