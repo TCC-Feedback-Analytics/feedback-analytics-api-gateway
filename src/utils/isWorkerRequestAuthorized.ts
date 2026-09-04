@@ -8,7 +8,7 @@ import type { Request } from 'express';
  */
 export function isWorkerRequestAuthorized(req: Request): boolean {
   const expected = String(process.env.WORKER_TICK_TOKEN ?? '').trim();
-  if (!expected) return true;
+  if (!expected) return process.env.NODE_ENV !== 'production' && process.env.VERCEL !== '1';
   const provided = req.header('x-worker-token');
   return typeof provided === 'string' && provided === expected;
 }

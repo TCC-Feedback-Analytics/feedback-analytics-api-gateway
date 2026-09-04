@@ -280,9 +280,26 @@ app.use('/api', iaConfigRoutes);
 // Endpoint interno do worker (protegido por token, não por auth de usuário).
 app.use('/api', workerInternalRoutes);
 
-if (process.env.VERCEL !== '1') {
+if (process.env.VERCEL !== '1' && process.env.NODE_ENV !== 'test') {
   const port = Number(process.env.PORT ?? 3000);
-  app.listen(port);
+  const server = app.listen(port);
+  void import('./libs/iaJob/workerLoop.js').then(({ startIaWorker }) => {
+    const stopWorker = startIaWorker();
+    console.info('[ia-worker] Processamento assíncrono ativo.');
+    let stopping = false;
+    const stop = () => {
+      if (stopping) return;
+      stopping = true;
+      server.close();
+      void stopWorker().finally(async () => {
+        const { closeDb } = await import('./db/client.js');
+        await closeDb();
+        process.exit(0);
+      });
+    };
+    process.once('SIGINT', stop);
+    process.once('SIGTERM', stop);
+  });
 }
 
 export default app;

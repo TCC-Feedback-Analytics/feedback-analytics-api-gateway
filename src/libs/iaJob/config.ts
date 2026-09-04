@@ -4,22 +4,13 @@
  */
 
 /**
- * Feature flag da transição síncrono → assíncrono. Enquanto `false` (default),
- * os controllers mantêm o caminho síncrono atual; `true` passa a enfileirar
- * (202 + jobId). Permite validar o assíncrono sem quebrar produção.
- */
-export function isAsyncEnabled(): boolean {
-  return String(process.env.IA_ASYNC_ENABLED ?? '').trim() === 'true';
-}
-
-/**
  * Máximo de lotes (chamadas ao LLM) processados por tick do worker. Bound para o
  * drain caber no `maxDuration` da função serverless; o resto continua no próximo
- * tick. Default conservador (3) — ajuste conforme o plano da Vercel/latência.
+ * tick. Default conservador (1) — não é um limite de duração de cada chamada.
  */
 export function readBatchesPerTick(): number {
   const raw = Number(process.env.IA_WORKER_BATCHES_PER_TICK);
-  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 3;
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 1;
 }
 
 /** Limite de chamadas ao LLM por MINUTO (RPM). 0/ausente = sem limite. */

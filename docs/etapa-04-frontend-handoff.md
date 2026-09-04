@@ -6,7 +6,7 @@
 
 ## 1. O que já existe no backend
 
-O gateway expõe **3 endpoints** para a empresa gerenciar a própria config de IA. A chave é **cifrada** (AES-256-GCM) no banco; o GET **nunca** devolve a chave — só se existe, o provedor, o modelo e um "hint" (últimos 4 caracteres). Quando a empresa tem chave configurada, as análises passam a usá-la (senão, cai no fallback global). Nada disso aparece na tela — é "embaixo do capô". O frontend só precisa do CRUD da config.
+O gateway expõe **3 endpoints** para a empresa gerenciar a própria config OpenRouter. A chave é **cifrada** (AES-256-GCM) no banco; o GET **nunca** devolve a chave — só se existe, o provedor, o modelo e um "hint" (últimos 4 caracteres). Sem chave configurada, as análises respondem `ia_config_required` por padrão.
 
 ---
 
@@ -35,7 +35,7 @@ Base: mesma de hoje (`/api/protected/...`, cookie httpOnly, `credentials: 'inclu
 ```json
 { "hasKey": false, "provider": null, "model": null, "keyHint": null }
 ```
-Depois disso a empresa volta ao **fallback global** (ou, se `REQUIRE_USER_IA_KEY=true` no ambiente, as análises passam a exigir a chave — mas isso é decisão de ambiente, o front não precisa tratar além de mostrar o erro que vier).
+Depois disso, as análises ficam indisponíveis até uma nova chave OpenRouter ser configurada. O frontend deve orientar o usuário quando receber `ia_config_required`.
 
 ---
 

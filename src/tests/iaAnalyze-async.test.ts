@@ -2,7 +2,7 @@ import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
 import app from '../../index.js';
 import { resolveEnterpriseIdByUser } from '../repositories/enterprise.repository.js';
-import { enqueueIaJob, getIaJobByIdScoped } from '../repositories/iaJob.repository.js';
+import { enqueueIaJob, getIaJobByIdScoped, listActiveIaJobsScoped } from '../repositories/iaJob.repository.js';
 import { drainJobs } from '../libs/iaJob/drainJobs.js';
 
 const TEST_USER_ID = '11111111-1111-1111-1111-111111111111';
@@ -24,6 +24,7 @@ vi.mock('../repositories/enterprise.repository.js', () => ({ resolveEnterpriseId
 vi.mock('../repositories/iaJob.repository.js', () => ({
   enqueueIaJob: vi.fn(),
   getIaJobByIdScoped: vi.fn(),
+  listActiveIaJobsScoped: vi.fn(),
 }));
 vi.mock('../libs/iaJob/drainJobs.js', () => ({ drainJobs: vi.fn() }));
 
@@ -38,9 +39,9 @@ beforeEach(() => {
   mResolveEnt.mockResolvedValue(ENT);
 });
 
-describe('[Integração] enqueue assíncrono (IA_ASYNC_ENABLED=true)', () => {
+describe('[Integração] enqueue sempre assíncrono (ignora flag legada)', () => {
   beforeEach(() => {
-    process.env.IA_ASYNC_ENABLED = 'true';
+    process.env.IA_ASYNC_ENABLED = 'false';
   });
   afterEach(() => {
     delete process.env.IA_ASYNC_ENABLED;
@@ -51,7 +52,7 @@ describe('[Integração] enqueue assíncrono (IA_ASYNC_ENABLED=true)', () => {
 
     const res = await request(app)
       .post('/api/protected/ia-analyze/analyze-raw')
-      .send({ scope_type: 'COMPANY' });
+      .send({ scope_type: 'COMPANY', analyze_pending: true });
 
     expect(res.status).toBe(202);
     expect(res.body.jobId).toBe(JOB_ID);
@@ -75,6 +76,13 @@ describe('[Integração] enqueue assíncrono (IA_ASYNC_ENABLED=true)', () => {
 });
 
 describe('[Integração] GET /api/protected/ia-analyze/jobs/:id (polling)', () => {
+  it('recupera jobs ativos exclusivamente da empresa autenticada', async () => {
+    vi.mocked(listActiveIaJobsScoped).mockResolvedValue([]);
+    const res = await request(app).get('/api/protected/ia-analyze/jobs');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ jobs: [] });
+    expect(listActiveIaJobsScoped).toHaveBeenCalledWith(ENT);
+  });
   it('retorna 200 com o status do job', async () => {
     mGetJob.mockResolvedValueOnce({
       id: JOB_ID,
@@ -118,9 +126,11 @@ describe('[Integração] GET /api/protected/ia-analyze/jobs/:id (polling)', () =
 describe('[Integração] POST /api/internal/worker/tick', () => {
   afterEach(() => {
     delete process.env.WORKER_TICK_TOKEN;
+    process.env.VERCEL = '1';
   });
 
   it('sem WORKER_TICK_TOKEN configurado → liberado (dev) e drena', async () => {
+    process.env.VERCEL = '0';
     delete process.env.WORKER_TICK_TOKEN;
     mDrain.mockResolvedValueOnce({ processed: 2, results: [] });
 
@@ -129,6 +139,13 @@ describe('[Integração] POST /api/internal/worker/tick', () => {
     expect(res.status).toBe(200);
     expect(res.body.processed).toBe(2);
     expect(mDrain).toHaveBeenCalled();
+  });
+
+  it('Vercel recusa tick sem token configurado', async () => {
+    delete process.env.WORKER_TICK_TOKEN;
+    const res = await request(app).post('/api/internal/worker/tick');
+    expect(res.status).toBe(401);
+    expect(mDrain).not.toHaveBeenCalled();
   });
 
   it('com token configurado → 401 sem o header', async () => {
