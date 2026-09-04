@@ -27,6 +27,7 @@ import type { IaAnalyzeSentiment } from '@feedback/lib-shared/interfaces/contrac
 import { buildEnterpriseContext, buildAnalysisBatches } from '../libs/iaAnalyze/build.js';
 import { hasRequiredEnterpriseInfoForAnalysis, MIN_FEEDBACKS_FOR_RELEVANT_ANALYSIS } from '../libs/iaAnalyze/rules.js';
 import { applyExecutionFilter } from '../libs/iaAnalyze/filter.js';
+import { assertCompleteAnalyses } from '../libs/iaAnalyze/validateCompletion.js';
 
 /**
  * Resolve as creds OpenRouter da empresa (BYO-key). Sem config, lança
@@ -50,7 +51,7 @@ export type PreparedAnalyzeRawJob = {
 /**
  * Fase de PREPARO da análise de feedbacks brutos, compartilhada pelo caminho
  * síncrono e pelo worker assíncrono (etapa 03): valida a empresa, busca os
- * feedbacks do escopo, aplica filtros, remove já-analisados e fatia em lotes.
+ * pendentes do escopo (antes do limite), aplica filtros e fatia em lotes.
  * NÃO chama o LLM nem persiste.
  *
  * - Retorna `null` quando não há nada NOVO para analisar (escopo vazio ou tudo
@@ -61,6 +62,8 @@ export type PreparedAnalyzeRawJob = {
 export async function prepareAnalyzeRawJob(params: {
   enterpriseId: string;
   options?: IaAnalyzeRawRunRequest;
+  /** Retomada do worker: não ultrapassar o total originalmente selecionado. */
+  remainingLimit?: number;
 }): Promise<PreparedAnalyzeRawJob | null> {
   const { enterpriseId, options } = params;
 
@@ -74,14 +77,16 @@ export async function prepareAnalyzeRawJob(params: {
     );
   }
 
-  const limit =
+  const limit = params.remainingLimit ?? (
     typeof options?.limit === 'number' && options.limit > 0
       ? Math.min(options.limit, 100)
-      : 50;
+      : undefined
+  );
 
   const feedbacksForAnalysis = await fetchFeedbacksForAnalysis({
     enterpriseId,
     limit,
+    onlyPending: true,
     scopeType: options?.scope_type,
     catalogItemId: options?.catalog_item_id?.trim() || null,
   });
@@ -90,11 +95,20 @@ export async function prepareAnalyzeRawJob(params: {
   if (feedbacksForExecution.length === 0) return null;
 
   if (feedbacksForExecution.length < MIN_FEEDBACKS_FOR_RELEVANT_ANALYSIS) {
-    throw new IaAnalyzeServiceError(
-      'insufficient_feedbacks_for_analysis',
-      422,
-      'insufficient_feedbacks_for_analysis',
-    );
+    // O mínimo vale para o escopo, não para os pendentes de uma retomada.
+    const scopeFeedbacks = await fetchFeedbacksForAnalysis({
+      enterpriseId,
+      limit: MIN_FEEDBACKS_FOR_RELEVANT_ANALYSIS,
+      scopeType: options?.scope_type,
+      catalogItemId: options?.catalog_item_id?.trim() || null,
+    });
+    if (applyExecutionFilter(scopeFeedbacks, options).length < MIN_FEEDBACKS_FOR_RELEVANT_ANALYSIS) {
+      throw new IaAnalyzeServiceError(
+        'insufficient_feedbacks_for_analysis',
+        422,
+        'insufficient_feedbacks_for_analysis',
+      );
+    }
   }
 
   const alreadyAnalyzedIds = await fetchAlreadyAnalyzedFeedbackIds({
@@ -142,6 +156,7 @@ export async function runOneBatch(params: {
   };
 
   const remoteResult = await runIaAnalyzeAnalysis(remotePayload, creds);
+  assertCompleteAnalyses(remoteResult.analyses, new Set(batch.feedbacks.map(feedback => feedback.id)));
 
   const validSentimentsSet = new Set<IaAnalyzeSentiment>(['positive', 'negative', 'neutral']);
   const rowsToInsert = remoteResult.analyses
@@ -207,6 +222,7 @@ export async function analyzeRawFeedbacks(params: {
 
   const creds = await resolveIaCredsOrThrow(params.enterpriseId);
   const remoteResult = await runIaAnalyzeAnalysis(remotePayload, creds);
+  assertCompleteAnalyses(remoteResult.analyses, allowedFeedbackIds);
 
   const validSentimentsSet = new Set<IaAnalyzeSentiment>(['positive', 'negative', 'neutral']);
 
