@@ -744,6 +744,8 @@ Status/progresso de um job de análise (modo assíncrono). O front consulta a ca
 
 Cada empresa pode usar a **própria chave OpenRouter** + modelo. A chave é **cifrada** (AES-256-GCM) no banco e **nunca** volta na resposta.
 
+Todas as rotas desta seção exigem sessão (`credentials: 'include'`) e resolvem a empresa pelo usuário autenticado, nunca pelo body/query. As respostas usam `Cache-Control: private, no-store`.
+
 ### `GET /api/protected/user/ia-config`
 
 **Response 200**
@@ -754,7 +756,7 @@ Cada empresa pode usar a **própria chave OpenRouter** + modelo. A chave é **ci
 
 ### `PUT /api/protected/user/ia-config`
 
-Salva/atualiza a chave. **Valida a chave no provedor antes de gravar** (OpenRouter → `/auth/key`).
+Salva/atualiza a chave. **Valida a chave e o modelo antes de gravar**, consultando `GET https://openrouter.ai/api/v1/models/user?output_modalities=text` com a chave enviada. A escolha deve constar no catálogo compatível da conta (mesmos filtros descritos abaixo). Não realiza geração paga e não comprova saldo disponível.
 
 **Body**
 ```json
@@ -764,7 +766,7 @@ Salva/atualiza a chave. **Valida a chave no provedor antes de gravar** (OpenRout
 | Campo | Tipo | Obrigatório | Padrão |
 |---|---|---|---|
 | `provider` | `openrouter` | Não | `openrouter` |
-| `model` | `string` | Não | — |
+| `model` | `string` (até 120 caracteres; trim) | Não | `openrouter/auto` (também para string vazia) |
 | `apiKey` | `string` | Sim | — |
 
 **Response 200** — `{ "hasKey": true, "provider": "openrouter", "model": "openrouter/auto", "keyHint": "1234" }`
@@ -775,12 +777,93 @@ Salva/atualiza a chave. **Valida a chave no provedor antes de gravar** (OpenRout
 |---|---|---|
 | `400` | `invalid_payload` | Body fora do schema (ex.: sem `apiKey`) |
 | `400` | `ia_config_invalid_key` | Chave reprovada na validação do OpenRouter |
+| `400` | `ia_model_unavailable` | Modelo ausente, restrito ou incompatível com o executor |
+| `401` | `unauthorized` | Sessão ausente ou inválida |
+| `403` | `ia_models_forbidden` | OpenRouter recusou acesso ao catálogo da conta |
 | `404` | `enterprise_not_found` | Nenhuma empresa resolvida para o usuário |
+| `503` | `ia_models_unavailable` | Não foi possível obter catálogo atualizado; nada foi gravado |
 | `500` | `internal_server_error` | Falha ao cifrar/salvar (ex.: `IA_CONFIG_ENCRYPTION_KEY` ausente) |
+
+### `GET /api/protected/user/ia-models`
+
+Catálogo dinâmico para preencher o seletor de modelo no frontend, sem manter uma lista manual.
+
+- Sem chave cadastrada: consulta o catálogo público `GET https://openrouter.ai/api/v1/models?output_modalities=text`, sem token.
+- Com chave cadastrada: decifra somente no servidor e consulta `/api/v1/models/user?output_modalities=text`, respeitando as preferências, políticas de privacidade e guardrails da conta OpenRouter.
+- Ambos são consultados sem `offset` e `limit` para obter a lista completa. **Não** há fallback do catálogo da conta para o público em caso de erro ou restrição.
+
+**Response 200** (exemplo ilustrativo)
+
+```json
+{
+  "models": [
+    {
+      "id": "openrouter/auto",
+      "name": "Auto Router",
+      "contextLength": null,
+      "maxCompletionTokens": null,
+      "isAutomatic": true
+    }
+  ],
+  "source": "user",
+  "fetchedAt": "2026-09-04T12:00:00.000Z",
+  "stale": false,
+  "currentModel": "openrouter/auto",
+  "currentModelAvailable": true
+}
+```
+
+`source` é `public` ou `user`. Sem chave, `currentModel` e `currentModelAvailable` são `null`. Se um modelo salvo desaparecer do catálogo, `currentModel` mantém seu ID e `currentModelAvailable` será `false`; o Gateway não troca nem apaga a escolha. Um catálogo válido pode retornar `models: []`.
+
+**Compatibilidade com o executor atual (`ia-analyze`)**
+
+- Entrada e saída devem incluir texto; `supported_parameters` deve incluir `response_format` (o executor pede `json_object`).
+- Modelos comuns precisam declarar `max_completion_tokens >= 16384` e `context_length > 16384`, além de não estarem expirados. Modelos com limites desconhecidos são omitidos por segurança.
+- `openrouter/auto` aparece primeiro **somente se retornado pelo OpenRouter e aprovado nos filtros de texto/JSON**. Por ser roteamento automático, admite limites desconhecidos; limites explícitos insuficientes continuam sendo rejeitados. Os limites efetivos dependem do destino escolhido pelo roteador.
+- Os metadados reduzem incompatibilidades, mas não garantem disponibilidade, saldo, qualidade da análise nem que qualquer prompt caiba na janela de contexto. Se o orçamento de saída do executor mudar, atualizar o filtro `REQUIRED_OUTPUT_TOKENS` no Gateway.
+
+**Cache e falhas**
+
+Cache em memória por instância, TTL de 5 minutos e máximo de 100 entradas. Catálogos autenticados são separados por empresa e hash da chave; não se usa o token puro como chave de cache. PUT/DELETE bem-sucedidos invalidam as entradas da empresa na instância atual. O cache não é distribuído entre instâncias Vercel.
+
+Cada consulta ao provedor tem timeout de 8 segundos. Em erro transitório (rede, timeout, 429, 5xx ou resposta malformada), a leitura pode retornar o último catálogo com menos de 30 minutos de idade, marcado `stale: true` e mantendo o `fetchedAt` original. Sem cache utilizável retorna `503 ia_models_unavailable`. Falhas 401/403 do provedor invalidam a entrada e não usam stale: retornam respectivamente `400 ia_config_invalid_key` e `403 ia_models_forbidden`. O 401 da API fica reservado à sessão do aplicativo. Respostas de erro nunca incluem headers, corpo do provedor ou credenciais.
+
+Também pode retornar `404 enterprise_not_found`, `409 ia_config_required` (configuração legada de outro provedor) ou `500 internal_server_error` (falha de banco/decifra).
+
+### `PATCH /api/protected/user/ia-config/model`
+
+Altera **somente o modelo**, utilizando a chave já cadastrada. Não requer reenviar token, não recifra a chave e não faz upsert. `provider`, chave cifrada/IV/tag e `keyHint` permanecem intactos.
+
+**Body** — somente este campo; campos extras são rejeitados.
+
+```json
+{ "model": "openrouter/auto" }
+```
+
+`model` é obrigatório, não vazio, com até 120 caracteres após trim. O Gateway consulta um catálogo atualizado da conta antes de gravar (inclusive no PUT): ignora cache recente e **nunca aceita stale para autorizar a escolha**. Consultas simultâneas para a mesma empresa/chave podem compartilhar uma requisição em andamento.
+
+**Response 200**
+
+```json
+{ "hasKey": true, "provider": "openrouter", "model": "openrouter/auto", "keyHint": "xyz9" }
+```
+
+Além dos erros de validação/autenticação/catálogo do PUT:
+
+| Status | Código | Descrição |
+|---|---|---|
+| `409` | `ia_config_required` | Não há chave OpenRouter cadastrada; é necessário usar PUT primeiro |
+| `409` | `ia_config_changed` | Configuração foi removida ou alterada durante a operação; recarregar antes de tentar novamente |
+
+O UPDATE exige a mesma empresa, ID da configuração, chave cifrada/IV/tag e modelo lidos antes da validação externa. Isso impede que a operação sobrescreva uma troca concorrente ou recrie uma configuração removida. Em qualquer falha, a configuração anterior é preservada.
 
 ### `DELETE /api/protected/user/ia-config`
 
 Remove a config. As análises ficam bloqueadas com `ia_config_required` até uma nova chave ser configurada. **Response 200** — `{ "hasKey": false, "provider": null, "model": null, "keyHint": null }`.
+
+**Integração do frontend (próxima etapa):** carregar `ia-models` para preencher o select; usar PUT no cadastro inicial e PATCH para trocar modelo com chave já salva. Preservar a seleção atual ausente do catálogo com aviso, informar `stale` e tratar catálogo vazio/erro. Não oferecer um modelo removido como nova escolha nem enviar token no PATCH. Nenhuma migration ou variável de ambiente nova é necessária nesta etapa.
+
+Referências: [catálogo público OpenRouter](https://openrouter.ai/docs/api/api-reference/models/list-all-models-and-their-properties), [catálogo filtrado por conta](https://openrouter.ai/docs/api/api-reference/models/list-models-filtered-by-user-provider-preferences-privacy-settings-and-guardrails).
 
 ---
 
