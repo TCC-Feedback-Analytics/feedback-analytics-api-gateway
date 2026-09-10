@@ -29,6 +29,13 @@
       "when": 1786831316410,
       "tag": "0003_amusing_radioactive_man",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789045383924,
+      "tag": "0004_user_onboarding",
+      "breakpoints": true
     }
   ]
 }
