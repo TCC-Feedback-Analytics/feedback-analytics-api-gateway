@@ -92,7 +92,7 @@ function readVercelPairConfig() {
       .trim()
       .toLowerCase(),
     apiProjectSlug: String(
-      process.env.CORS_VERCEL_API_PROJECT_SLUG ?? 'feedback-analytics-api',
+      process.env.CORS_VERCEL_API_PROJECT_SLUG ?? 'feedback-analytics-api-gateway',
     )
       .trim()
       .toLowerCase(),
