@@ -1,0 +1,12 @@
+CREATE TABLE "user_onboarding" (
+	"user_id" uuid NOT NULL,
+	"tour_key" text NOT NULL,
+	"version" integer NOT NULL,
+	"status" text NOT NULL,
+	"finished_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "user_onboarding_user_id_tour_key_version_pk" PRIMARY KEY("user_id","tour_key","version"),
+	CONSTRAINT "user_onboarding_status_check" CHECK ("user_onboarding"."status" IN ('completed', 'skipped')),
+	CONSTRAINT "user_onboarding_version_check" CHECK ("user_onboarding"."version" > 0)
+);
+--> statement-breakpoint
+ALTER TABLE "user_onboarding" ADD CONSTRAINT "user_onboarding_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;

@@ -1,0 +1,32 @@
+name: Processar fila de IA
+
+on:
+  schedule:
+    # A cada 5 minutos, evitando o minuto zero.
+    - cron: "2-59/5 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ia-worker-production
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    name: Executar worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+
+    steps:
+      - name: Processar próximo lote
+        env:
+          WORKER_TICK_TOKEN: ${{ secrets.WORKER_TICK_TOKEN }}
+        run: |
+          curl \
+            --silent \
+            --show-error \
+            --fail-with-body \
+            --request POST \
+            --header "Content-Type: application/json" \
+            --header "x-worker-token: ${WORKER_TICK_TOKEN}" \
+            --data '{}' \
+            https://feedback-analytics-api-gateway.vercel.app/api/internal/worker/tick
