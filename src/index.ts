@@ -81,21 +81,23 @@ function readVercelPairConfig() {
   const vercelEnv = String(process.env.VERCEL_ENV ?? '')
     .trim()
     .toLowerCase();
-  const enabled =
+  const webProjectSlug = String(
+    process.env.CORS_VERCEL_WEB_PROJECT_SLUG ?? '',
+  )
+    .trim()
+    .toLowerCase();
+  const apiProjectSlug = String(
+    process.env.CORS_VERCEL_API_PROJECT_SLUG ?? '',
+  )
+    .trim()
+    .toLowerCase();
+  const requested =
     rawEnabled === 'true' || (rawEnabled !== 'false' && vercelEnv === 'preview');
 
   return {
-    enabled,
-    webProjectSlug: String(
-      process.env.CORS_VERCEL_WEB_PROJECT_SLUG ?? 'feedback-analytics-web',
-    )
-      .trim()
-      .toLowerCase(),
-    apiProjectSlug: String(
-      process.env.CORS_VERCEL_API_PROJECT_SLUG ?? 'feedback-analytics-api-gateway',
-    )
-      .trim()
-      .toLowerCase(),
+    enabled: requested && Boolean(webProjectSlug) && Boolean(apiProjectSlug),
+    webProjectSlug,
+    apiProjectSlug,
   };
 }
 
