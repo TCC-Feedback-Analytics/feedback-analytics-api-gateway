@@ -5,10 +5,12 @@
  *  - PROD: SMTP do Resend (`smtp.resend.com`, `SMTP_USER=resend`, `SMTP_PASS=<API key>`,
  *    `SMTP_SECURE=true`) ou qualquer SMTP corporativo. Mesmo caminho de código.
  *
- * Os disparos são **fire-and-forget** (não bloqueiam o handler HTTP e não são
- * aguardados) — preserva a latência e o comportamento anti-timing dos fluxos de
- * signup/forgot atuais.
+ * Na Vercel, os disparos são registrados com `waitUntil` para que a Function
+ * continue viva até o SMTP concluir, sem bloquear a resposta HTTP. Localmente,
+ * o servidor é persistente e a Promise pode continuar em background.
  */
+import { createHash } from 'node:crypto';
+import { waitUntil } from '@vercel/functions';
 import nodemailer, { type Transporter } from 'nodemailer';
 
 let transporter: Transporter | null = null;
@@ -36,16 +38,35 @@ function getTransporter(): Transporter {
 const MAIL_FROM =
   process.env.MAIL_FROM ?? 'Feedback Analytics <no-reply@feedback.local>';
 
+function recipientFingerprint(to: string) {
+  return createHash('sha256').update(to.toLowerCase()).digest('hex').slice(0, 12);
+}
+
 function send(to: string, subject: string, text: string, html: string): void {
-  getTransporter()
+  const recipientHash = recipientFingerprint(to);
+  const delivery = getTransporter()
     .sendMail({ from: MAIL_FROM, to, subject, text, html })
+    .then((info) => {
+      console.info(
+        `[email] enviado "${subject}" recipientHash=${recipientHash} messageId=${info.messageId}`,
+      );
+    })
     .catch((err: unknown) => {
       const message =
         err && typeof err === 'object' && 'message' in err
           ? String((err as { message?: unknown }).message)
           : String(err);
-      console.warn(`[email] falha ao enviar "${subject}" para ${to}: ${message}`);
+      console.warn(
+        `[email] falha ao enviar "${subject}" recipientHash=${recipientHash}: ${message}`,
+      );
     });
+
+  if (process.env.VERCEL === '1') {
+    waitUntil(delivery);
+    return;
+  }
+
+  void delivery;
 }
 
 /** E-mail de confirmação de cadastro (link do Better Auth). */
