@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { requireAuth } from '../../middlewares/auth.js';
+import { getSystemGuideController, putSystemGuideController } from '../../controllers/protected/onboarding.controller.js';
 import {
   getAuthUserController,
   patchUserEmailController,
@@ -10,6 +11,9 @@ import {
 } from '../../controllers/protected/user.controller.js';
 
 const router = Router();
+
+router.get('/protected/user/onboarding/system-guide', requireAuth, getSystemGuideController);
+router.put('/protected/user/onboarding/system-guide', requireAuth, putSystemGuideController);
 
 router.get('/protected/user/auth_user', requireAuth, getAuthUserController);
 router.patch('/protected/user/email', requireAuth, patchUserEmailController);

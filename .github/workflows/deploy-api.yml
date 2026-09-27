@@ -10,7 +10,7 @@ on:
 
 concurrency:
   group: deploy-api-${{ github.ref_name }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy-api-gateway:
@@ -53,6 +53,16 @@ jobs:
             --target=node20 \
             --outfile=_bundle.cjs \
             --format=cjs
+
+      - name: Aplicar migrations de produção
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "Configure o secret DATABASE_URL no GitHub antes do deploy."
+            exit 1
+          fi
+          npm run db:migrate
 
       - name: Deploy production (main)
         env:
