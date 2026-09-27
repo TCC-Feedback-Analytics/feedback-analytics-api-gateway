@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@feedback/lib-shared": "github:TCC-Feedback-Analytics/feedback-analytics-contracts#v1.0.0",
+    "@vercel/functions": "^3.9.9",
     "bcryptjs": "^3.0.3",
     "better-auth": "^1.6.23",
     "dotenv": "^17.2.1",
