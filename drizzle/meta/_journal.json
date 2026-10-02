@@ -36,6 +36,13 @@
       "when": 1789045383924,
       "tag": "0004_user_onboarding",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790962301376,
+      "tag": "0005_auth_resend_rate_limit",
+      "breakpoints": true
     }
   ]
 }
