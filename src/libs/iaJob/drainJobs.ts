@@ -13,6 +13,9 @@ import {
 import type { IaAnalyzeScopeType } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/scope.contract';
 import { readBatchesPerTick } from './config.js';
 import { reserveIaBudget } from './rateBudget.js';
+import { companyQuestionContextSchema, companyQuestionContextHash } from '../iaAnalyze/companyQuestions.js';
+import { resolveCompanyQuestionCreds } from '../../services/companyQuestionSuggestions.service.js';
+import { runCompanyQuestionSuggestions } from '../../providers/companyQuestionSuggestions.provider.js';
 
 export type DrainJobResult = {
   jobId: string; jobType: string;
@@ -53,6 +56,27 @@ async function processJob(job: ClaimedIaJob): Promise<DrainJobResult> {
   // Não persiste mutações de um passo cuja gravação de checkpoint tenha falhado.
   let confirmedOptions = structuredClone(job.options);
   try {
+    if (job.jobType === 'generate_company_questions') {
+      const context = companyQuestionContextSchema.safeParse(job.options.enterpriseContext);
+      if (!context.success || companyQuestionContextHash(context.data) !== job.options.contextHash) {
+        throw new IaAnalyzeServiceError('invalid_question_generation_job', 422, 'invalid_question_generation_job');
+      }
+      const creds = await resolveCompanyQuestionCreds(job.enterpriseId);
+      const budget = await reserveIaBudget(job.enterpriseId);
+      if (!budget.ok) {
+        const now = Date.now();
+        const windowMs = budget.reason === 'day' ? 86_400_000 : 60_000;
+        await save({ status: 'waiting_budget', delaySeconds: Math.ceil((windowMs - now % windowMs) / 1000) });
+        return result('rescheduled');
+      }
+      batchesRun = 1;
+      const suggestions = await runCompanyQuestionSuggestions({ enterprise_context: context.data }, creds);
+      job.total = 1;
+      job.done = 1;
+      await save({ status: 'completed', total: 1, done: 1, errorCode: null,
+        options: { contextHash: job.options.contextHash, phase: 'generating_questions', suggestions } });
+      return result('completed');
+    }
     let checkpoint = job.options.checkpoint as IaJobCheckpoint | undefined;
     if (!checkpoint) {
       if (job.jobType === 'analyze_raw' || job.options.analyzePending === true) {
@@ -175,6 +199,9 @@ async function processJob(job: ClaimedIaJob): Promise<DrainJobResult> {
     const code = error instanceof IaAnalyzeServiceError ? error.code : 'unexpected_error';
     const failures = Number(confirmedOptions.failures ?? 0) + 1;
     const retry = RETRYABLE.has(code) && failures < 3;
+    if (!retry && job.jobType === 'generate_company_questions') {
+      confirmedOptions = { contextHash: confirmedOptions.contextHash, phase: 'generating_questions' };
+    }
     await saveClaimedIaJob(job, { status: retry ? 'queued' : 'failed', errorCode: code,
       delaySeconds: Math.min(60, 5 * 2 ** failures),
       options: { ...confirmedOptions, failures },

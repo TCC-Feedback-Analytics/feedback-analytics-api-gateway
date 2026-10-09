@@ -14,6 +14,7 @@ import iaAnalyzeRoutes from './routes/protected/iaAnalyze.routes.js';
 import iaConfigRoutes from './routes/protected/iaConfig.routes.js';
 import workerInternalRoutes from './routes/internal/worker.routes.js';
 import resendConfirmationRoutes from './routes/public/resendConfirmation.routes.js';
+import { resendConfirmationController } from './controllers/public/resendConfirmation.controller.js';
 import forgotPasswordRoutes from './routes/public/forgotPassword.routes.js';
 import { toNodeHandler } from 'better-auth/node';
 import { getAuth } from './auth/auth.js';
@@ -212,6 +213,7 @@ function corsMiddleware(
     res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
     res.setHeader('Vary', 'Origin, Access-Control-Request-Headers');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Expose-Headers', 'Retry-After');
 
     const requestedHeaders = req.headers['access-control-request-headers'];
     res.setHeader(
@@ -246,6 +248,7 @@ const app = express();
 
 // CORS precisa vir antes dos endpoints
 app.use(corsMiddleware);
+app.post('/api/auth/send-verification-email', express.json(), resendConfirmationController);
 
 // Better Auth: o handler nativo é montado ANTES do express.json() — o
 // toNodeHandler precisa ler o stream do request cru; se o json() consumir antes,

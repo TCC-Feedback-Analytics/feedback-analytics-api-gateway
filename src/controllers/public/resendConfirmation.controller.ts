@@ -1,5 +1,4 @@
 import type { Request, Response } from 'express';
-import { createHash } from 'node:crypto';
 import z from 'zod';
 import { sendTypedError } from '../../utils/sendTypedError.js';
 import { API_ERROR_INVALID_PAYLOAD } from '../../config/errors.js';
@@ -7,21 +6,26 @@ import { getAuth } from '../../auth/auth.js';
 import { APIError } from 'better-auth/api';
 import { fromNodeHeaders } from 'better-auth/node';
 import { mapResendError } from '../../auth/errorMap.js';
+import { reserveResend, resendClientIp, resendFingerprint } from '../../libs/resendRateLimit.js';
 
 const resendConfirmationSchema = z.object({
-  email: z.email({ error: 'E-mail inválido' }),
+  email: z.string().trim().pipe(z.email({ error: 'E-mail inválido' })),
 });
 
 const RESEND_ACCEPTED_MESSAGE =
   'Se existir uma conta pendente para este e-mail, enviaremos uma nova confirmação.';
 
-function emailFingerprint(email: string) {
-  return createHash('sha256').update(email).digest('hex').slice(0, 12);
+function sendAcceptedResponse(res: Response, retryAfterSeconds: number) {
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json({ ok: true, message: RESEND_ACCEPTED_MESSAGE, retryAfterSeconds });
 }
 
-function sendAcceptedResponse(res: Response) {
-  res.setHeader('Cache-Control', 'no-store');
-  return res.json({ ok: true, message: RESEND_ACCEPTED_MESSAGE });
+function sendLimitedResponse(res: Response, retryAfterSeconds: number) {
+  res.setHeader('Retry-After', String(retryAfterSeconds));
+  return sendTypedError(res, 429, 'rate_limited', {
+    message: 'Aguarde antes de solicitar outra confirmação.',
+    retryAfterSeconds,
+  });
 }
 
 function getAnonymousAuthHeaders(req: Request) {
@@ -36,6 +40,7 @@ function getAnonymousAuthHeaders(req: Request) {
 }
 
 export async function resendConfirmationController(req: Request, res: Response) {
+  res.setHeader('Cache-Control', 'no-store');
   const parsed = resendConfirmationSchema.safeParse(req.body);
   if (!parsed.success) {
     return sendTypedError(res, 400, API_ERROR_INVALID_PAYLOAD, {
@@ -45,7 +50,19 @@ export async function resendConfirmationController(req: Request, res: Response) 
   }
 
   const email = parsed.data.email.toLowerCase();
-  const emailHash = emailFingerprint(email);
+  let retryAfterSeconds: number;
+  let emailHash: string;
+  try {
+    const reservation = await reserveResend(resendClientIp(req), email);
+    if (!reservation.allowed) return sendLimitedResponse(res, reservation.retryAfterSeconds);
+    retryAfterSeconds = reservation.retryAfterSeconds;
+    emailHash = resendFingerprint('email', email);
+  } catch {
+    console.warn('[resend-confirmation] controle de reenvio indisponível');
+    return sendTypedError(res, 503, 'service_unavailable', {
+      message: 'Não foi possível processar a solicitação. Tente novamente mais tarde.',
+    });
+  }
 
   const webBase = process.env.PUBLIC_SITE_URL ?? 'http://localhost:5173';
   try {
@@ -53,25 +70,25 @@ export async function resendConfirmationController(req: Request, res: Response) 
       body: { email, callbackURL: `${webBase}/auth/success` },
       headers: getAnonymousAuthHeaders(req),
     });
-    return sendAcceptedResponse(res);
+    return sendAcceptedResponse(res, retryAfterSeconds);
   } catch (err) {
     if (err instanceof APIError) {
       const mapped = mapResendError(err);
 
       if (mapped.http === 429) {
-        return sendTypedError(res, mapped.http, mapped.code, { message: mapped.message });
+        return sendLimitedResponse(res, retryAfterSeconds);
       }
 
       console.warn(
         `[resend-confirmation] falha suprimida emailHash=${emailHash} code=${mapped.code} status=${mapped.http}`,
       );
-      return sendAcceptedResponse(res);
+      return sendAcceptedResponse(res, retryAfterSeconds);
     }
 
     const errorName = err instanceof Error ? err.name : typeof err;
     console.warn(
       `[resend-confirmation] falha suprimida emailHash=${emailHash} error=${errorName}`,
     );
-    return sendAcceptedResponse(res);
+    return sendAcceptedResponse(res, retryAfterSeconds);
   }
 }

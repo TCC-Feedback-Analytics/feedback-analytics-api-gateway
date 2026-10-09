@@ -12,3 +12,4 @@ export * from "./schema/views.js";
 export * from "./schema/iaJobs.js";
 export * from "./schema/iaConfig.js";
 export * from "./schema/onboarding.js";
+export * from "./schema/authRateLimit.js";
