@@ -25,6 +25,9 @@ import {
   type NormalizedCompanySubquestion,
   type SyncPlan,
 } from '../../repositories/collectingData.repository.js';
+import { DEFAULT_COMPANY_QUESTION_TEXTS } from '../../config/defaultCompanyQuestions.js';
+import { kickWorkerIfPending } from '../../libs/iaJob/kickWorker.js';
+import { autoGenerateCompanyQuestions } from '../../services/companyQuestionsAutoGenerate.service.js';
 
 type CatalogItemInput = {
   id?: string;
@@ -48,11 +51,9 @@ type CollectingDataPayload = {
   company_feedback_questions?: CompanyFeedbackQuestionInput[] | null;
 };
 
-const DEFAULT_COMPANY_FEEDBACK_QUESTIONS: CompanyFeedbackQuestionInput[] = [
-  { question_order: 1, question_text: 'Como foi sua experiência em relação ao atendimento?', is_active: true, subquestions: [] },
-  { question_order: 2, question_text: 'O que você achou da qualidade do produto/serviço?', is_active: true, subquestions: [] },
-  { question_order: 3, question_text: 'Como você avalia a relação entre o valor pago e a qualidade do produto/serviço?', is_active: true, subquestions: [] },
-];
+const DEFAULT_COMPANY_FEEDBACK_QUESTIONS: CompanyFeedbackQuestionInput[] = DEFAULT_COMPANY_QUESTION_TEXTS.map(
+  (question_text, index) => ({ question_order: index + 1, question_text, is_active: true, subquestions: [] }),
+);
 
 const MIN_QUESTION_LENGTH = 20;
 const MAX_QUESTION_LENGTH = 150;
@@ -191,6 +192,10 @@ export async function getCollectingDataController(req: Request, res: Response) {
 
   if (!collecting) return res.json({ collecting: null });
 
+  // Carregado em toda página protegida: recupera jobs de IA parados na fila
+  // (ex.: aba fechada) sem esperar o cron.
+  kickWorkerIfPending(enterpriseId);
+
   const catalog = await getCatalogSnapshot(enterpriseId);
   const companyFeedbackQuestions = await getCompanyQuestionsSnapshot(enterpriseId);
 
@@ -273,6 +278,7 @@ export async function patchCollectingDataController(req: Request, res: Response)
 
   try {
     const collecting = await saveCollectingDataPatch({ enterpriseId, update, insert, plan });
+    if (touchedCollecting) await autoGenerateCompanyQuestions(enterpriseId, req.user!.id);
     const catalog = await getCatalogSnapshot(enterpriseId);
     const companyFeedbackQuestions = await getCompanyQuestionsSnapshot(enterpriseId);
     return res.json({ collecting: { ...collecting, ...catalog, company_feedback_questions: companyFeedbackQuestions } });
@@ -306,6 +312,7 @@ export async function upsertCollectingDataController(req: Request, res: Response
 
   try {
     const collecting = await saveCollectingDataUpsert({ enterpriseId, values, plan });
+    await autoGenerateCompanyQuestions(enterpriseId, req.user!.id);
     const catalog = await getCatalogSnapshot(enterpriseId);
     const companyFeedbackQuestions = await getCompanyQuestionsSnapshot(enterpriseId);
     return res.json({ collecting: { ...collecting, ...catalog, company_feedback_questions: companyFeedbackQuestions } });

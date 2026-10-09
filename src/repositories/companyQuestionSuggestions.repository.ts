@@ -1,9 +1,9 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { getDb } from '../db/client.js';
 import { enterprise, iaAnalysisJob } from '../../drizzle/schema.js';
-import { ACTIVE_IA_JOB_STATUSES, getIaJobByIdScoped } from './iaJob.repository.js';
+import { ACTIVE_IA_JOB_STATUSES } from './iaJob.repository.js';
 import { IaAnalyzeServiceError } from '../libs/iaAnalyze/errors.js';
-import { companyQuestionContextHash, companyQuestionContextSchema, parseCompanyQuestionResponse } from '../libs/iaAnalyze/companyQuestions.js';
+import { companyQuestionContextHash, companyQuestionContextSchema } from '../libs/iaAnalyze/companyQuestions.js';
 import type { z } from 'zod';
 
 export class QuestionSuggestionsRateLimitError extends IaAnalyzeServiceError {
@@ -56,16 +56,16 @@ export async function enqueueCompanyQuestionSuggestions(params: {
   });
 }
 
-export async function getCompanyQuestionSuggestions(enterpriseId: string, jobId: string) {
-  const job = await getIaJobByIdScoped({ enterpriseId, jobId });
-  if (!job || job.jobType !== 'generate_company_questions') return null;
-  const [row] = await getDb().select({ options: iaAnalysisJob.options }).from(iaAnalysisJob)
-    .where(and(eq(iaAnalysisJob.enterpriseId, enterpriseId), eq(iaAnalysisJob.id, jobId))).limit(1);
-  const options = row?.options as { suggestions?: unknown; contextHash?: string } | null;
-  if (job.status !== 'completed') return job;
-  const contextHash = options?.contextHash;
-  if (typeof contextHash !== 'string' || !/^[a-f0-9]{64}$/.test(contextHash)) {
-    throw new IaAnalyzeServiceError('invalid_question_generation_job', 502, 'invalid_question_generation_job');
-  }
-  return { ...job, result: { ...parseCompanyQuestionResponse(options?.suggestions), contextHash } };
+/**
+ * Status do pedido de geração mais recente da empresa que ainda conta (ativo ou
+ * concluído). Falhas não contam: a geração automática pode tentar de novo,
+ * dentro do cooldown e do limite diário.
+ */
+export async function getLatestCompanyQuestionsJobStatus(enterpriseId: string): Promise<string | null> {
+  const [row] = await getDb().select({ status: iaAnalysisJob.status }).from(iaAnalysisJob)
+    .where(and(eq(iaAnalysisJob.enterpriseId, enterpriseId),
+      eq(iaAnalysisJob.jobType, 'generate_company_questions'),
+      inArray(iaAnalysisJob.status, [...ACTIVE_IA_JOB_STATUSES, 'completed'])))
+    .orderBy(desc(iaAnalysisJob.createdAt)).limit(1);
+  return row?.status ?? null;
 }
