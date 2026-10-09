@@ -24,8 +24,15 @@ para habilitar a fila. Esta alteração não adiciona migration e não apaga an�
   `/api/internal/worker/tick`, com header `x-worker-token`.
 - `WORKER_TICK_TOKEN` deve ser definido no Gateway e no cron. Em produção/Vercel,
   um token não configurado **recusa** o tick. Localmente ele pode ficar vazio.
-- Não há loop de background dentro da função serverless. Sem cron, os jobs ficam
-  na fila; o deploy do código não configura esse serviço externo automaticamente.
+- Não há loop de background dentro da função serverless. O processamento é
+  disparado pelas próprias ações do usuário (`libs/iaJob/kickWorker.ts`): ao
+  enfileirar um job, e ao consultar seu status ou carregar `collecting_data`
+  quando há job pronto na fila, o Gateway processa um passo em background com
+  `waitUntil`, depois de responder. O polling da tela faz jobs de vários passos
+  avançarem sem esperar o cron.
+- O cron (`ia-worker.yml`) fica como reserva para jobs sem ninguém olhando. O
+  agendamento do GitHub Actions não é confiável: o intervalo configurado de 5
+  minutos virou execuções a cada 4–7 horas na prática.
 
 ## Configurações operacionais (não selecionam modo síncrono/assíncrono)
 
