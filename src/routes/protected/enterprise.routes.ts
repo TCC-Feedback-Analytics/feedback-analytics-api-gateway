@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { requireAuth } from '../../middlewares/auth.js';
+import { requestCompanyQuestionSuggestionsController, getCompanyQuestionSuggestionsController } from '../../controllers/protected/companyQuestionSuggestions.controller.js';
 import {
   getEnterpriseController,
   patchEnterpriseController,
@@ -9,6 +10,8 @@ import {
 } from '../../controllers/protected/enterprise.controller.js';
 
 const router = Router();
+router.post('/protected/user/company-feedback-questions/suggestions', requireAuth, requestCompanyQuestionSuggestionsController);
+router.get('/protected/user/company-feedback-questions/suggestions/:id', requireAuth, getCompanyQuestionSuggestionsController);
 
 router.get('/protected/user/enterprise', requireAuth, getEnterpriseController);
 router.patch('/protected/user/enterprise', requireAuth, patchEnterpriseController);
