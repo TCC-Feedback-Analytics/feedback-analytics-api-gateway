@@ -1,4 +1,4 @@
-import type { CompanyQuestionSuggestionsRequest, CompanyQuestionSuggestionsResponse } from '../../types/companyQuestionSuggestions.types.js';
+import type { CompanyQuestionSuggestionsRemoteRequest, CompanyQuestionSuggestionsRemoteResponse } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/company-question-suggestions.contract';
 import type { IaCreds } from './iaAnalyze.provider.js';
 import { resolvePrimaryBaseUrl } from '../libs/iaAnalyze/resolvePrimaryBaseUrl.js';
 import { readRemoteTimeoutMs, readRemoteToken } from '../libs/iaAnalyze/readEnvs.js';
@@ -11,8 +11,8 @@ const REMOTE_ERRORS = new Set(['ia_provider_auth_error', 'ia_provider_credits_ex
   'invalid_ai_response_language', 'truncated_ai_response', 'ai_response_refused']);
 
 export async function runCompanyQuestionSuggestions(
-  body: CompanyQuestionSuggestionsRequest, creds: IaCreds,
-): Promise<CompanyQuestionSuggestionsResponse> {
+  body: CompanyQuestionSuggestionsRemoteRequest, creds: IaCreds,
+): Promise<CompanyQuestionSuggestionsRemoteResponse> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), Math.min(readRemoteTimeoutMs(), 90_000));
   try {
