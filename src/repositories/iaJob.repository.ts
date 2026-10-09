@@ -164,6 +164,19 @@ export async function listActiveIaJobsScoped(enterpriseId: string): Promise<IaJo
   return jobs.filter((job): job is IaJobStatus => job !== null);
 }
 
+/**
+ * A empresa tem job pronto para o worker pegar agora? Mesmo critério do
+ * `claimNextIaJob` (inclui running com lease vencido), de qualquer tipo de job.
+ */
+export async function hasClaimableIaJob(enterpriseId: string): Promise<boolean> {
+  const rows = await getDb().select({ id: iaAnalysisJob.id }).from(iaAnalysisJob)
+    .where(scopedByEnterprise(iaAnalysisJob.enterpriseId, enterpriseId,
+      inArray(iaAnalysisJob.status, [...ACTIVE_IA_JOB_STATUSES]),
+      sql`${iaAnalysisJob.nextRunAt} <= now()`))
+    .limit(1);
+  return rows.length > 0;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Consumo pelo worker/drain (etapa 03.3).
 // ─────────────────────────────────────────────────────────────────────────────

@@ -11,6 +11,7 @@ import { parseScopeType } from '../../libs/iaAnalyze/parse.js';
 import { readExecutionMode } from '../../libs/iaAnalyze/readEnvs.js';
 import { resolvePrimaryBaseUrl } from '../../libs/iaAnalyze/resolvePrimaryBaseUrl.js';
 import { enqueueIaJob, getIaJobByIdScoped, listActiveIaJobsScoped } from '../../repositories/iaJob.repository.js';
+import { kickWorker, kickWorkerIfPending } from '../../libs/iaJob/kickWorker.js';
 
 /**
  * Loga, de forma estruturada, o contexto de uma falha no fluxo de IA. Inclui o
@@ -75,6 +76,7 @@ export async function analyzeRawFeedbacksController(req: Request, res: Response)
       requestedBy: user.id,
       options: { limit },
     });
+    kickWorker();
     return res.status(202).json({ jobId, status });
 
   } catch (error) {
@@ -125,6 +127,7 @@ export async function regenerateFeedbackInsightsController(req: Request, res: Re
       requestedBy: user.id,
       options: { force, analyzePending: body.analyze_pending === true },
     });
+    kickWorker();
     return res.status(202).json({ jobId, status });
 
   } catch (error) {
@@ -148,6 +151,7 @@ export async function listActiveIaJobsController(req: Request, res: Response) {
   try {
     const enterpriseId = req.enterpriseId ?? await resolveEnterpriseIdByUser(req.user!.id);
     if (!enterpriseId) return sendTypedError(res, 404, 'enterprise_not_found');
+    kickWorkerIfPending(enterpriseId);
     return res.json({ jobs: await listActiveIaJobsScoped(enterpriseId) });
   } catch {
     return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
@@ -177,6 +181,11 @@ export async function getIaJobController(req: Request, res: Response) {
     const job = await getIaJobByIdScoped({ enterpriseId, jobId });
     if (!job) {
       return sendTypedError(res, 404, API_ERROR_IA_JOB_NOT_FOUND);
+    }
+
+    // O polling da tela faz jobs de vários passos avançarem sem esperar o cron.
+    if (job.status === 'queued' || job.status === 'waiting_budget' || job.status === 'running') {
+      kickWorkerIfPending(enterpriseId);
     }
 
     return res.json(job);
