@@ -17,6 +17,7 @@
  */
 import { sql } from 'drizzle-orm';
 import { getDb } from '../db/client.js';
+import { DEFAULT_COMPANY_QUESTION_TEXTS } from '../config/defaultCompanyQuestions.js';
 
 /** Documento ausente no cadastro (→ 400 `document_required`). */
 export class DocumentRequiredError extends Error {
@@ -34,12 +35,7 @@ export class DocumentTakenError extends Error {
   }
 }
 
-/** Textos/ordem EXATOS das 3 perguntas COMPANY padrão (do trigger original). */
-const DEFAULT_COMPANY_QUESTIONS: readonly string[] = [
-  'Como foi sua experiência em relação ao atendimento?',
-  'O que você achou da qualidade do produto/serviço?',
-  'Como você avalia a relação entre o valor pago e a qualidade do produto/serviço?',
-];
+const DEFAULT_COMPANY_QUESTIONS: readonly string[] = DEFAULT_COMPANY_QUESTION_TEXTS;
 
 export interface EnterpriseSignupMeta {
   accountType?: string | null;

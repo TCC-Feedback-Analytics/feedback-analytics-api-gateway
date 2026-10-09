@@ -16,6 +16,7 @@ import { reserveIaBudget } from './rateBudget.js';
 import { companyQuestionContextSchema, companyQuestionContextHash } from '../iaAnalyze/companyQuestions.js';
 import { resolveCompanyQuestionCreds } from '../../services/companyQuestionSuggestions.service.js';
 import { runCompanyQuestionSuggestions } from '../../providers/companyQuestionSuggestions.provider.js';
+import { applyCompanyQuestionsIfDefault } from '../../repositories/collectingData.repository.js';
 
 export type DrainJobResult = {
   jobId: string; jobType: string;
@@ -25,7 +26,10 @@ export type DrainJobResult = {
 export type DrainResult = { processed: number; results: DrainJobResult[] };
 const RETRYABLE = new Set(['failed_remote_ia_analyze_request', 'ia_provider_unavailable', 'ia_provider_rate_limited', 'ia_provider_error']);
 
-/** A requisição do usuário nunca executa isto. Cada claim tem lease e checkpoint. */
+/**
+ * A requisição do usuário nunca espera por isto: roda no tick do cron ou em
+ * background depois da resposta (kickWorker). Cada claim tem lease e checkpoint.
+ */
 export async function drainJobs(params?: { maxBatches?: number }): Promise<DrainResult> {
   const max = Math.max(1, Math.floor(params?.maxBatches ?? readBatchesPerTick()));
   const results: DrainJobResult[] = [];
@@ -71,10 +75,13 @@ async function processJob(job: ClaimedIaJob): Promise<DrainJobResult> {
       }
       batchesRun = 1;
       const suggestions = await runCompanyQuestionSuggestions({ enterprise_context: context.data }, creds);
+      // Configuração inicial: as perguntas entram direto no feedback geral, desde
+      // que a empresa ainda esteja com as padrão (nunca sobrescreve uma edição).
+      const applied = await applyCompanyQuestionsIfDefault(job.enterpriseId, suggestions.questions);
       job.total = 1;
       job.done = 1;
       await save({ status: 'completed', total: 1, done: 1, errorCode: null,
-        options: { contextHash: job.options.contextHash, phase: 'generating_questions', suggestions } });
+        options: { contextHash: job.options.contextHash, phase: 'generating_questions', suggestions, applied } });
       return result('completed');
     }
     let checkpoint = job.options.checkpoint as IaJobCheckpoint | undefined;

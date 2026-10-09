@@ -8,6 +8,7 @@ import {
   questionsOfFeedbacks,
 } from '../../drizzle/schema.js';
 import type { CatalogKind } from './collectionPointsQr.repository.js';
+import { DEFAULT_COMPANY_QUESTION_TEXTS } from '../config/defaultCompanyQuestions.js';
 
 // Drizzle ignora a RLS → toda query filtra enterprise_id explicitamente (invariante nº1).
 
@@ -608,4 +609,82 @@ export async function saveCollectingDataUpsert(params: {
     if (isIntegrityViolation(err)) throw new CollectingWriteError();
     throw err;
   }
+}
+
+// ----------------------------------------------------------------------------
+// Perguntas COMPANY geradas pela IA na configuração inicial
+// ----------------------------------------------------------------------------
+
+/**
+ * A empresa ainda está com as 3 perguntas padrão do cadastro, sem nenhuma
+ * personalização: textos e ordem iguais aos padrão, todas ativas e sem
+ * subpergunta ativa. Só nesse estado a IA pode substituí-las sozinha.
+ */
+async function hasDefaultCompanyQuestionsIn(db: Database | Tx, enterpriseId: string): Promise<boolean> {
+  const rows = await db
+    .select({
+      id: questionsOfFeedbacks.id,
+      questionOrder: questionsOfFeedbacks.questionOrder,
+      questionText: questionsOfFeedbacks.questionText,
+      isActive: questionsOfFeedbacks.isActive,
+    })
+    .from(questionsOfFeedbacks)
+    .where(
+      and(
+        eq(questionsOfFeedbacks.enterpriseId, enterpriseId),
+        eq(questionsOfFeedbacks.scopeType, 'COMPANY'),
+        isNull(questionsOfFeedbacks.catalogItemId),
+      ),
+    );
+
+  if (rows.length !== DEFAULT_COMPANY_QUESTION_TEXTS.length) return false;
+  const matchesDefaults = rows.every(
+    (row) => row.isActive && row.questionText === DEFAULT_COMPANY_QUESTION_TEXTS[row.questionOrder - 1],
+  );
+  if (!matchesDefaults) return false;
+
+  const activeSubquestions = await db
+    .select({ id: feedbackQuestionSubquestions.id })
+    .from(feedbackQuestionSubquestions)
+    .where(
+      and(
+        inArray(feedbackQuestionSubquestions.questionId, rows.map((row) => row.id)),
+        eq(feedbackQuestionSubquestions.isActive, true),
+      ),
+    )
+    .limit(1);
+
+  return activeSubquestions.length === 0;
+}
+
+export function hasDefaultCompanyQuestions(enterpriseId: string): Promise<boolean> {
+  return hasDefaultCompanyQuestionsIn(getDb(), enterpriseId);
+}
+
+/**
+ * Substitui as 3 perguntas COMPANY pelas geradas, SÓ se ainda forem as padrão.
+ * A checagem e a escrita ficam na mesma transação, com a empresa travada, para
+ * não sobrescrever uma edição feita enquanto a IA processava.
+ * Retorna se aplicou.
+ */
+export async function applyCompanyQuestionsIfDefault(
+  enterpriseId: string,
+  questions: ReadonlyArray<{ question_order: 1 | 2 | 3; question_text: string }>,
+): Promise<boolean> {
+  return getDb().transaction(async (tx) => {
+    await tx.select({ id: enterprise.id }).from(enterprise).where(eq(enterprise.id, enterpriseId)).for('update');
+    if (!(await hasDefaultCompanyQuestionsIn(tx, enterpriseId))) return false;
+
+    await syncCompanyQuestionsTx(
+      tx,
+      enterpriseId,
+      questions.map((question) => ({
+        question_order: question.question_order,
+        question_text: question.question_text,
+        is_active: true,
+        subquestionsByOrder: new Map(),
+      })),
+    );
+    return true;
+  });
 }

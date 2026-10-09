@@ -16,6 +16,7 @@ import {
 } from '../../services/iaConfig.service.js';
 import { IaConfigError } from '../../libs/iaConfig/iaConfigError.js';
 import { DEFAULT_IA_MODEL } from '../../libs/iaConfig/openRouterModels.js';
+import { autoGenerateCompanyQuestions } from '../../services/companyQuestionsAutoGenerate.service.js';
 
 /** Empresa do usuário autenticado (req.enterpriseId do requireAuth; fallback pelo user). */
 async function resolveEnterpriseId(req: Request): Promise<string | null> {
@@ -72,7 +73,9 @@ export async function putIaConfigController(req: Request, res: Response) {
     const enterpriseId = await resolveEnterpriseId(req);
     if (!enterpriseId) return sendTypedError(res, 404, API_ERROR_ENTERPRISE_NOT_FOUND);
     const { apiKey, model } = parsed.data;
-    return res.json(await saveIaConfigForEnterprise(enterpriseId, apiKey, model || DEFAULT_IA_MODEL));
+    const saved = await saveIaConfigForEnterprise(enterpriseId, apiKey, model || DEFAULT_IA_MODEL);
+    await autoGenerateCompanyQuestions(enterpriseId, req.user!.id);
+    return res.json(saved);
   } catch (error) {
     return handleIaConfigError(res, error);
   }
