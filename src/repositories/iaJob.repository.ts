@@ -17,7 +17,7 @@ import { getDb } from '../db/client.js';
 import { iaAnalysisJob } from '../../drizzle/schema.js';
 import { scopedByEnterprise } from '../db/tenantScope.js';
 
-export type IaJobType = 'analyze_raw' | 'regenerate_insights';
+export type IaJobType = 'analyze_raw' | 'regenerate_insights' | 'generate_company_questions';
 
 /** Status que contam como "job em aberto" (participam do dedup). */
 export const ACTIVE_IA_JOB_STATUSES = ['queued', 'running', 'waiting_budget'] as const;
@@ -157,6 +157,7 @@ export async function getIaJobByIdScoped(params: {
 export async function listActiveIaJobsScoped(enterpriseId: string): Promise<IaJobStatus[]> {
   const rows = await getDb().select({ id: iaAnalysisJob.id }).from(iaAnalysisJob)
     .where(scopedByEnterprise(iaAnalysisJob.enterpriseId, enterpriseId,
+      inArray(iaAnalysisJob.jobType, ['analyze_raw', 'regenerate_insights']),
       inArray(iaAnalysisJob.status, [...ACTIVE_IA_JOB_STATUSES])))
     .orderBy(desc(iaAnalysisJob.createdAt));
   const jobs = await Promise.all(rows.map(row => getIaJobByIdScoped({ enterpriseId, jobId: row.id })));
