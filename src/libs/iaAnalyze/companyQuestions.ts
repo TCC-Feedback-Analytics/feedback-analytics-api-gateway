@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import type { CompanyQuestionSuggestionsResponse } from '../../../types/companyQuestionSuggestions.types.js';
+import type { CompanyQuestionSuggestionsRemoteResponse } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/company-question-suggestions.contract';
 import { IaAnalyzeServiceError } from './errors.js';
 
 const requiredText = z.string().trim().min(1).max(6000);
@@ -27,7 +27,7 @@ export const companyQuestionResponseSchema = z.object({
   return questions.every((q, i) => q.question_order === i + 1) && new Set(normalized).size === 3;
 });
 
-export function parseCompanyQuestionResponse(value: unknown): CompanyQuestionSuggestionsResponse {
+export function parseCompanyQuestionResponse(value: unknown): CompanyQuestionSuggestionsRemoteResponse {
   const parsed = companyQuestionResponseSchema.safeParse(value);
   if (!parsed.success) throw new IaAnalyzeServiceError('invalid_question_suggestions', 502, 'invalid_ai_response_schema');
   return parsed.data;
