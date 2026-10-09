@@ -42,7 +42,7 @@ export const iaAnalysisJob = pgTable("ia_analysis_job", {
 			foreignColumns: [catalogItems.id],
 			name: "ia_analysis_job_catalog_item_id_fkey"
 		}).onDelete("cascade"),
-	check("ia_analysis_job_job_type_check", sql`job_type = ANY (ARRAY['analyze_raw'::text, 'regenerate_insights'::text])`),
+	check("ia_analysis_job_job_type_check", sql`job_type = ANY (ARRAY['analyze_raw'::text, 'regenerate_insights'::text, 'generate_company_questions'::text])`),
 	check("ia_analysis_job_scope_type_check", sql`scope_type = ANY (ARRAY['COMPANY'::text, 'PRODUCT'::text, 'SERVICE'::text, 'DEPARTMENT'::text])`),
 	check("ia_analysis_job_status_check", sql`status = ANY (ARRAY['queued'::text, 'running'::text, 'waiting_budget'::text, 'completed'::text, 'failed'::text])`),
 	// NB: o índice PARCIAL ÚNICO de dedup (jobs ativos) usa COALESCE(catalog_item_id)

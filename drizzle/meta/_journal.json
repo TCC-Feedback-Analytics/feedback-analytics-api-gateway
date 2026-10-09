@@ -43,6 +43,13 @@
       "when": 1790962301376,
       "tag": "0005_auth_resend_rate_limit",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791389801250,
+      "tag": "0006_company_question_suggestions",
+      "breakpoints": true
     }
   ]
 }
