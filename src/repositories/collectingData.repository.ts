@@ -616,9 +616,10 @@ export async function saveCollectingDataUpsert(params: {
 // ----------------------------------------------------------------------------
 
 /**
- * A empresa ainda está com as 3 perguntas padrão do cadastro, sem nenhuma
- * personalização: textos e ordem iguais aos padrão, todas ativas e sem
- * subpergunta ativa. Só nesse estado a IA pode substituí-las sozinha.
+ * A empresa ainda não personalizou as perguntas: ou não tem nenhuma pergunta
+ * COMPANY salva (nada a sobrescrever), ou está com as 3 padrão do cadastro —
+ * textos e ordem iguais, todas ativas e sem subpergunta ativa. Só nesse estado
+ * a IA pode gravar as perguntas sozinha.
  */
 async function hasDefaultCompanyQuestionsIn(db: Database | Tx, enterpriseId: string): Promise<boolean> {
   const rows = await db
@@ -637,6 +638,7 @@ async function hasDefaultCompanyQuestionsIn(db: Database | Tx, enterpriseId: str
       ),
     );
 
+  if (rows.length === 0) return true;
   if (rows.length !== DEFAULT_COMPANY_QUESTION_TEXTS.length) return false;
   const matchesDefaults = rows.every(
     (row) => row.isActive && row.questionText === DEFAULT_COMPANY_QUESTION_TEXTS[row.questionOrder - 1],
