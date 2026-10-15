@@ -10,7 +10,8 @@ import { IaAnalyzeServiceError } from '../../libs/iaAnalyze/errors.js';
 import { parseScopeType } from '../../libs/iaAnalyze/parse.js';
 import { readExecutionMode } from '../../libs/iaAnalyze/readEnvs.js';
 import { resolvePrimaryBaseUrl } from '../../libs/iaAnalyze/resolvePrimaryBaseUrl.js';
-import { enqueueIaJob, getIaJobByIdScoped, listActiveIaJobsScoped } from '../../repositories/iaJob.repository.js';
+import { ACTIVE_IA_JOB_STATUSES, enqueueIaJob, getIaJobByIdScoped, listActiveIaJobsScoped } from '../../repositories/iaJob.repository.js';
+import { getLatestCompanyQuestionsJob } from '../../repositories/companyQuestionSuggestions.repository.js';
 import { kickWorker, kickWorkerIfPending } from '../../libs/iaJob/kickWorker.js';
 
 /**
@@ -153,6 +154,24 @@ export async function listActiveIaJobsController(req: Request, res: Response) {
     if (!enterpriseId) return sendTypedError(res, 404, 'enterprise_not_found');
     kickWorkerIfPending(enterpriseId);
     return res.json({ jobs: await listActiveIaJobsScoped(enterpriseId) });
+  } catch {
+    return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
+  }
+}
+
+/**
+ * Geração das perguntas na configuração inicial: devolve o pedido mais recente
+ * para a Web acompanhar (pelo id, no polling de job) e destrava a fila se ele
+ * estiver parado esperando uma nova tentativa.
+ */
+export async function getLatestCompanyQuestionsJobController(req: Request, res: Response) {
+  res.setHeader('Cache-Control', 'private, no-store');
+  try {
+    const enterpriseId = req.enterpriseId ?? await resolveEnterpriseIdByUser(req.user!.id);
+    if (!enterpriseId) return sendTypedError(res, 404, 'enterprise_not_found');
+    const job = await getLatestCompanyQuestionsJob(enterpriseId);
+    if (job && (ACTIVE_IA_JOB_STATUSES as readonly string[]).includes(job.status)) kickWorkerIfPending(enterpriseId);
+    return res.json({ job });
   } catch {
     return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
   }
