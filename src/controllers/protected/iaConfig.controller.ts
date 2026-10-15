@@ -111,7 +111,11 @@ export async function patchIaModelController(req: Request, res: Response) {
   try {
     const enterpriseId = await resolveEnterpriseId(req);
     if (!enterpriseId) return sendTypedError(res, 404, API_ERROR_ENTERPRISE_NOT_FOUND);
-    return res.json(await updateIaModelForEnterprise(enterpriseId, parsed.data.model));
+    const updated = await updateIaModelForEnterprise(enterpriseId, parsed.data.model);
+    // Trocar o modelo depois de uma falha na configuração inicial tenta gerar as
+    // perguntas de novo (só se ainda forem as padrão e não houver pedido concluído).
+    await autoGenerateCompanyQuestions(enterpriseId, req.user!.id);
+    return res.json(updated);
   } catch (error) {
     return handleIaConfigError(res, error);
   }
