@@ -673,6 +673,26 @@ Recupera jobs ativos da empresa autenticada, inclusive após reload/outro dispos
 { "jobs": [{ "id": "uuid", "jobType": "regenerate_insights", "scopeType": "COMPANY", "catalogItemId": null, "phase": "generating", "status": "running", "total": 6, "done": 2, "errorCode": null, "updatedAt": "2026-09-04T12:00:00Z" }] }
 ```
 
+### `GET /api/protected/ia-analyze/jobs/company-questions/latest`
+
+Retorna o pedido mais recente de geração das 3 perguntas COMPANY da configuração
+inicial (`generate_company_questions`), em qualquer status, ou `null` se nunca houve
+pedido. Esse job não aparece em `GET /jobs`; a Web usa este endpoint para descobrir
+o id e acompanhá-lo por `GET /jobs/:id`.
+
+```json
+{ "job": { "id": "uuid", "status": "queued", "errorCode": "ia_provider_rate_limited", "applied": null } }
+```
+
+- `applied`: `true` quando as perguntas geradas foram gravadas; `false` quando a
+  empresa já tinha editado as perguntas; `null` enquanto o job não termina.
+- Com o job ativo (queued, running ou waiting_budget), destrava a fila como o polling
+  de `GET /jobs/:id`.
+- Em 429 do provedor (`ia_provider_rate_limited`), o job fica em queued e tenta de
+  novo após 60s, 120s, 240s e 300s; na quinta falha passa a failed e as perguntas
+  padrão permanecem.
+- Nunca retorna o contexto enviado nem as sugestões (options).
+
 ### `GET /api/protected/ia-analyze/jobs/:id`
 
 Retorna o objeto de status acima, incluindo jobs terminados.
