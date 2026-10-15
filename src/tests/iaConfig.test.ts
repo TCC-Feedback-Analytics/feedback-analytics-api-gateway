@@ -13,6 +13,7 @@ import {
 import { decryptSecret, encryptSecret } from '../utils/crypto.js';
 import { openRouterModels, type IaModelsCatalog } from '../libs/iaConfig/openRouterModels.js';
 import { IaConfigError } from '../libs/iaConfig/iaConfigError.js';
+import { autoGenerateCompanyQuestions } from '../services/companyQuestionsAutoGenerate.service.js';
 
 const TEST_USER_ID = '11111111-1111-1111-1111-111111111111';
 const ENT = 'ent-1';
@@ -44,6 +45,8 @@ vi.mock('../libs/iaConfig/openRouterModels.js', () => ({
   DEFAULT_IA_MODEL: 'openrouter/auto',
   openRouterModels: { get: vi.fn(), invalidateEnterprise: vi.fn() },
 }));
+vi.mock('../services/companyQuestionsAutoGenerate.service.js', () => ({ autoGenerateCompanyQuestions: vi.fn() }));
+const mAutoGenerate = vi.mocked(autoGenerateCompanyQuestions);
 
 const mGet = vi.mocked(getIaConfigByEnterprise);
 const mUpsert = vi.mocked(upsertIaConfig);
@@ -242,6 +245,12 @@ describe('[Integração] PATCH /api/protected/user/ia-config/model', () => {
     expect(mDelete).not.toHaveBeenCalled();
   });
 
+  it('depois de trocar o modelo tenta de novo a geração automática das perguntas', async () => {
+    const res = await request(app).patch('/api/protected/user/ia-config/model').send({ model: 'vendor/model' });
+    expect(res.status).toBe(200);
+    expect(mAutoGenerate).toHaveBeenCalledWith(ENT, TEST_USER_ID);
+  });
+
   it.each([{}, { model: '' }, { model: '   ' }, { model: null }, { model: 'x'.repeat(121) },
     { model: 'vendor/model', apiKey: 'sk-or-new-key' }, { model: 'vendor/model', enterpriseId: 'other' },
   ])('rejeita payload inválido ou campos extras: %j', async (body) => {
@@ -268,6 +277,7 @@ describe('[Integração] PATCH /api/protected/user/ia-config/model', () => {
     expect(res.status).toBe(409);
     expect(res.body.error).toBe('ia_config_changed');
     expect(mUpsert).not.toHaveBeenCalled();
+    expect(mAutoGenerate).not.toHaveBeenCalled();
   });
 });
 
