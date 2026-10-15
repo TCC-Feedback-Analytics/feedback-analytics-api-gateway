@@ -69,3 +69,24 @@ export async function getLatestCompanyQuestionsJobStatus(enterpriseId: string): 
     .orderBy(desc(iaAnalysisJob.createdAt)).limit(1);
   return row?.status ?? null;
 }
+
+export type LatestCompanyQuestionsJob = {
+  id: string; status: string; errorCode: string | null; applied: boolean | null;
+};
+
+/**
+ * Pedido de geração mais recente da empresa, em qualquer status, para a Web
+ * acompanhar a configuração inicial. Nunca devolve options (contexto e sugestões).
+ */
+export async function getLatestCompanyQuestionsJob(enterpriseId: string): Promise<LatestCompanyQuestionsJob | null> {
+  const [row] = await getDb().select({
+    id: iaAnalysisJob.id,
+    status: iaAnalysisJob.status,
+    errorCode: iaAnalysisJob.errorCode,
+    applied: sql<boolean | null>`(${iaAnalysisJob.options}->>'applied')::boolean`,
+  }).from(iaAnalysisJob)
+    .where(and(eq(iaAnalysisJob.enterpriseId, enterpriseId),
+      eq(iaAnalysisJob.jobType, 'generate_company_questions')))
+    .orderBy(desc(iaAnalysisJob.createdAt)).limit(1);
+  return row ?? null;
+}

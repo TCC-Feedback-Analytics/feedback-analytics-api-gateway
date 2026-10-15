@@ -25,6 +25,13 @@ export type DrainJobResult = {
 };
 export type DrainResult = { processed: number; results: DrainJobResult[] };
 const RETRYABLE = new Set(['failed_remote_ia_analyze_request', 'ia_provider_unavailable', 'ia_provider_rate_limited', 'ia_provider_error']);
+const MAX_FAILURES = 3;
+// A geração das perguntas na configuração inicial é uma chamada só e roda sem
+// ninguém clicar: um 429 do provedor ganha mais tentativas e esperas maiores
+// (60s, 120s, 240s, 300s) em vez de falhar em ~30s.
+const QUESTIONS_RATE_LIMIT_MAX_FAILURES = 5;
+const QUESTIONS_RATE_LIMIT_BASE_DELAY_SECONDS = 30;
+const QUESTIONS_RATE_LIMIT_MAX_DELAY_SECONDS = 300;
 
 /**
  * A requisição do usuário nunca espera por isto: roda no tick do cron ou em
@@ -205,12 +212,16 @@ async function processJob(job: ClaimedIaJob): Promise<DrainJobResult> {
     if (error instanceof IaJobLeaseLostError || leaseError) return result('requeued', 'ia_job_lease_lost');
     const code = error instanceof IaAnalyzeServiceError ? error.code : 'unexpected_error';
     const failures = Number(confirmedOptions.failures ?? 0) + 1;
-    const retry = RETRYABLE.has(code) && failures < 3;
+    const questionsRateLimited = job.jobType === 'generate_company_questions' && code === 'ia_provider_rate_limited';
+    const retry = RETRYABLE.has(code) && failures < (questionsRateLimited ? QUESTIONS_RATE_LIMIT_MAX_FAILURES : MAX_FAILURES);
     if (!retry && job.jobType === 'generate_company_questions') {
       confirmedOptions = { contextHash: confirmedOptions.contextHash, phase: 'generating_questions' };
     }
+    const delaySeconds = questionsRateLimited
+      ? Math.min(QUESTIONS_RATE_LIMIT_MAX_DELAY_SECONDS, QUESTIONS_RATE_LIMIT_BASE_DELAY_SECONDS * 2 ** failures)
+      : Math.min(60, 5 * 2 ** failures);
     await saveClaimedIaJob(job, { status: retry ? 'queued' : 'failed', errorCode: code,
-      delaySeconds: Math.min(60, 5 * 2 ** failures),
+      delaySeconds,
       options: { ...confirmedOptions, failures },
     });
     return result(retry ? 'requeued' : 'failed', code);
