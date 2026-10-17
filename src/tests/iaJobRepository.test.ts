@@ -4,7 +4,8 @@ import type { SQL } from 'drizzle-orm';
 const m = vi.hoisted(() => ({ execute: vi.fn(), select: vi.fn(), update: vi.fn(), from: vi.fn(), where: vi.fn(),
   set: vi.fn(), returning: vi.fn(), orderBy: vi.fn(), limit: vi.fn() }));
 vi.mock('../db/client.js', () => ({ getDb: () => m }));
-import { claimNextIaJob, saveClaimedIaJob, listActiveIaJobsScoped, IaJobLeaseLostError, type ClaimedIaJob } from '../repositories/iaJob.repository.js';
+import { claimNextIaJob, saveClaimedIaJob, listActiveIaJobsScoped, advanceWaitingIaJobs, IaJobLeaseLostError,
+  type ClaimedIaJob } from '../repositories/iaJob.repository.js';
 const job: ClaimedIaJob = { id: 'job-A', enterpriseId: 'tenant-A', jobType: 'analyze_raw', scopeType: 'COMPANY',
   catalogItemId: null, options: {}, attempts: 7, done: 0, total: 20 };
 const compile = (sql: SQL) => new PgDialect().sqlToQuery(sql);
@@ -46,5 +47,19 @@ describe('fila: posse e isolamento SQL', () => {
   });
   it('lista sem tenant é recusada', async () => {
     await expect(listActiveIaJobsScoped('')).rejects.toThrow('enterprise_id');
+  });
+  it('troca de modelo antecipa só jobs em espera do tenant; running não é tocado', async () => {
+    m.returning.mockResolvedValue([{ id: 'job-A' }, { id: 'job-B' }]);
+    expect(await advanceWaitingIaJobs('tenant-A')).toBe(2);
+    const where = compile(m.where.mock.calls[0][0]);
+    expect(where.params).toEqual(['tenant-A', 'queued', 'waiting_budget']);
+    expect(where.params).not.toContain('running');
+    expect(where.sql).toContain('"next_run_at" > now()');
+    const set = m.set.mock.calls[0][0];
+    expect(Object.keys(set).sort()).toEqual(['nextRunAt', 'updatedAt']);
+    expect(compile(set.nextRunAt).sql).toBe('now()');
+  });
+  it('antecipação sem tenant é recusada', async () => {
+    await expect(advanceWaitingIaJobs('')).rejects.toThrow('enterprise_id');
   });
 });
