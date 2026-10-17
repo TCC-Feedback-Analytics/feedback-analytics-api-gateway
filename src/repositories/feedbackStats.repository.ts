@@ -2,11 +2,14 @@ import { count, eq, max } from 'drizzle-orm';
 import { getDb } from '../db/client.js';
 import { feedback, feedbackAnalysis } from '../../drizzle/schema.js';
 import { scopedFeedbackWhere } from '../db/tenantScope.js';
+import type { MetricsPeriod } from '../libs/period.js';
 
 export interface ScopedStatsParams {
   enterpriseId: string;
   /** `null` = toda a empresa; `[]` = escopo sem pontos (zero resultados). */
   collectionPointIds: string[] | null;
+  /** Recorte por data de criação do feedback (etapa 02); ausente = histórico inteiro. */
+  period?: MetricsPeriod | null;
 }
 
 export interface ScopedRatingAggregates {
@@ -38,7 +41,7 @@ function scopeHasNoPoints(ids: string[] | null): boolean {
 export async function fetchScopedRatingAggregates(
   params: ScopedStatsParams,
 ): Promise<ScopedRatingAggregates> {
-  const { enterpriseId, collectionPointIds } = params;
+  const { enterpriseId, collectionPointIds, period } = params;
 
   if (scopeHasNoPoints(collectionPointIds)) {
     return { totalFeedbacks: 0, ratingSum: 0, ratingDistribution: emptyDistribution() };
@@ -47,7 +50,7 @@ export async function fetchScopedRatingAggregates(
   const rows = await getDb()
     .select({ rating: feedback.rating, c: count() })
     .from(feedback)
-    .where(scopedFeedbackWhere(enterpriseId, collectionPointIds))
+    .where(scopedFeedbackWhere(enterpriseId, collectionPointIds, period))
     .groupBy(feedback.rating);
 
   const ratingDistribution = emptyDistribution();
@@ -79,7 +82,7 @@ export async function fetchScopedRatingAggregates(
 export async function fetchScopedAnalysisAggregates(
   params: ScopedStatsParams,
 ): Promise<ScopedAnalysisAggregates> {
-  const { enterpriseId, collectionPointIds } = params;
+  const { enterpriseId, collectionPointIds, period } = params;
 
   if (scopeHasNoPoints(collectionPointIds)) {
     return { totalAnalyzed: 0, latestAnalysisAt: null, aiCounts: { positive: 0, neutral: 0, negative: 0 } };
@@ -93,7 +96,7 @@ export async function fetchScopedAnalysisAggregates(
     })
     .from(feedbackAnalysis)
     .innerJoin(feedback, eq(feedbackAnalysis.feedbackId, feedback.id))
-    .where(scopedFeedbackWhere(enterpriseId, collectionPointIds))
+    .where(scopedFeedbackWhere(enterpriseId, collectionPointIds, period))
     .groupBy(feedbackAnalysis.sentiment);
 
   let totalAnalyzed = 0;

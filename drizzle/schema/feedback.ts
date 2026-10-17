@@ -14,6 +14,8 @@ export const feedback = pgTable("feedback", {
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow(),
 }, (table) => [
+	// Métricas por período (etapa 02): toda leitura filtra por empresa e recorta por data.
+	index("idx_feedback_enterprise_created_at").using("btree", table.enterpriseId.asc().nullsLast(), table.createdAt.desc().nullsFirst()),
 	foreignKey({
 			columns: [table.enterpriseId],
 			foreignColumns: [enterprise.id],
