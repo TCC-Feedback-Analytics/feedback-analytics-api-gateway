@@ -285,6 +285,8 @@ Retorna estatísticas agregadas dos feedbacks da empresa.
 |---|---|---|
 | `scope_type` | `COMPANY \| PRODUCT \| SERVICE \| DEPARTMENT` | Segmenta as estatísticas por escopo. **Omitido = todos os escopos** (sem filtro); envie `COMPANY` explicitamente para o QR geral |
 | `catalog_item_id` | `string` | Segmenta por item de catálogo específico |
+| `start_date` | `string` (ISO 8601) | Início do período, **incluído**. Ex.: `2026-09-17T03:00:00Z` |
+| `end_date` | `string` (ISO 8601) | Fim do período, **excluído**. Sem `start_date` e `end_date` = histórico inteiro |
 
 **Response 200**
 ```json
@@ -332,6 +334,8 @@ O endpoint expõe **duas lentes** complementares, ambas segmentadas pelo escopo 
 >
 > `confidenceTier` ∈ `insufficient` (<10) · `low` (10–29) · `moderate` (30–99) · `good` (100+).
 
+**Período (etapa 02).** `stats`, `questions` e `analysis` aceitam `start_date`/`end_date` e recortam pela data de criação do feedback (`created_at`), no intervalo meio aberto `[start_date, end_date)`. A Web resolve "últimos 30 dias" etc. no fuso do gestor e envia instantes absolutos. Sem as duas datas, o comportamento é o de antes (histórico inteiro). Data fora do ISO 8601 ou `start_date >= end_date` → **400** `invalid_period`. Com período, `totalAnalyzed`/`pendingCount` também ficam recortados; o aviso de "aguardando análise" e o relatório de insights seguem sem período.
+
 ---
 
 ### `GET /api/protected/user/feedbacks/questions`
@@ -344,6 +348,8 @@ Retorna métricas agregadas **por pergunta e subpergunta** no escopo selecionado
 |---|---|---|
 | `scope_type` | `COMPANY \| PRODUCT \| SERVICE \| DEPARTMENT` | Segmenta por escopo |
 | `catalog_item_id` | `string` | Segmenta por item de catálogo específico |
+| `start_date` | `string` (ISO 8601) | Início do período, **incluído**. Ex.: `2026-09-17T03:00:00Z` |
+| `end_date` | `string` (ISO 8601) | Fim do período, **excluído**. Sem `start_date` e `end_date` = histórico inteiro |
 
 **Response 200** — `questions` ordenado **pior → melhor** (menor nota média no topo).
 ```json
@@ -438,6 +444,8 @@ Retorna os feedbacks já analisados pela IA com sentimento, categorias e keyword
 | `sentiment` | `positive \| neutral \| negative` | Filtra por sentimento |
 | `scope_type` | `COMPANY \| PRODUCT \| SERVICE \| DEPARTMENT` | Filtra por escopo |
 | `catalog_item_id` | `string` | Filtra por item específico |
+| `start_date` | `string` (ISO 8601) | Início do período, **incluído**. Ex.: `2026-09-17T03:00:00Z` |
+| `end_date` | `string` (ISO 8601) | Fim do período, **excluído**. Sem `start_date` e `end_date` = histórico inteiro |
 
 **Response 200**
 ```json

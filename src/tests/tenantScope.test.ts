@@ -31,6 +31,20 @@ describe('[Unit] tenantScope — isolamento multi-tenant', () => {
     expect(params).toEqual(['ent-A', 'cp-1', 'cp-2']);
   });
 
+  it('o período recorta created_at com início incluído e fim excluído', () => {
+    const { sql, params } = compile(
+      scopedFeedbackWhere('ent-A', ['cp-1'], { start: '2026-09-17T03:00:00.000Z', end: '2026-10-17T03:00:00.000Z' }),
+    );
+    expect(sql).toMatch(/created_at"?\s*>=\s*\$3/);
+    expect(sql).toMatch(/created_at"?\s*<\s*\$4/);
+    expect(params).toEqual(['ent-A', 'cp-1', '2026-09-17T03:00:00.000Z', '2026-10-17T03:00:00.000Z']);
+  });
+
+  it('sem período a query segue como antes', () => {
+    const { sql } = compile(scopedFeedbackWhere('ent-A', null, { start: null, end: null }));
+    expect(sql).not.toMatch(/created_at/);
+  });
+
   it('recusa enterprise_id vazio — não permite query sem tenant', () => {
     expect(() => scopedFeedbackWhere('', null)).toThrow();
     expect(() => assertEnterpriseId('')).toThrow();
