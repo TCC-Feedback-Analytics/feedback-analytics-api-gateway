@@ -693,6 +693,23 @@ o id e acompanhá-lo por `GET /jobs/:id`.
   padrão permanecem.
 - Nunca retorna o contexto enviado nem as sugestões (options).
 
+### `POST /api/protected/ia-analyze/jobs/company-questions/retry`
+
+"Tentar de novo" a geração das 3 perguntas da configuração inicial **com o modelo atual**, por exemplo depois de uma falha. Sem body. Responde sempre **200** com o que aconteceu (`questionsGeneration`), para a Web mostrar o motivo quando não sai um pedido novo:
+
+```json
+{ "questionsGeneration": { "status": "rate_limited", "retryAfterSeconds": 42 } }
+```
+
+| `status` | Significado |
+|---|---|
+| `queued` | Um pedido novo foi para a fila; acompanhe por `GET /jobs/company-questions/latest` |
+| `running` | Já havia um pedido ativo; o worker foi acionado |
+| `completed` | As perguntas já foram geradas antes |
+| `customized` | A empresa já editou as perguntas; a IA não interfere |
+| `rate_limited` | Intervalo entre pedidos (`IA_QUESTION_SUGGESTIONS_COOLDOWN_SECONDS`, 60 s) ou limite diário (`IA_QUESTION_SUGGESTIONS_MAX_PER_DAY`, 5); `retryAfterSeconds` diz quanto falta |
+| `unavailable` | Contexto incompleto ou IA não configurada; `code` diz qual (`company_context_required`, `ia_config_required`) |
+
 ### `GET /api/protected/ia-analyze/jobs/:id`
 
 Retorna o objeto de status acima, incluindo jobs terminados.
@@ -818,8 +835,11 @@ Altera **somente o modelo**, utilizando a chave já cadastrada. Não requer reen
 **Response 200**
 
 ```json
-{ "hasKey": true, "provider": "openrouter", "model": "openrouter/auto", "keyHint": "xyz9" }
+{ "hasKey": true, "provider": "openrouter", "model": "openrouter/auto", "keyHint": "xyz9",
+  "questionsGeneration": { "status": "queued" } }
 ```
+
+`questionsGeneration` diz se a troca disparou uma nova geração das perguntas da configuração inicial; os valores são os mesmos de `POST /ia-analyze/jobs/company-questions/retry`.
 
 Além dos erros de validação/autenticação/catálogo do PUT:
 

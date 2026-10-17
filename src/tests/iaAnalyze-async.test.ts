@@ -4,6 +4,7 @@ import app from '../../index.js';
 import { resolveEnterpriseIdByUser } from '../repositories/enterprise.repository.js';
 import { enqueueIaJob, getIaJobByIdScoped, listActiveIaJobsScoped } from '../repositories/iaJob.repository.js';
 import { drainJobs } from '../libs/iaJob/drainJobs.js';
+import { autoGenerateCompanyQuestions } from '../services/companyQuestionsAutoGenerate.service.js';
 
 const TEST_USER_ID = '11111111-1111-1111-1111-111111111111';
 const ENT = 'ent-1';
@@ -27,11 +28,13 @@ vi.mock('../repositories/iaJob.repository.js', () => ({
   listActiveIaJobsScoped: vi.fn(),
 }));
 vi.mock('../libs/iaJob/drainJobs.js', () => ({ drainJobs: vi.fn() }));
+vi.mock('../services/companyQuestionsAutoGenerate.service.js', () => ({ autoGenerateCompanyQuestions: vi.fn() }));
 
 const mEnqueue = vi.mocked(enqueueIaJob);
 const mGetJob = vi.mocked(getIaJobByIdScoped);
 const mDrain = vi.mocked(drainJobs);
 const mResolveEnt = vi.mocked(resolveEnterpriseIdByUser);
+const mAutoGenerate = vi.mocked(autoGenerateCompanyQuestions);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -165,5 +168,31 @@ describe('[Integração] POST /api/internal/worker/tick', () => {
       .set('x-worker-token', 'secret');
 
     expect(res.status).toBe(200);
+  });
+});
+
+describe('[Integração] POST /ia-analyze/jobs/company-questions/retry', () => {
+  it('tenta de novo com o modelo atual e diz o que aconteceu', async () => {
+    mAutoGenerate.mockResolvedValueOnce({ status: 'queued' });
+    const res = await request(app).post('/api/protected/ia-analyze/jobs/company-questions/retry');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ questionsGeneration: { status: 'queued' } });
+    expect(mAutoGenerate).toHaveBeenCalledWith(ENT, TEST_USER_ID);
+    expect(res.headers['cache-control']).toContain('no-store');
+  });
+
+  it('quando não sai pedido novo, responde 200 com o motivo', async () => {
+    mAutoGenerate.mockResolvedValueOnce({ status: 'rate_limited', retryAfterSeconds: 30 });
+    const res = await request(app).post('/api/protected/ia-analyze/jobs/company-questions/retry');
+    expect(res.status).toBe(200);
+    expect(res.body.questionsGeneration).toEqual({ status: 'rate_limited', retryAfterSeconds: 30 });
+  });
+
+  it('sem empresa, 404; sem login, 401', async () => {
+    mResolveEnt.mockResolvedValueOnce(null);
+    expect((await request(app).post('/api/protected/ia-analyze/jobs/company-questions/retry')).status).toBe(404);
+    authState.user = null;
+    expect((await request(app).post('/api/protected/ia-analyze/jobs/company-questions/retry')).status).toBe(401);
+    expect(mAutoGenerate).not.toHaveBeenCalled();
   });
 });
