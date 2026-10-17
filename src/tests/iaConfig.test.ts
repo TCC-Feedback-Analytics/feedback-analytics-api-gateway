@@ -251,10 +251,13 @@ describe('[Integração] PATCH /api/protected/user/ia-config/model', () => {
     expect(mDelete).not.toHaveBeenCalled();
   });
 
-  it('depois de trocar o modelo tenta de novo a geração automática das perguntas', async () => {
+  it('depois de trocar o modelo tenta de novo a geração automática das perguntas e diz o resultado', async () => {
+    mAutoGenerate.mockResolvedValueOnce({ status: 'rate_limited', retryAfterSeconds: 42 });
     const res = await request(app).patch('/api/protected/user/ia-config/model').send({ model: 'vendor/model' });
     expect(res.status).toBe(200);
     expect(mAutoGenerate).toHaveBeenCalledWith(ENT, TEST_USER_ID);
+    expect(res.body.questionsGeneration).toEqual({ status: 'rate_limited', retryAfterSeconds: 42 });
+    expect(res.body.model).toBe('vendor/model');
   });
 
   it('antecipa jobs em espera e dispara o worker antes da geração automática', async () => {

@@ -120,8 +120,9 @@ export async function patchIaModelController(req: Request, res: Response) {
     kickWorkerIfPending(enterpriseId);
     // Trocar o modelo depois de uma falha na configuração inicial tenta gerar as
     // perguntas de novo (só se ainda forem as padrão e não houver pedido concluído).
-    await autoGenerateCompanyQuestions(enterpriseId, req.user!.id);
-    return res.json(updated);
+    // O resultado volta na resposta para a Web dizer se a nova tentativa saiu.
+    const questionsGeneration = await autoGenerateCompanyQuestions(enterpriseId, req.user!.id);
+    return res.json({ ...updated, questionsGeneration });
   } catch (error) {
     return handleIaConfigError(res, error);
   }

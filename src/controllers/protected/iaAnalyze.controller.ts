@@ -13,6 +13,7 @@ import { resolvePrimaryBaseUrl } from '../../libs/iaAnalyze/resolvePrimaryBaseUr
 import { ACTIVE_IA_JOB_STATUSES, enqueueIaJob, getIaJobByIdScoped, listActiveIaJobsScoped } from '../../repositories/iaJob.repository.js';
 import { getLatestCompanyQuestionsJob } from '../../repositories/companyQuestionSuggestions.repository.js';
 import { kickWorker, kickWorkerIfPending } from '../../libs/iaJob/kickWorker.js';
+import { autoGenerateCompanyQuestions } from '../../services/companyQuestionsAutoGenerate.service.js';
 
 /**
  * Loga, de forma estruturada, o contexto de uma falha no fluxo de IA. Inclui o
@@ -172,6 +173,23 @@ export async function getLatestCompanyQuestionsJobController(req: Request, res: 
     const job = await getLatestCompanyQuestionsJob(enterpriseId);
     if (job && (ACTIVE_IA_JOB_STATUSES as readonly string[]).includes(job.status)) kickWorkerIfPending(enterpriseId);
     return res.json({ job });
+  } catch {
+    return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
+  }
+}
+
+/**
+ * "Tentar de novo" a geração das perguntas da configuração inicial com o modelo
+ * atual (ex.: depois de uma falha). Responde sempre 200 com o que aconteceu, para
+ * a Web mostrar o motivo quando não sai um pedido novo (intervalo ou limite diário).
+ */
+export async function retryCompanyQuestionsController(req: Request, res: Response) {
+  res.setHeader('Cache-Control', 'private, no-store');
+  try {
+    const enterpriseId = req.enterpriseId ?? await resolveEnterpriseIdByUser(req.user!.id);
+    if (!enterpriseId) return sendTypedError(res, 404, 'enterprise_not_found');
+    const questionsGeneration = await autoGenerateCompanyQuestions(enterpriseId, req.user!.id);
+    return res.json({ questionsGeneration });
   } catch {
     return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
   }
