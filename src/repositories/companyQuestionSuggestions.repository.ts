@@ -72,6 +72,8 @@ export async function getLatestCompanyQuestionsJobStatus(enterpriseId: string): 
 
 export type LatestCompanyQuestionsJob = {
   id: string; status: string; errorCode: string | null; applied: boolean | null;
+  /** O gestor dispensou o aviso de falha ("Manter perguntas padrão"). */
+  dismissed: boolean;
 };
 
 /**
@@ -84,9 +86,26 @@ export async function getLatestCompanyQuestionsJob(enterpriseId: string): Promis
     status: iaAnalysisJob.status,
     errorCode: iaAnalysisJob.errorCode,
     applied: sql<boolean | null>`(${iaAnalysisJob.options}->>'applied')::boolean`,
+    dismissed: sql<boolean>`(${iaAnalysisJob.options}->>'dismissedAt') is not null`,
   }).from(iaAnalysisJob)
     .where(and(eq(iaAnalysisJob.enterpriseId, enterpriseId),
       eq(iaAnalysisJob.jobType, 'generate_company_questions')))
     .orderBy(desc(iaAnalysisJob.createdAt)).limit(1);
   return row ?? null;
+}
+
+/**
+ * "Manter perguntas padrão": marca o último pedido da empresa, se ele falhou, como
+ * dispensado (options.dismissedAt). O aviso persistente da Web some em qualquer
+ * aparelho; um pedido novo (outra tentativa) volta a valer por si.
+ */
+export async function dismissLatestFailedCompanyQuestionsJob(enterpriseId: string): Promise<boolean> {
+  const latest = await getLatestCompanyQuestionsJob(enterpriseId);
+  if (!latest || latest.status !== 'failed') return false;
+  const rows = await getDb().update(iaAnalysisJob)
+    .set({ options: sql`coalesce(${iaAnalysisJob.options}, '{}'::jsonb) || jsonb_build_object('dismissedAt', now())` })
+    .where(and(eq(iaAnalysisJob.id, latest.id), eq(iaAnalysisJob.enterpriseId, enterpriseId),
+      eq(iaAnalysisJob.status, 'failed')))
+    .returning({ id: iaAnalysisJob.id });
+  return rows.length > 0;
 }

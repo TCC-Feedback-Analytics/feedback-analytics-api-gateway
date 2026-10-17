@@ -7,6 +7,7 @@ import {
   listActiveIaJobsController,
   getLatestCompanyQuestionsJobController,
   retryCompanyQuestionsController,
+  dismissCompanyQuestionsFailureController,
 } from '../../controllers/protected/iaAnalyze.controller.js';
 
 const router = Router();
@@ -16,6 +17,7 @@ router.post('/protected/ia-analyze/regenerate-insights', requireAuth, regenerate
 router.get('/protected/ia-analyze/jobs', requireAuth, listActiveIaJobsController);
 router.get('/protected/ia-analyze/jobs/company-questions/latest', requireAuth, getLatestCompanyQuestionsJobController);
 router.post('/protected/ia-analyze/jobs/company-questions/retry', requireAuth, retryCompanyQuestionsController);
+router.post('/protected/ia-analyze/jobs/company-questions/dismiss', requireAuth, dismissCompanyQuestionsFailureController);
 router.get('/protected/ia-analyze/jobs/:id', requireAuth, getIaJobController);
 
 export default router;
