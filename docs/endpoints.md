@@ -681,7 +681,8 @@ pedido. Esse job não aparece em `GET /jobs`; a Web usa este endpoint para desco
 o id e acompanhá-lo por `GET /jobs/:id`.
 
 ```json
-{ "job": { "id": "uuid", "status": "queued", "errorCode": "ia_provider_rate_limited", "applied": null } }
+{ "job": { "id": "uuid", "status": "failed", "errorCode": "invalid_ai_response_schema", "applied": null, "dismissed": false },
+  "stillDefault": true }
 ```
 
 - `applied`: `true` quando as perguntas geradas foram gravadas; `false` quando a
@@ -692,6 +693,8 @@ o id e acompanhá-lo por `GET /jobs/:id`.
   novo após 60s, 120s, 240s e 300s; na quinta falha passa a failed e as perguntas
   padrão permanecem.
 - Nunca retorna o contexto enviado nem as sugestões (options).
+- `stillDefault`: se as perguntas da empresa ainda são as padrão (`null` sem pedido). Com o pedido `failed`, `stillDefault: true` e `dismissed: false`, a Web mostra o aviso persistente de falha.
+- `dismissed`: o gestor escolheu "Manter perguntas padrão" para este pedido (`POST /jobs/company-questions/dismiss`).
 
 ### `POST /api/protected/ia-analyze/jobs/company-questions/retry`
 
@@ -709,6 +712,16 @@ o id e acompanhá-lo por `GET /jobs/:id`.
 | `customized` | A empresa já editou as perguntas; a IA não interfere |
 | `rate_limited` | Intervalo entre pedidos (`IA_QUESTION_SUGGESTIONS_COOLDOWN_SECONDS`, 60 s) ou limite diário (`IA_QUESTION_SUGGESTIONS_MAX_PER_DAY`, 5); `retryAfterSeconds` diz quanto falta |
 | `unavailable` | Contexto incompleto ou IA não configurada; `code` diz qual (`company_context_required`, `ia_config_required`) |
+
+### `POST /api/protected/ia-analyze/jobs/company-questions/dismiss`
+
+"Manter perguntas padrão": dispensa o aviso persistente de falha do **último pedido, se ele falhou** (grava `options.dismissedAt`). Sem body. Vale em qualquer aparelho; um pedido novo (outra tentativa) volta a valer por si.
+
+```json
+{ "dismissed": true }
+```
+
+`dismissed: false` quando o último pedido não está `failed` (ou não existe).
 
 ### `GET /api/protected/ia-analyze/jobs/:id`
 

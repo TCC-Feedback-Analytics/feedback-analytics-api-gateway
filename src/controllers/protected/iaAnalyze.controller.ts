@@ -11,7 +11,11 @@ import { parseScopeType } from '../../libs/iaAnalyze/parse.js';
 import { readExecutionMode } from '../../libs/iaAnalyze/readEnvs.js';
 import { resolvePrimaryBaseUrl } from '../../libs/iaAnalyze/resolvePrimaryBaseUrl.js';
 import { ACTIVE_IA_JOB_STATUSES, enqueueIaJob, getIaJobByIdScoped, listActiveIaJobsScoped } from '../../repositories/iaJob.repository.js';
-import { getLatestCompanyQuestionsJob } from '../../repositories/companyQuestionSuggestions.repository.js';
+import {
+  dismissLatestFailedCompanyQuestionsJob,
+  getLatestCompanyQuestionsJob,
+} from '../../repositories/companyQuestionSuggestions.repository.js';
+import { hasDefaultCompanyQuestions } from '../../repositories/collectingData.repository.js';
 import { kickWorker, kickWorkerIfPending } from '../../libs/iaJob/kickWorker.js';
 import { autoGenerateCompanyQuestions } from '../../services/companyQuestionsAutoGenerate.service.js';
 
@@ -163,7 +167,8 @@ export async function listActiveIaJobsController(req: Request, res: Response) {
 /**
  * Geração das perguntas na configuração inicial: devolve o pedido mais recente
  * para a Web acompanhar (pelo id, no polling de job) e destrava a fila se ele
- * estiver parado esperando uma nova tentativa.
+ * estiver parado esperando uma nova tentativa. `stillDefault` diz se as perguntas
+ * ainda são as padrão: com o pedido falho, é o que faz o aviso persistente valer.
  */
 export async function getLatestCompanyQuestionsJobController(req: Request, res: Response) {
   res.setHeader('Cache-Control', 'private, no-store');
@@ -172,7 +177,21 @@ export async function getLatestCompanyQuestionsJobController(req: Request, res: 
     if (!enterpriseId) return sendTypedError(res, 404, 'enterprise_not_found');
     const job = await getLatestCompanyQuestionsJob(enterpriseId);
     if (job && (ACTIVE_IA_JOB_STATUSES as readonly string[]).includes(job.status)) kickWorkerIfPending(enterpriseId);
-    return res.json({ job });
+    const stillDefault = job ? await hasDefaultCompanyQuestions(enterpriseId) : null;
+    return res.json({ job, stillDefault });
+  } catch {
+    return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
+  }
+}
+
+/** "Manter perguntas padrão": dispensa o aviso persistente do último pedido que falhou. */
+export async function dismissCompanyQuestionsFailureController(req: Request, res: Response) {
+  res.setHeader('Cache-Control', 'private, no-store');
+  try {
+    const enterpriseId = req.enterpriseId ?? await resolveEnterpriseIdByUser(req.user!.id);
+    if (!enterpriseId) return sendTypedError(res, 404, 'enterprise_not_found');
+    const dismissed = await dismissLatestFailedCompanyQuestionsJob(enterpriseId);
+    return res.json({ dismissed });
   } catch {
     return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
   }
