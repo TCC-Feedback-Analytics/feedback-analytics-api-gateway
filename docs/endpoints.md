@@ -830,6 +830,8 @@ Além dos erros de validação/autenticação/catálogo do PUT:
 
 O UPDATE exige a mesma empresa, ID da configuração, chave cifrada/IV/tag e modelo lidos antes da validação externa. Isso impede que a operação sobrescreva uma troca concorrente ou recrie uma configuração removida. Em qualquer falha, a configuração anterior é preservada.
 
+**Efeito imediato nos jobs em espera.** Depois de gravar o modelo (e antes de tentar de novo a geração automática das perguntas), o Gateway antecipa para agora o `next_run_at` dos jobs de IA da empresa em `queued` ou `waiting_budget` agendados para o futuro (ex.: backoff de 429, até 300 s) e dispara um passo do worker (`kickWorkerIfPending`). Como o job resolve as credenciais a cada tentativa, a próxima já usa o modelo novo — a Web pode trocar o modelo pela tela de espera ("Preparando sua conta"/análises) sem sair dela. Jobs `running` não são alterados (pertencem a um worker com lease); se a troca falhar (`409`), nada é antecipado.
+
 ### `DELETE /api/protected/user/ia-config`
 
 Remove a config. As análises ficam bloqueadas com `ia_config_required` até uma nova chave ser configurada. **Response 200** — `{ "hasKey": false, "provider": null, "model": null, "keyHint": null }`.

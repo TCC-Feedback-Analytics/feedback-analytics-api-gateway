@@ -177,6 +177,23 @@ export async function hasClaimableIaJob(enterpriseId: string): Promise<boolean> 
   return rows.length > 0;
 }
 
+/**
+ * Antecipa para agora os jobs em espera da empresa (queued/waiting_budget com
+ * next_run_at no futuro, ex.: backoff de 429). Usado ao trocar o modelo: o job
+ * resolve as credenciais a cada tentativa, então pode tentar de novo já com o
+ * modelo novo. Running nunca é tocado (pertence a um worker com lease).
+ * Devolve quantos jobs foram antecipados.
+ */
+export async function advanceWaitingIaJobs(enterpriseId: string): Promise<number> {
+  const rows = await getDb().update(iaAnalysisJob)
+    .set({ nextRunAt: sql`now()`, updatedAt: sql`now()` })
+    .where(scopedByEnterprise(iaAnalysisJob.enterpriseId, enterpriseId,
+      inArray(iaAnalysisJob.status, ['queued', 'waiting_budget']),
+      sql`${iaAnalysisJob.nextRunAt} > now()`))
+    .returning({ id: iaAnalysisJob.id });
+  return rows.length;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Consumo pelo worker/drain (etapa 03.3).
 // ─────────────────────────────────────────────────────────────────────────────
