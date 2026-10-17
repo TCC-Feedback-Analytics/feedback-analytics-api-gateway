@@ -1,6 +1,7 @@
-import { and, eq, inArray, isNull, type SQL } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, lt, type SQL } from 'drizzle-orm';
 import type { PgColumn } from 'drizzle-orm/pg-core';
 import { collectionPoints, feedback } from '../../drizzle/schema.js';
+import type { MetricsPeriod } from '../libs/period.js';
 
 /**
  * Garante que nenhuma query tenant-scoped seja construída sem um enterprise_id.
@@ -26,20 +27,27 @@ export function assertEnterpriseId(enterpriseId: string): void {
  * - array NÃO vazio => recorta por esses pontos de coleta;
  * - array VAZIO => "nenhum resultado" (escopo sem pontos) e DEVE ser tratado
  *   pelo chamador antes de chamar este helper (que só aceita `null` ou não vazio).
+ *
+ * `period` (etapa 02) recorta por `created_at`: início incluído, fim excluído.
+ * Sem período, vale o histórico inteiro. O índice `(enterprise_id, created_at)`
+ * sustenta o recorte.
  */
 export function scopedFeedbackWhere(
   enterpriseId: string,
   collectionPointIds?: string[] | null,
+  period?: MetricsPeriod | null,
 ): SQL {
   assertEnterpriseId(enterpriseId);
 
-  const byEnterprise = eq(feedback.enterpriseId, enterpriseId);
+  const conds: SQL[] = [eq(feedback.enterpriseId, enterpriseId)];
 
   if (collectionPointIds && collectionPointIds.length > 0) {
-    return and(byEnterprise, inArray(feedback.collectionPointId, collectionPointIds)) as SQL;
+    conds.push(inArray(feedback.collectionPointId, collectionPointIds));
   }
+  if (period?.start) conds.push(gte(feedback.createdAt, period.start));
+  if (period?.end) conds.push(lt(feedback.createdAt, period.end));
 
-  return byEnterprise;
+  return conds.length === 1 ? conds[0] : (and(...conds) as SQL);
 }
 
 /**

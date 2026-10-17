@@ -4,6 +4,7 @@ import {
   API_ERROR_FAILED_TO_FETCH_FEEDBACK_ANALYSIS,
   API_ERROR_FAILED_TO_FETCH_STATS,
   API_ERROR_INTERNAL_SERVER_ERROR,
+  API_ERROR_INVALID_PERIOD,
 } from '../../config/errors.js';
 import { normalizeFeedbackAnalysisRows } from '../../libs/iaAnalyze/normalize.js';
 import { resolveScopeCollectionPointIds } from '../../repositories/scope.repository.js';
@@ -43,6 +44,7 @@ import {
   feedbackSubquestionAnswers,
 } from '../../../drizzle/schema.js';
 import { scopedFeedbackWhere } from '../../db/tenantScope.js';
+import { parseMetricsPeriod } from '../../libs/period.js';
 
 type FeedbackCollectionPoint = {
   id?: string;
@@ -243,6 +245,9 @@ export async function getFeedbacksStatsController(req: Request, res: Response) {
 
   const scopeType = parseInsightScopeType(req.query.scope_type);
   const catalogItemId = String(req.query.catalog_item_id ?? '').trim() || null;
+  const parsedPeriod = parseMetricsPeriod(req.query);
+  if ('error' in parsedPeriod) return sendTypedError(res, 400, API_ERROR_INVALID_PERIOD);
+  const { period } = parsedPeriod;
 
   try {
     const enterpriseId = req.enterpriseId ?? (await resolveEnterpriseIdByUser(user.id));
@@ -270,10 +275,12 @@ export async function getFeedbacksStatsController(req: Request, res: Response) {
     const ratingAgg = await fetchScopedRatingAggregates({
       enterpriseId,
       collectionPointIds: filteredCollectionPointIds,
+      period,
     });
     const analysisAgg = await fetchScopedAnalysisAggregates({
       enterpriseId,
       collectionPointIds: filteredCollectionPointIds,
+      period,
     });
 
     const totalFeedbacks = ratingAgg.totalFeedbacks;
@@ -367,6 +374,9 @@ export async function getFeedbacksAnalysisController(req: Request, res: Response
   const sentimentFilter = (req.query.sentiment as 'positive' | 'neutral' | 'negative' | undefined) ?? undefined;
   const scopeType = parseInsightScopeType(req.query.scope_type);
   const catalogItemId = String(req.query.catalog_item_id ?? '').trim() || null;
+  const parsedPeriod = parseMetricsPeriod(req.query);
+  if ('error' in parsedPeriod) return sendTypedError(res, 400, API_ERROR_INVALID_PERIOD);
+  const { period } = parsedPeriod;
 
   try {
     const enterpriseId = req.enterpriseId ?? (await resolveEnterpriseIdByUser(user.id));
@@ -399,6 +409,7 @@ export async function getFeedbacksAnalysisController(req: Request, res: Response
       enterpriseId,
       collectionPointIds: filteredCollectionPointIds,
       sentiment: sentimentFilter,
+      period,
     });
 
     const itemsRaw = normalizeFeedbackAnalysisRows(data);
@@ -593,6 +604,9 @@ export async function getFeedbacksQuestionsController(req: Request, res: Respons
 
   const scopeType = parseInsightScopeType(req.query.scope_type);
   const catalogItemId = String(req.query.catalog_item_id ?? '').trim() || null;
+  const parsedPeriod = parseMetricsPeriod(req.query);
+  if ('error' in parsedPeriod) return sendTypedError(res, 400, API_ERROR_INVALID_PERIOD);
+  const { period } = parsedPeriod;
 
   try {
     const enterpriseId = req.enterpriseId ?? (await resolveEnterpriseIdByUser(user.id));
@@ -619,7 +633,7 @@ export async function getFeedbacksQuestionsController(req: Request, res: Respons
     const feedbackRows = await getDb()
       .select({ id: feedback.id })
       .from(feedback)
-      .where(scopedFeedbackWhere(enterpriseId, filteredCollectionPointIds));
+      .where(scopedFeedbackWhere(enterpriseId, filteredCollectionPointIds, period));
 
     const feedbackIds = feedbackRows.map((f) => f.id);
     if (feedbackIds.length === 0) return res.json({ questions: [] });
