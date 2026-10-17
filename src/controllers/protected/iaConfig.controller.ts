@@ -17,6 +17,8 @@ import {
 import { IaConfigError } from '../../libs/iaConfig/iaConfigError.js';
 import { DEFAULT_IA_MODEL } from '../../libs/iaConfig/openRouterModels.js';
 import { autoGenerateCompanyQuestions } from '../../services/companyQuestionsAutoGenerate.service.js';
+import { advanceWaitingIaJobs } from '../../repositories/iaJob.repository.js';
+import { kickWorkerIfPending } from '../../libs/iaJob/kickWorker.js';
 
 /** Empresa do usuário autenticado (req.enterpriseId do requireAuth; fallback pelo user). */
 async function resolveEnterpriseId(req: Request): Promise<string | null> {
@@ -112,6 +114,10 @@ export async function patchIaModelController(req: Request, res: Response) {
     const enterpriseId = await resolveEnterpriseId(req);
     if (!enterpriseId) return sendTypedError(res, 404, API_ERROR_ENTERPRISE_NOT_FOUND);
     const updated = await updateIaModelForEnterprise(enterpriseId, parsed.data.model);
+    // Job em espera (ex.: backoff de 429) só voltaria no next_run_at; antecipa para
+    // a próxima tentativa já usar o modelo novo, sem esperar.
+    await advanceWaitingIaJobs(enterpriseId);
+    kickWorkerIfPending(enterpriseId);
     // Trocar o modelo depois de uma falha na configuração inicial tenta gerar as
     // perguntas de novo (só se ainda forem as padrão e não houver pedido concluído).
     await autoGenerateCompanyQuestions(enterpriseId, req.user!.id);

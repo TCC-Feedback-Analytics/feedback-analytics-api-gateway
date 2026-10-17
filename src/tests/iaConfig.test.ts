@@ -14,6 +14,8 @@ import { decryptSecret, encryptSecret } from '../utils/crypto.js';
 import { openRouterModels, type IaModelsCatalog } from '../libs/iaConfig/openRouterModels.js';
 import { IaConfigError } from '../libs/iaConfig/iaConfigError.js';
 import { autoGenerateCompanyQuestions } from '../services/companyQuestionsAutoGenerate.service.js';
+import { advanceWaitingIaJobs } from '../repositories/iaJob.repository.js';
+import { kickWorkerIfPending } from '../libs/iaJob/kickWorker.js';
 
 const TEST_USER_ID = '11111111-1111-1111-1111-111111111111';
 const ENT = 'ent-1';
@@ -47,6 +49,10 @@ vi.mock('../libs/iaConfig/openRouterModels.js', () => ({
 }));
 vi.mock('../services/companyQuestionsAutoGenerate.service.js', () => ({ autoGenerateCompanyQuestions: vi.fn() }));
 const mAutoGenerate = vi.mocked(autoGenerateCompanyQuestions);
+vi.mock('../repositories/iaJob.repository.js', () => ({ advanceWaitingIaJobs: vi.fn() }));
+vi.mock('../libs/iaJob/kickWorker.js', () => ({ kickWorker: vi.fn(), kickWorkerIfPending: vi.fn() }));
+const mAdvance = vi.mocked(advanceWaitingIaJobs);
+const mKickIfPending = vi.mocked(kickWorkerIfPending);
 
 const mGet = vi.mocked(getIaConfigByEnterprise);
 const mUpsert = vi.mocked(upsertIaConfig);
@@ -251,6 +257,16 @@ describe('[Integração] PATCH /api/protected/user/ia-config/model', () => {
     expect(mAutoGenerate).toHaveBeenCalledWith(ENT, TEST_USER_ID);
   });
 
+  it('antecipa jobs em espera e dispara o worker antes da geração automática', async () => {
+    mAdvance.mockResolvedValueOnce(1);
+    const res = await request(app).patch('/api/protected/user/ia-config/model').send({ model: 'vendor/model' });
+    expect(res.status).toBe(200);
+    expect(mAdvance).toHaveBeenCalledWith(ENT);
+    expect(mKickIfPending).toHaveBeenCalledWith(ENT);
+    const order = [mUpdate, mAdvance, mKickIfPending, mAutoGenerate].map(fn => fn.mock.invocationCallOrder[0]);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+  });
+
   it.each([{}, { model: '' }, { model: '   ' }, { model: null }, { model: 'x'.repeat(121) },
     { model: 'vendor/model', apiKey: 'sk-or-new-key' }, { model: 'vendor/model', enterpriseId: 'other' },
   ])('rejeita payload inválido ou campos extras: %j', async (body) => {
@@ -278,6 +294,8 @@ describe('[Integração] PATCH /api/protected/user/ia-config/model', () => {
     expect(res.body.error).toBe('ia_config_changed');
     expect(mUpsert).not.toHaveBeenCalled();
     expect(mAutoGenerate).not.toHaveBeenCalled();
+    expect(mAdvance).not.toHaveBeenCalled();
+    expect(mKickIfPending).not.toHaveBeenCalled();
   });
 });
 
