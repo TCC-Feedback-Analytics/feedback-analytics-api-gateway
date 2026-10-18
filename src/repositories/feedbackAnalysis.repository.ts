@@ -2,6 +2,7 @@ import { and, eq, type SQL } from 'drizzle-orm';
 import { getDb } from '../db/client.js';
 import { feedback, feedbackAnalysis } from '../../drizzle/schema.js';
 import { scopedFeedbackWhere } from '../db/tenantScope.js';
+import type { MetricsPeriod } from '../libs/period.js';
 
 /**
  * Feedbacks ANALISADOS do escopo (INNER JOIN em `feedback_analysis`, 1:1 — só
@@ -16,10 +17,12 @@ export async function fetchScopedFeedbackAnalysisRows(params: {
   enterpriseId: string;
   collectionPointIds: string[] | null;
   sentiment?: 'positive' | 'neutral' | 'negative';
+  /** Recorte por data de criação do feedback (etapa 02). */
+  period?: MetricsPeriod | null;
 }): Promise<Array<Record<string, unknown>>> {
-  const { enterpriseId, collectionPointIds, sentiment } = params;
+  const { enterpriseId, collectionPointIds, sentiment, period } = params;
 
-  const conds: SQL[] = [scopedFeedbackWhere(enterpriseId, collectionPointIds)];
+  const conds: SQL[] = [scopedFeedbackWhere(enterpriseId, collectionPointIds, period)];
   if (sentiment) conds.push(eq(feedbackAnalysis.sentiment, sentiment));
 
   const rows = await getDb()
