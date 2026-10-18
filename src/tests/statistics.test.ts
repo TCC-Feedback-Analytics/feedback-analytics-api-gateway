@@ -9,6 +9,7 @@ import {
   ratingStats,
   csatTopTwoBox,
   bayesianAverage,
+  spearmanCorrelation,
 } from '../libs/statistics/index.js';
 
 describe('[Unidade] statistics', () => {
@@ -109,6 +110,35 @@ describe('[Unidade] statistics', () => {
     });
     it('m=0 → média do item', () => {
       expect(bayesianAverage(4.5, 3, 4, 0)).toBe(4.5);
+    });
+  });
+
+  describe('spearmanCorrelation', () => {
+    it('exemplo clássico sem empates: r = 1 − 6·Σd²/(n(n²−1)) = 0,8', () => {
+      const result = spearmanCorrelation([[1, 2], [2, 1], [3, 4], [4, 3], [5, 5]]);
+      expect(result?.r).toBeCloseTo(0.8, 3);
+      expect(result?.n).toBe(5);
+    });
+
+    it('empates recebem o posto médio: notas iguais nas duas → r = 1', () => {
+      expect(spearmanCorrelation([[1, 1], [2, 2], [2, 2], [3, 3], [5, 5]])?.r).toBe(1);
+    });
+
+    it('sentido contrário → r negativo', () => {
+      expect(spearmanCorrelation([[1, 5], [2, 4], [3, 3], [4, 2], [5, 1]])?.r).toBe(-1);
+    });
+
+    it('o IC contém r e fica mais estreito com mais pares', () => {
+      const few = spearmanCorrelation(Array.from({ length: 10 }, (_, i) => [1 + (i % 5), 1 + ((i * 2) % 5)] as [number, number]))!;
+      const many = spearmanCorrelation(Array.from({ length: 200 }, (_, i) => [1 + (i % 5), 1 + ((i * 2) % 5)] as [number, number]))!;
+      expect(few.ci.lower).toBeLessThanOrEqual(few.r);
+      expect(few.ci.upper).toBeGreaterThanOrEqual(few.r);
+      expect(many.ci.upper - many.ci.lower).toBeLessThan(few.ci.upper - few.ci.lower);
+    });
+
+    it('menos de 4 pares ou nota que não varia → null', () => {
+      expect(spearmanCorrelation([[1, 2], [2, 3], [3, 4]])).toBeNull();
+      expect(spearmanCorrelation([[4, 1], [4, 2], [4, 3], [4, 5]])).toBeNull();
     });
   });
 });
