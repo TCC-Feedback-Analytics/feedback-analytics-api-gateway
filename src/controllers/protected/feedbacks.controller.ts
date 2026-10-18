@@ -19,6 +19,7 @@ import {
   netSatisfaction,
   netSentimentScore,
   confidenceTier,
+  spearmanCorrelation,
   wilsonInterval,
   wilsonLowerBound,
 } from '../../libs/statistics/index.js';
@@ -554,6 +555,8 @@ type QuestionAnswerAgg = {
   text: string;
   counts: Record<number, number>;
   distribution: Record<AnswerValueKey, number>;
+  /** (nota da resposta, estrelas do mesmo feedback): base do "o que mais pesa na nota". */
+  pairs: Array<[number, number]>;
 };
 
 /**
@@ -568,6 +571,7 @@ function newAnswerAgg(id: string, text: string): QuestionAnswerAgg {
     text,
     counts: {},
     distribution: { PESSIMO: 0, RUIM: 0, MEDIANA: 0, BOA: 0, OTIMA: 0 },
+    pairs: [],
   };
 }
 
@@ -577,11 +581,13 @@ function addAnswerToAgg(
   text: string,
   answerValue: AnswerValueKey,
   answerScore: number,
+  starRating?: number | null,
 ) {
   const key = `${id}${AGG_KEY_SEP}${text}`;
   const acc = map.get(key) ?? newAnswerAgg(id, text);
   acc.counts[answerScore] = (acc.counts[answerScore] ?? 0) + 1;
   acc.distribution[answerValue] += 1;
+  if (starRating != null) acc.pairs.push([answerScore, starRating]);
   map.set(key, acc);
 }
 
@@ -635,17 +641,20 @@ export async function getFeedbacksQuestionsController(req: Request, res: Respons
 
     // Feedbacks do escopo (SEMPRE por enterprise_id via scopedFeedbackWhere).
     const feedbackRows = await getDb()
-      .select({ id: feedback.id })
+      .select({ id: feedback.id, rating: feedback.rating })
       .from(feedback)
       .where(scopedFeedbackWhere(enterpriseId, filteredCollectionPointIds, period));
 
     const feedbackIds = feedbackRows.map((f) => f.id);
+    // Estrelas de cada feedback: o "o que mais pesa na nota" cruza com a resposta de cada pergunta.
+    const starsByFeedback = new Map(feedbackRows.map((f) => [f.id, f.rating]));
     if (feedbackIds.length === 0) return res.json({ questions: [] });
 
     // Respostas das perguntas → agrega por pergunta. Isolamento transitivo: os
     // feedbackIds já vêm tenant-scoped.
     const answerRows = await getDb()
       .select({
+        feedback_id: feedbackQuestionAnswers.feedbackId,
         question_id: feedbackQuestionAnswers.questionId,
         question_text_snapshot: feedbackQuestionAnswers.questionTextSnapshot,
         answer_value: feedbackQuestionAnswers.answerValue,
@@ -658,7 +667,14 @@ export async function getFeedbacksQuestionsController(req: Request, res: Respons
     // distinta vira uma entrada própria, para separar "atuais" de "antigas".
     const questionAgg = new Map<string, QuestionAnswerAgg>();
     for (const row of answerRows) {
-      addAnswerToAgg(questionAgg, row.question_id, String(row.question_text_snapshot ?? '').trim(), row.answer_value as AnswerValueKey, row.answer_score);
+      addAnswerToAgg(
+        questionAgg,
+        row.question_id,
+        String(row.question_text_snapshot ?? '').trim(),
+        row.answer_value as AnswerValueKey,
+        row.answer_score,
+        starsByFeedback.get(row.feedback_id),
+      );
     }
 
     // Respostas das subperguntas → agrega por (subquestion_id + redação).
@@ -728,6 +744,8 @@ export async function getFeedbacksQuestionsController(req: Request, res: Respons
           question_id: qid,
           text: agg.text,
           ...aggToMetricFields(agg),
+          // O quanto a nota da pergunta anda junto com as estrelas (Spearman + IC).
+          ratingWeight: spearmanCorrelation(agg.pairs),
           status: questionMetricStatus(cfg, agg.text),
           subquestions: agg === host ? (subsByQuestion.get(qid) ?? []) : [],
         }));

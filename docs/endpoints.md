@@ -414,6 +414,7 @@ Retorna métricas agregadas **por pergunta e subpergunta** no escopo selecionado
         "OTIMA": 11
       },
       "confidenceTier": "moderate",
+      "ratingWeight": { "r": 0.62, "ci": { "lower": 0.39, "upper": 0.78 }, "n": 42 },
       "status": "current",
       "subquestions": [
         {
@@ -444,6 +445,12 @@ Por pergunta (e por subpergunta): `mean` (nota média 1–5), `ci` (faixa prová
 - `current` — pergunta ativa e com o texto atual da configuração;
 - `deactivated` — a configuração ainda tem esta redação, mas está desativada (toggle off);
 - `past` — redação antiga (texto editado) ou pergunta removida da configuração.
+
+**O que mais pesa na nota (`ratingWeight`, só nas perguntas).** É a correlação de Spearman entre a nota da pergunta e as estrelas **do mesmo feedback**, com o IC 95% (Fisher z, erro padrão de Bonett–Wright) e o número de pares `n`.
+
+- **Leitura de `r`:** perto de 1, as duas notas sobem e descem juntas, então a pergunta pesa na nota geral. Perto de 0, ela pesa pouco. Negativo, as duas vão em sentidos contrários.
+- **Quando vem `null`:** com menos de 4 pares, ou quando uma das notas não varia.
+- **Limite:** mostra o que anda junto com a nota, não prova a causa. A Web só exibe o peso a partir de 30 respostas.
 
 > Cada redação distinta de uma mesma pergunta vira uma entrada própria (o `question_id` é estável; o snapshot de texto pode mudar), o que separa "atuais" de "antigas".
 >

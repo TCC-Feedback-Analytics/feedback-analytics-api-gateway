@@ -168,3 +168,62 @@ export function bayesianAverage(
   if (itemCount + m <= 0) return round(globalMean, 2);
   return round((itemCount * itemMean + m * globalMean) / (itemCount + m), 2);
 }
+
+export type Correlation = {
+  /** Coeficiente de Spearman, em [-1, 1]. */
+  r: number;
+  /** IC 95% (Fisher z com o erro padrão de Bonett–Wright para Spearman). */
+  ci: Interval;
+  /** Pares usados no cálculo. */
+  n: number;
+};
+
+/** Postos médios: valores empatados recebem a média dos postos que ocupariam. */
+function averageRanks(values: number[]): number[] {
+  const order = values.map((value, index) => ({ value, index })).sort((a, b) => a.value - b.value);
+  const ranks = new Array<number>(values.length);
+  for (let i = 0; i < order.length; ) {
+    let j = i;
+    while (j + 1 < order.length && order[j + 1].value === order[i].value) j++;
+    const rank = (i + j) / 2 + 1;
+    for (let k = i; k <= j; k++) ranks[order[k].index] = rank;
+    i = j + 1;
+  }
+  return ranks;
+}
+
+/**
+ * Correlação de Spearman entre duas notas do MESMO feedback (ex.: a nota de uma
+ * pergunta e as estrelas). Robusta para escalas de 1 a 5 com muitos empates:
+ * é a correlação de Pearson dos postos médios. Diz o quanto as duas andam
+ * juntas, não que uma causa a outra. `null` com menos de 4 pares ou quando uma
+ * das notas não varia (todas iguais).
+ */
+export function spearmanCorrelation(pairs: ReadonlyArray<readonly [number, number]>, z = Z_95): Correlation | null {
+  const n = pairs.length;
+  if (n < 4) return null;
+
+  const rx = averageRanks(pairs.map((pair) => pair[0]));
+  const ry = averageRanks(pairs.map((pair) => pair[1]));
+  const meanRank = (n + 1) / 2;
+  let sxy = 0;
+  let sxx = 0;
+  let syy = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = rx[i] - meanRank;
+    const dy = ry[i] - meanRank;
+    sxy += dx * dy;
+    sxx += dx * dx;
+    syy += dy * dy;
+  }
+  if (sxx === 0 || syy === 0) return null;
+
+  const r = Math.max(-1, Math.min(1, sxy / Math.sqrt(sxx * syy)));
+  const fisher = Math.atanh(Math.max(-0.9999, Math.min(0.9999, r)));
+  const se = Math.sqrt((1 + (r * r) / 2) / (n - 3));
+  return {
+    r: round(r, 3),
+    ci: { lower: round(Math.tanh(fisher - z * se), 3), upper: round(Math.tanh(fisher + z * se), 3) },
+    n,
+  };
+}
