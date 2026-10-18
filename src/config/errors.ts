@@ -1,7 +1,7 @@
 export const API_ERROR_INVALID_INTENT = 'invalid_intent' as const;
 export const API_ERROR_INVALID_PAYLOAD = 'invalid_payload' as const;
 export const API_ERROR_INVALID_PERIOD = 'invalid_period' as const;
-/** Movimento no tempo: `bucket` ou `tz` inválido. */
+/** Movimento no tempo e dias de pico: `bucket` ou `tz` inválido. */
 export const API_ERROR_INVALID_TIMELINE = 'invalid_timeline' as const;
 /** Movimento no tempo: intervalo longo demais para o agrupamento pedido. */
 export const API_ERROR_TIMELINE_TOO_MANY_POINTS = 'timeline_too_many_points' as const;

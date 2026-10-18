@@ -7,6 +7,7 @@ import {
   getFeedbacksAnalysisController,
   getFeedbacksQuestionsController,
   getFeedbacksTimelineController,
+  getFeedbacksHeatmapController,
 } from '../../controllers/protected/feedbacks.controller.js';
 
 const router = Router();
@@ -17,5 +18,6 @@ router.get('/protected/user/feedbacks/insights/report', requireAuth, getFeedback
 router.get('/protected/user/feedbacks/analysis', requireAuth, getFeedbacksAnalysisController);
 router.get('/protected/user/feedbacks/questions', requireAuth, getFeedbacksQuestionsController);
 router.get('/protected/user/feedbacks/timeline', requireAuth, getFeedbacksTimelineController);
+router.get('/protected/user/feedbacks/heatmap', requireAuth, getFeedbacksHeatmapController);
 
 export default router;

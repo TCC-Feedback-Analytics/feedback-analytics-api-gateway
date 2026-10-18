@@ -382,6 +382,46 @@ Movimento no tempo: quantas avaliações chegaram e a média das notas em cada d
 
 ---
 
+### `GET /api/protected/user/feedbacks/heatmap`
+
+Dias e horários de pico: quantas avaliações chegaram e a média das notas em cada **dia da semana × faixa do dia**, no escopo e no período escolhidos, no fuso do gestor. As faixas têm 6 horas em vez de uma hora, porque com pouco volume a grade de 24 horas fica vazia. A resposta traz sempre as 28 células; as que não tiveram avaliação vêm com `count: 0` e `mean: null`.
+
+**Query Params**
+
+| Parâmetro | Tipo | Descrição |
+|---|---|---|
+| `scope_type` | `COMPANY \| PRODUCT \| SERVICE \| DEPARTMENT` | Segmenta por escopo, como em `/stats` |
+| `catalog_item_id` | `string` | Segmenta por item de catálogo específico |
+| `start_date` | `string` (ISO 8601) | Início do período, **incluído** |
+| `end_date` | `string` (ISO 8601) | Fim do período, **excluído** |
+| `tz` | `string` (fuso IANA) | Fuso em que dia e hora são lidos. Padrão `America/Sao_Paulo` |
+
+- `weekday`: dia da semana como o `extract(dow)` do Postgres, de 0 (domingo) a 6 (sábado).
+- `band`: faixa do dia. São 0 (madrugada, 0–6h), 1 (manhã, 6–12h), 2 (tarde, 12–18h) e 3 (noite, 18–24h).
+
+**Response 200**
+```json
+{
+  "tz": "America/Sao_Paulo",
+  "total": 13,
+  "cells": [
+    { "weekday": 0, "band": 0, "count": 0, "mean": null },
+    { "weekday": 5, "band": 2, "count": 10, "mean": 3.4 },
+    { "weekday": 6, "band": 3, "count": 3, "mean": 5 }
+  ]
+}
+```
+
+**Erros**
+
+| Status | Código | Quando |
+|---|---|---|
+| 400 | `invalid_period` | Datas fora do ISO 8601 ou `start_date >= end_date` |
+| 400 | `invalid_timeline` | Fuso inválido |
+| 404 | `enterprise_not_found` | Usuário sem empresa |
+
+---
+
 ### `GET /api/protected/user/feedbacks/questions`
 
 Retorna métricas agregadas **por pergunta e subpergunta** no escopo selecionado, na escala 1–5. São métricas **determinísticas** — calculadas só sobre as respostas estruturadas (nota por rótulo), **não dependem da IA**. Usado pela aba "Perguntas".

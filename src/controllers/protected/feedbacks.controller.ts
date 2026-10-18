@@ -50,6 +50,8 @@ import { scopedFeedbackWhere } from '../../db/tenantScope.js';
 import { parseMetricsPeriod } from '../../libs/period.js';
 import { fillTimeline, localDateOf, parseTimelineBucket, parseTimezone } from '../../libs/timeline.js';
 import { fetchScopedTimeline } from '../../repositories/feedbackTimeline.repository.js';
+import { fillHeatmap } from '../../libs/heatmap.js';
+import { fetchScopedHeatmap } from '../../repositories/feedbackHeatmap.repository.js';
 
 type FeedbackCollectionPoint = {
   id?: string;
@@ -833,6 +835,47 @@ export async function getFeedbacksTimelineController(req: Request, res: Response
     });
   } catch (error) {
     console.error('Erro ao buscar o movimento das avaliações:', error);
+    return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
+  }
+}
+
+/**
+ * Dias e horários de pico (métricas novas, 3): quantas avaliações chegaram e a
+ * média em cada dia da semana × faixa do dia (madrugada, manhã, tarde, noite),
+ * no escopo e no período escolhidos, no fuso do gestor. Sempre as 28 células.
+ */
+export async function getFeedbacksHeatmapController(req: Request, res: Response) {
+  const user = req.user!;
+
+  const scopeType = parseInsightScopeType(req.query.scope_type);
+  const catalogItemId = String(req.query.catalog_item_id ?? '').trim() || null;
+  const parsedPeriod = parseMetricsPeriod(req.query);
+  if ('error' in parsedPeriod) return sendTypedError(res, 400, API_ERROR_INVALID_PERIOD);
+  const { period } = parsedPeriod;
+  const timeZone = parseTimezone(req.query.tz);
+  if (!timeZone) return sendTypedError(res, 400, API_ERROR_INVALID_TIMELINE);
+
+  try {
+    const enterpriseId = req.enterpriseId ?? (await resolveEnterpriseIdByUser(user.id));
+    if (!enterpriseId) {
+      return sendTypedError(res, 404, API_ERROR_ENTERPRISE_NOT_FOUND);
+    }
+
+    const scopeResolution = await resolveScopeCollectionPointIds({ enterpriseId, scopeType, catalogItemId });
+    if (scopeResolution.error) {
+      return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_STATS);
+    }
+
+    const rows = await fetchScopedHeatmap({ enterpriseId, collectionPointIds: scopeResolution.ids, period, timeZone });
+    const cells = fillHeatmap(rows);
+
+    return res.json({
+      tz: timeZone,
+      total: cells.reduce((sum, cell) => sum + cell.count, 0),
+      cells,
+    });
+  } catch (error) {
+    console.error('Erro ao buscar os dias e horários de pico:', error);
     return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
   }
 }
