@@ -422,6 +422,51 @@ Dias e horários de pico: quantas avaliações chegaram e a média das notas em 
 
 ---
 
+### `GET /api/protected/user/feedbacks/customers`
+
+Clientes que voltam: quantas avaliações vieram de quem já tinha avaliado a empresa e se a nota de quem volta é maior ou menor que a de quem avalia pela primeira vez, no escopo e no período escolhidos.
+
+- **Quem é o cliente:** o aparelho identificado pelo anti-spam (`tracked_device_id`). Por isso o número é aproximado, e a resposta não traz nenhum dado pessoal.
+- **Quando a avaliação é "de quem volta":** quando o mesmo aparelho já tinha avaliado a **empresa** antes, em qualquer escopo. A numeração usa `row_number()` por aparelho, com o filtro de empresa dentro da subconsulta; escopo e período recortam depois.
+- **Sem aparelho:** essas avaliações ficam de fora dos percentuais e são contadas em `unidentified`.
+
+**Query Params**
+
+| Parâmetro | Tipo | Descrição |
+|---|---|---|
+| `scope_type` | `COMPANY \| PRODUCT \| SERVICE \| DEPARTMENT` | Segmenta por escopo, como em `/stats` |
+| `catalog_item_id` | `string` | Segmenta por item de catálogo específico |
+| `start_date` | `string` (ISO 8601) | Início do período, **incluído** |
+| `end_date` | `string` (ISO 8601) | Fim do período, **excluído** |
+
+**Response 200**
+```json
+{
+  "identified": 50,
+  "unidentified": 5,
+  "firstTimeCount": 40,
+  "returningCount": 10,
+  "returningPct": 20,
+  "returningPctCI": { "lower": 11.2, "upper": 33.0 },
+  "customers": 45,
+  "returningCustomers": 7,
+  "firstTime": { "n": 40, "mean": 3.75, "ci": { "lower": 3.55, "upper": 3.95 } },
+  "returning": { "n": 10, "mean": 4.8, "ci": { "lower": 4.5, "upper": 5 } }
+}
+```
+
+| Campo | O que é |
+|---|---|
+| `identified` | avaliações com aparelho identificado |
+| `returningPct` | % de `returningCount` sobre `identified`, com o IC de Wilson em `returningPctCI` |
+| `customers` | aparelhos distintos no escopo e no período |
+| `returningCustomers` | desses aparelhos, os que avaliaram de novo no escopo e no período |
+| `firstTime` / `returning` | média das estrelas de cada grupo, com o IC t; `null` sem avaliações |
+
+**Erros:** `400 invalid_period` (datas inválidas) e `404 enterprise_not_found`.
+
+---
+
 ### `GET /api/protected/user/feedbacks/questions`
 
 Retorna métricas agregadas **por pergunta e subpergunta** no escopo selecionado, na escala 1–5. São métricas **determinísticas** — calculadas só sobre as respostas estruturadas (nota por rótulo), **não dependem da IA**. Usado pela aba "Perguntas".
