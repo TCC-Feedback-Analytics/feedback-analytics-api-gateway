@@ -52,6 +52,8 @@ import { fillTimeline, localDateOf, parseTimelineBucket, parseTimezone } from '.
 import { fetchScopedTimeline } from '../../repositories/feedbackTimeline.repository.js';
 import { fillHeatmap } from '../../libs/heatmap.js';
 import { fetchScopedHeatmap } from '../../repositories/feedbackHeatmap.repository.js';
+import { summarizeCustomers } from '../../libs/customers.js';
+import { fetchScopedCustomerVisits } from '../../repositories/feedbackCustomers.repository.js';
 
 type FeedbackCollectionPoint = {
   id?: string;
@@ -876,6 +878,45 @@ export async function getFeedbacksHeatmapController(req: Request, res: Response)
     });
   } catch (error) {
     console.error('Erro ao buscar os dias e horários de pico:', error);
+    return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
+  }
+}
+
+/**
+ * Clientes que voltam (métricas novas, 4): quantas avaliações vieram de quem já
+ * tinha avaliado a empresa e se a nota de quem volta é maior ou menor que a de
+ * quem avalia pela primeira vez, no escopo e no período escolhidos. "Cliente" é
+ * o aparelho identificado pelo anti-spam: o número é aproximado.
+ */
+export async function getFeedbacksCustomersController(req: Request, res: Response) {
+  const user = req.user!;
+
+  const scopeType = parseInsightScopeType(req.query.scope_type);
+  const catalogItemId = String(req.query.catalog_item_id ?? '').trim() || null;
+  const parsedPeriod = parseMetricsPeriod(req.query);
+  if ('error' in parsedPeriod) return sendTypedError(res, 400, API_ERROR_INVALID_PERIOD);
+  const { period } = parsedPeriod;
+
+  try {
+    const enterpriseId = req.enterpriseId ?? (await resolveEnterpriseIdByUser(user.id));
+    if (!enterpriseId) {
+      return sendTypedError(res, 404, API_ERROR_ENTERPRISE_NOT_FOUND);
+    }
+
+    const scopeResolution = await resolveScopeCollectionPointIds({ enterpriseId, scopeType, catalogItemId });
+    if (scopeResolution.error) {
+      return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_STATS);
+    }
+
+    const { rows, customers, returningCustomers } = await fetchScopedCustomerVisits({
+      enterpriseId,
+      collectionPointIds: scopeResolution.ids,
+      period,
+    });
+
+    return res.json(summarizeCustomers(rows, { customers, returningCustomers }));
+  } catch (error) {
+    console.error('Erro ao buscar os clientes que voltam:', error);
     return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
   }
 }
