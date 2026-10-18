@@ -338,6 +338,50 @@ O endpoint expõe **duas lentes** complementares, ambas segmentadas pelo escopo 
 
 ---
 
+### `GET /api/protected/user/feedbacks/timeline`
+
+Movimento no tempo: quantas avaliações chegaram e a média das notas em cada dia, semana ou mês, no escopo e no período escolhidos. O banco agrupa por `date_trunc(bucket, created_at AT TIME ZONE tz)`. Os intervalos sem avaliação vêm com `count: 0` e `mean: null`, para o gráfico não pular datas.
+
+**Query Params**
+
+| Parâmetro | Tipo | Descrição |
+|---|---|---|
+| `scope_type` | `COMPANY \| PRODUCT \| SERVICE \| DEPARTMENT` | Segmenta por escopo, como em `/stats` |
+| `catalog_item_id` | `string` | Segmenta por item de catálogo específico |
+| `start_date` | `string` (ISO 8601) | Início do período, **incluído** |
+| `end_date` | `string` (ISO 8601) | Fim do período, **excluído** |
+| `bucket` | `day \| week \| month` | Tamanho de cada intervalo. Padrão `day`. A semana começa na segunda |
+| `tz` | `string` (fuso IANA) | Fuso em que as datas são agrupadas. Padrão `America/Sao_Paulo` |
+
+- **Começo da série:** o início do período ou, sem ele, a primeira avaliação do escopo.
+- **Fim da série:** o fim do período ou, sem ele, hoje no fuso pedido.
+- **Teto:** a série tem no máximo 400 intervalos. Para intervalos longos, use `week` ou `month`.
+
+**Response 200**
+```json
+{
+  "bucket": "day",
+  "tz": "America/Sao_Paulo",
+  "total": 7,
+  "points": [
+    { "start": "2026-10-12", "count": 0, "mean": null },
+    { "start": "2026-10-13", "count": 4, "mean": 4.5 },
+    { "start": "2026-10-14", "count": 3, "mean": 3.67 }
+  ]
+}
+```
+
+**Erros**
+
+| Status | Código | Quando |
+|---|---|---|
+| 400 | `invalid_period` | Datas fora do ISO 8601 ou `start_date >= end_date` |
+| 400 | `invalid_timeline` | `bucket` fora de `day`/`week`/`month` ou fuso inválido |
+| 400 | `timeline_too_many_points` | Mais de 400 intervalos no agrupamento pedido |
+| 404 | `enterprise_not_found` | Usuário sem empresa |
+
+---
+
 ### `GET /api/protected/user/feedbacks/questions`
 
 Retorna métricas agregadas **por pergunta e subpergunta** no escopo selecionado, na escala 1–5. São métricas **determinísticas** — calculadas só sobre as respostas estruturadas (nota por rótulo), **não dependem da IA**. Usado pela aba "Perguntas".

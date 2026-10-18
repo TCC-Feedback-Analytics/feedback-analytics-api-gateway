@@ -6,6 +6,7 @@ import {
   getFeedbacksInsightsReportController,
   getFeedbacksAnalysisController,
   getFeedbacksQuestionsController,
+  getFeedbacksTimelineController,
 } from '../../controllers/protected/feedbacks.controller.js';
 
 const router = Router();
@@ -15,5 +16,6 @@ router.get('/protected/user/feedbacks/stats', requireAuth, getFeedbacksStatsCont
 router.get('/protected/user/feedbacks/insights/report', requireAuth, getFeedbacksInsightsReportController);
 router.get('/protected/user/feedbacks/analysis', requireAuth, getFeedbacksAnalysisController);
 router.get('/protected/user/feedbacks/questions', requireAuth, getFeedbacksQuestionsController);
+router.get('/protected/user/feedbacks/timeline', requireAuth, getFeedbacksTimelineController);
 
 export default router;
