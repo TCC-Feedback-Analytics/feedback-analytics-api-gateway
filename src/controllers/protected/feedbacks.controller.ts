@@ -5,6 +5,8 @@ import {
   API_ERROR_FAILED_TO_FETCH_STATS,
   API_ERROR_INTERNAL_SERVER_ERROR,
   API_ERROR_INVALID_PERIOD,
+  API_ERROR_INVALID_TIMELINE,
+  API_ERROR_TIMELINE_TOO_MANY_POINTS,
 } from '../../config/errors.js';
 import { normalizeFeedbackAnalysisRows } from '../../libs/iaAnalyze/normalize.js';
 import { resolveScopeCollectionPointIds } from '../../repositories/scope.repository.js';
@@ -45,6 +47,8 @@ import {
 } from '../../../drizzle/schema.js';
 import { scopedFeedbackWhere } from '../../db/tenantScope.js';
 import { parseMetricsPeriod } from '../../libs/period.js';
+import { fillTimeline, localDateOf, parseTimelineBucket, parseTimezone } from '../../libs/timeline.js';
+import { fetchScopedTimeline } from '../../repositories/feedbackTimeline.repository.js';
 
 type FeedbackCollectionPoint = {
   id?: string;
@@ -757,4 +761,60 @@ function subMetricStatus(
 
 function buildSubMetric(agg: QuestionAnswerAgg, status: QuestionMetricStatus) {
   return { subquestion_id: agg.id, text: agg.text, ...aggToMetricFields(agg), status };
+}
+
+/**
+ * Movimento no tempo (métricas novas, 1): quantas avaliações chegaram e a média
+ * por dia, semana ou mês, no escopo e no período escolhidos, no fuso do gestor.
+ * Os intervalos sem avaliação vêm com zero, para o gráfico não pular datas.
+ */
+export async function getFeedbacksTimelineController(req: Request, res: Response) {
+  const user = req.user!;
+
+  const scopeType = parseInsightScopeType(req.query.scope_type);
+  const catalogItemId = String(req.query.catalog_item_id ?? '').trim() || null;
+  const parsedPeriod = parseMetricsPeriod(req.query);
+  if ('error' in parsedPeriod) return sendTypedError(res, 400, API_ERROR_INVALID_PERIOD);
+  const { period } = parsedPeriod;
+  const bucket = parseTimelineBucket(req.query.bucket);
+  const timeZone = parseTimezone(req.query.tz);
+  if (!bucket || !timeZone) return sendTypedError(res, 400, API_ERROR_INVALID_TIMELINE);
+
+  try {
+    const enterpriseId = req.enterpriseId ?? (await resolveEnterpriseIdByUser(user.id));
+    if (!enterpriseId) {
+      return sendTypedError(res, 404, API_ERROR_ENTERPRISE_NOT_FOUND);
+    }
+
+    const scopeResolution = await resolveScopeCollectionPointIds({ enterpriseId, scopeType, catalogItemId });
+    if (scopeResolution.error) {
+      return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_STATS);
+    }
+
+    const rows = await fetchScopedTimeline({
+      enterpriseId,
+      collectionPointIds: scopeResolution.ids,
+      period,
+      bucket,
+      timeZone,
+    });
+
+    // Do início do período (ou da primeira avaliação) até o fim do período (ou hoje).
+    const today = localDateOf(new Date(), timeZone);
+    const toDate = period.end ? localDateOf(new Date(Date.parse(period.end) - 1), timeZone) : today;
+    const fromDate = period.start ? localDateOf(new Date(period.start), timeZone) : rows[0]?.start ?? toDate;
+
+    const points = fillTimeline(rows, { fromDate, toDate, bucket });
+    if (!points) return sendTypedError(res, 400, API_ERROR_TIMELINE_TOO_MANY_POINTS);
+
+    return res.json({
+      bucket,
+      tz: timeZone,
+      total: points.reduce((sum, point) => sum + point.count, 0),
+      points,
+    });
+  } catch (error) {
+    console.error('Erro ao buscar o movimento das avaliações:', error);
+    return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
+  }
 }
