@@ -37,6 +37,9 @@ Centralizar o backend permite:
 | `GET` | `/api/protected/user/feedbacks` | Lista feedbacks |
 | `GET` | `/api/protected/user/feedbacks/stats` | Estatísticas (inclui contagem de pendentes por escopo `pendingCount` e métricas de satisfação/sentimento) |
 | `GET` | `/api/protected/user/feedbacks/questions` | Métricas determinísticas por pergunta/subpergunta no escopo |
+| `GET` | `/api/protected/user/feedbacks/timeline` | Movimento no tempo: avaliações e média por dia, semana ou mês, no fuso do gestor |
+| `GET` | `/api/protected/user/feedbacks/heatmap` | Dias e horários de pico: avaliações e média por dia da semana × faixa do dia |
+| `GET` | `/api/protected/user/feedbacks/customers` | Clientes que voltam: % de avaliações de quem já avaliou e média de quem volta × primeira vez |
 | `GET` | `/api/protected/user/feedbacks/insights/report` | Relatório de insights |
 | `GET` | `/api/protected/user/feedbacks/analysis` | Análises da IA |
 | `GET` | `/api/protected/user/collection-points/qr/status` | Status do QR Code da empresa |

@@ -5,6 +5,8 @@ import {
   API_ERROR_FAILED_TO_FETCH_STATS,
   API_ERROR_INTERNAL_SERVER_ERROR,
   API_ERROR_INVALID_PERIOD,
+  API_ERROR_INVALID_TIMELINE,
+  API_ERROR_TIMELINE_TOO_MANY_POINTS,
 } from '../../config/errors.js';
 import { normalizeFeedbackAnalysisRows } from '../../libs/iaAnalyze/normalize.js';
 import { resolveScopeCollectionPointIds } from '../../repositories/scope.repository.js';
@@ -17,6 +19,7 @@ import {
   netSatisfaction,
   netSentimentScore,
   confidenceTier,
+  spearmanCorrelation,
   wilsonInterval,
   wilsonLowerBound,
 } from '../../libs/statistics/index.js';
@@ -45,6 +48,12 @@ import {
 } from '../../../drizzle/schema.js';
 import { scopedFeedbackWhere } from '../../db/tenantScope.js';
 import { parseMetricsPeriod } from '../../libs/period.js';
+import { fillTimeline, localDateOf, parseTimelineBucket, parseTimezone } from '../../libs/timeline.js';
+import { fetchScopedTimeline } from '../../repositories/feedbackTimeline.repository.js';
+import { fillHeatmap } from '../../libs/heatmap.js';
+import { fetchScopedHeatmap } from '../../repositories/feedbackHeatmap.repository.js';
+import { summarizeCustomers } from '../../libs/customers.js';
+import { fetchScopedCustomerVisits } from '../../repositories/feedbackCustomers.repository.js';
 
 type FeedbackCollectionPoint = {
   id?: string;
@@ -550,6 +559,8 @@ type QuestionAnswerAgg = {
   text: string;
   counts: Record<number, number>;
   distribution: Record<AnswerValueKey, number>;
+  /** (nota da resposta, estrelas do mesmo feedback): base do "o que mais pesa na nota". */
+  pairs: Array<[number, number]>;
 };
 
 /**
@@ -564,6 +575,7 @@ function newAnswerAgg(id: string, text: string): QuestionAnswerAgg {
     text,
     counts: {},
     distribution: { PESSIMO: 0, RUIM: 0, MEDIANA: 0, BOA: 0, OTIMA: 0 },
+    pairs: [],
   };
 }
 
@@ -573,11 +585,13 @@ function addAnswerToAgg(
   text: string,
   answerValue: AnswerValueKey,
   answerScore: number,
+  starRating?: number | null,
 ) {
   const key = `${id}${AGG_KEY_SEP}${text}`;
   const acc = map.get(key) ?? newAnswerAgg(id, text);
   acc.counts[answerScore] = (acc.counts[answerScore] ?? 0) + 1;
   acc.distribution[answerValue] += 1;
+  if (starRating != null) acc.pairs.push([answerScore, starRating]);
   map.set(key, acc);
 }
 
@@ -631,17 +645,20 @@ export async function getFeedbacksQuestionsController(req: Request, res: Respons
 
     // Feedbacks do escopo (SEMPRE por enterprise_id via scopedFeedbackWhere).
     const feedbackRows = await getDb()
-      .select({ id: feedback.id })
+      .select({ id: feedback.id, rating: feedback.rating })
       .from(feedback)
       .where(scopedFeedbackWhere(enterpriseId, filteredCollectionPointIds, period));
 
     const feedbackIds = feedbackRows.map((f) => f.id);
+    // Estrelas de cada feedback: o "o que mais pesa na nota" cruza com a resposta de cada pergunta.
+    const starsByFeedback = new Map(feedbackRows.map((f) => [f.id, f.rating]));
     if (feedbackIds.length === 0) return res.json({ questions: [] });
 
     // Respostas das perguntas → agrega por pergunta. Isolamento transitivo: os
     // feedbackIds já vêm tenant-scoped.
     const answerRows = await getDb()
       .select({
+        feedback_id: feedbackQuestionAnswers.feedbackId,
         question_id: feedbackQuestionAnswers.questionId,
         question_text_snapshot: feedbackQuestionAnswers.questionTextSnapshot,
         answer_value: feedbackQuestionAnswers.answerValue,
@@ -654,7 +671,14 @@ export async function getFeedbacksQuestionsController(req: Request, res: Respons
     // distinta vira uma entrada própria, para separar "atuais" de "antigas".
     const questionAgg = new Map<string, QuestionAnswerAgg>();
     for (const row of answerRows) {
-      addAnswerToAgg(questionAgg, row.question_id, String(row.question_text_snapshot ?? '').trim(), row.answer_value as AnswerValueKey, row.answer_score);
+      addAnswerToAgg(
+        questionAgg,
+        row.question_id,
+        String(row.question_text_snapshot ?? '').trim(),
+        row.answer_value as AnswerValueKey,
+        row.answer_score,
+        starsByFeedback.get(row.feedback_id),
+      );
     }
 
     // Respostas das subperguntas → agrega por (subquestion_id + redação).
@@ -724,6 +748,8 @@ export async function getFeedbacksQuestionsController(req: Request, res: Respons
           question_id: qid,
           text: agg.text,
           ...aggToMetricFields(agg),
+          // O quanto a nota da pergunta anda junto com as estrelas (Spearman + IC).
+          ratingWeight: spearmanCorrelation(agg.pairs),
           status: questionMetricStatus(cfg, agg.text),
           subquestions: agg === host ? (subsByQuestion.get(qid) ?? []) : [],
         }));
@@ -757,4 +783,140 @@ function subMetricStatus(
 
 function buildSubMetric(agg: QuestionAnswerAgg, status: QuestionMetricStatus) {
   return { subquestion_id: agg.id, text: agg.text, ...aggToMetricFields(agg), status };
+}
+
+/**
+ * Movimento no tempo (métricas novas, 1): quantas avaliações chegaram e a média
+ * por dia, semana ou mês, no escopo e no período escolhidos, no fuso do gestor.
+ * Os intervalos sem avaliação vêm com zero, para o gráfico não pular datas.
+ */
+export async function getFeedbacksTimelineController(req: Request, res: Response) {
+  const user = req.user!;
+
+  const scopeType = parseInsightScopeType(req.query.scope_type);
+  const catalogItemId = String(req.query.catalog_item_id ?? '').trim() || null;
+  const parsedPeriod = parseMetricsPeriod(req.query);
+  if ('error' in parsedPeriod) return sendTypedError(res, 400, API_ERROR_INVALID_PERIOD);
+  const { period } = parsedPeriod;
+  const bucket = parseTimelineBucket(req.query.bucket);
+  const timeZone = parseTimezone(req.query.tz);
+  if (!bucket || !timeZone) return sendTypedError(res, 400, API_ERROR_INVALID_TIMELINE);
+
+  try {
+    const enterpriseId = req.enterpriseId ?? (await resolveEnterpriseIdByUser(user.id));
+    if (!enterpriseId) {
+      return sendTypedError(res, 404, API_ERROR_ENTERPRISE_NOT_FOUND);
+    }
+
+    const scopeResolution = await resolveScopeCollectionPointIds({ enterpriseId, scopeType, catalogItemId });
+    if (scopeResolution.error) {
+      return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_STATS);
+    }
+
+    const rows = await fetchScopedTimeline({
+      enterpriseId,
+      collectionPointIds: scopeResolution.ids,
+      period,
+      bucket,
+      timeZone,
+    });
+
+    // Do início do período (ou da primeira avaliação) até o fim do período (ou hoje).
+    const today = localDateOf(new Date(), timeZone);
+    const toDate = period.end ? localDateOf(new Date(Date.parse(period.end) - 1), timeZone) : today;
+    const fromDate = period.start ? localDateOf(new Date(period.start), timeZone) : rows[0]?.start ?? toDate;
+
+    const points = fillTimeline(rows, { fromDate, toDate, bucket });
+    if (!points) return sendTypedError(res, 400, API_ERROR_TIMELINE_TOO_MANY_POINTS);
+
+    return res.json({
+      bucket,
+      tz: timeZone,
+      total: points.reduce((sum, point) => sum + point.count, 0),
+      points,
+    });
+  } catch (error) {
+    console.error('Erro ao buscar o movimento das avaliações:', error);
+    return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
+  }
+}
+
+/**
+ * Dias e horários de pico (métricas novas, 3): quantas avaliações chegaram e a
+ * média em cada dia da semana × faixa do dia (madrugada, manhã, tarde, noite),
+ * no escopo e no período escolhidos, no fuso do gestor. Sempre as 28 células.
+ */
+export async function getFeedbacksHeatmapController(req: Request, res: Response) {
+  const user = req.user!;
+
+  const scopeType = parseInsightScopeType(req.query.scope_type);
+  const catalogItemId = String(req.query.catalog_item_id ?? '').trim() || null;
+  const parsedPeriod = parseMetricsPeriod(req.query);
+  if ('error' in parsedPeriod) return sendTypedError(res, 400, API_ERROR_INVALID_PERIOD);
+  const { period } = parsedPeriod;
+  const timeZone = parseTimezone(req.query.tz);
+  if (!timeZone) return sendTypedError(res, 400, API_ERROR_INVALID_TIMELINE);
+
+  try {
+    const enterpriseId = req.enterpriseId ?? (await resolveEnterpriseIdByUser(user.id));
+    if (!enterpriseId) {
+      return sendTypedError(res, 404, API_ERROR_ENTERPRISE_NOT_FOUND);
+    }
+
+    const scopeResolution = await resolveScopeCollectionPointIds({ enterpriseId, scopeType, catalogItemId });
+    if (scopeResolution.error) {
+      return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_STATS);
+    }
+
+    const rows = await fetchScopedHeatmap({ enterpriseId, collectionPointIds: scopeResolution.ids, period, timeZone });
+    const cells = fillHeatmap(rows);
+
+    return res.json({
+      tz: timeZone,
+      total: cells.reduce((sum, cell) => sum + cell.count, 0),
+      cells,
+    });
+  } catch (error) {
+    console.error('Erro ao buscar os dias e horários de pico:', error);
+    return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
+  }
+}
+
+/**
+ * Clientes que voltam (métricas novas, 4): quantas avaliações vieram de quem já
+ * tinha avaliado a empresa e se a nota de quem volta é maior ou menor que a de
+ * quem avalia pela primeira vez, no escopo e no período escolhidos. "Cliente" é
+ * o aparelho identificado pelo anti-spam: o número é aproximado.
+ */
+export async function getFeedbacksCustomersController(req: Request, res: Response) {
+  const user = req.user!;
+
+  const scopeType = parseInsightScopeType(req.query.scope_type);
+  const catalogItemId = String(req.query.catalog_item_id ?? '').trim() || null;
+  const parsedPeriod = parseMetricsPeriod(req.query);
+  if ('error' in parsedPeriod) return sendTypedError(res, 400, API_ERROR_INVALID_PERIOD);
+  const { period } = parsedPeriod;
+
+  try {
+    const enterpriseId = req.enterpriseId ?? (await resolveEnterpriseIdByUser(user.id));
+    if (!enterpriseId) {
+      return sendTypedError(res, 404, API_ERROR_ENTERPRISE_NOT_FOUND);
+    }
+
+    const scopeResolution = await resolveScopeCollectionPointIds({ enterpriseId, scopeType, catalogItemId });
+    if (scopeResolution.error) {
+      return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_STATS);
+    }
+
+    const { rows, customers, returningCustomers } = await fetchScopedCustomerVisits({
+      enterpriseId,
+      collectionPointIds: scopeResolution.ids,
+      period,
+    });
+
+    return res.json(summarizeCustomers(rows, { customers, returningCustomers }));
+  } catch (error) {
+    console.error('Erro ao buscar os clientes que voltam:', error);
+    return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
+  }
 }

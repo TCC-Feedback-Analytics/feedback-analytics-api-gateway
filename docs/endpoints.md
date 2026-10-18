@@ -338,6 +338,135 @@ O endpoint expõe **duas lentes** complementares, ambas segmentadas pelo escopo 
 
 ---
 
+### `GET /api/protected/user/feedbacks/timeline`
+
+Movimento no tempo: quantas avaliações chegaram e a média das notas em cada dia, semana ou mês, no escopo e no período escolhidos. O banco agrupa por `date_trunc(bucket, created_at AT TIME ZONE tz)`. Os intervalos sem avaliação vêm com `count: 0` e `mean: null`, para o gráfico não pular datas.
+
+**Query Params**
+
+| Parâmetro | Tipo | Descrição |
+|---|---|---|
+| `scope_type` | `COMPANY \| PRODUCT \| SERVICE \| DEPARTMENT` | Segmenta por escopo, como em `/stats` |
+| `catalog_item_id` | `string` | Segmenta por item de catálogo específico |
+| `start_date` | `string` (ISO 8601) | Início do período, **incluído** |
+| `end_date` | `string` (ISO 8601) | Fim do período, **excluído** |
+| `bucket` | `day \| week \| month` | Tamanho de cada intervalo. Padrão `day`. A semana começa na segunda |
+| `tz` | `string` (fuso IANA) | Fuso em que as datas são agrupadas. Padrão `America/Sao_Paulo` |
+
+- **Começo da série:** o início do período ou, sem ele, a primeira avaliação do escopo.
+- **Fim da série:** o fim do período ou, sem ele, hoje no fuso pedido.
+- **Teto:** a série tem no máximo 400 intervalos. Para intervalos longos, use `week` ou `month`.
+
+**Response 200**
+```json
+{
+  "bucket": "day",
+  "tz": "America/Sao_Paulo",
+  "total": 7,
+  "points": [
+    { "start": "2026-10-12", "count": 0, "mean": null },
+    { "start": "2026-10-13", "count": 4, "mean": 4.5 },
+    { "start": "2026-10-14", "count": 3, "mean": 3.67 }
+  ]
+}
+```
+
+**Erros**
+
+| Status | Código | Quando |
+|---|---|---|
+| 400 | `invalid_period` | Datas fora do ISO 8601 ou `start_date >= end_date` |
+| 400 | `invalid_timeline` | `bucket` fora de `day`/`week`/`month` ou fuso inválido |
+| 400 | `timeline_too_many_points` | Mais de 400 intervalos no agrupamento pedido |
+| 404 | `enterprise_not_found` | Usuário sem empresa |
+
+---
+
+### `GET /api/protected/user/feedbacks/heatmap`
+
+Dias e horários de pico: quantas avaliações chegaram e a média das notas em cada **dia da semana × faixa do dia**, no escopo e no período escolhidos, no fuso do gestor. As faixas têm 6 horas em vez de uma hora, porque com pouco volume a grade de 24 horas fica vazia. A resposta traz sempre as 28 células; as que não tiveram avaliação vêm com `count: 0` e `mean: null`.
+
+**Query Params**
+
+| Parâmetro | Tipo | Descrição |
+|---|---|---|
+| `scope_type` | `COMPANY \| PRODUCT \| SERVICE \| DEPARTMENT` | Segmenta por escopo, como em `/stats` |
+| `catalog_item_id` | `string` | Segmenta por item de catálogo específico |
+| `start_date` | `string` (ISO 8601) | Início do período, **incluído** |
+| `end_date` | `string` (ISO 8601) | Fim do período, **excluído** |
+| `tz` | `string` (fuso IANA) | Fuso em que dia e hora são lidos. Padrão `America/Sao_Paulo` |
+
+- `weekday`: dia da semana como o `extract(dow)` do Postgres, de 0 (domingo) a 6 (sábado).
+- `band`: faixa do dia. São 0 (madrugada, 0–6h), 1 (manhã, 6–12h), 2 (tarde, 12–18h) e 3 (noite, 18–24h).
+
+**Response 200**
+```json
+{
+  "tz": "America/Sao_Paulo",
+  "total": 13,
+  "cells": [
+    { "weekday": 0, "band": 0, "count": 0, "mean": null },
+    { "weekday": 5, "band": 2, "count": 10, "mean": 3.4 },
+    { "weekday": 6, "band": 3, "count": 3, "mean": 5 }
+  ]
+}
+```
+
+**Erros**
+
+| Status | Código | Quando |
+|---|---|---|
+| 400 | `invalid_period` | Datas fora do ISO 8601 ou `start_date >= end_date` |
+| 400 | `invalid_timeline` | Fuso inválido |
+| 404 | `enterprise_not_found` | Usuário sem empresa |
+
+---
+
+### `GET /api/protected/user/feedbacks/customers`
+
+Clientes que voltam: quantas avaliações vieram de quem já tinha avaliado a empresa e se a nota de quem volta é maior ou menor que a de quem avalia pela primeira vez, no escopo e no período escolhidos.
+
+- **Quem é o cliente:** o aparelho identificado pelo anti-spam (`tracked_device_id`). Por isso o número é aproximado, e a resposta não traz nenhum dado pessoal.
+- **Quando a avaliação é "de quem volta":** quando o mesmo aparelho já tinha avaliado a **empresa** antes, em qualquer escopo. A numeração usa `row_number()` por aparelho, com o filtro de empresa dentro da subconsulta; escopo e período recortam depois.
+- **Sem aparelho:** essas avaliações ficam de fora dos percentuais e são contadas em `unidentified`.
+
+**Query Params**
+
+| Parâmetro | Tipo | Descrição |
+|---|---|---|
+| `scope_type` | `COMPANY \| PRODUCT \| SERVICE \| DEPARTMENT` | Segmenta por escopo, como em `/stats` |
+| `catalog_item_id` | `string` | Segmenta por item de catálogo específico |
+| `start_date` | `string` (ISO 8601) | Início do período, **incluído** |
+| `end_date` | `string` (ISO 8601) | Fim do período, **excluído** |
+
+**Response 200**
+```json
+{
+  "identified": 50,
+  "unidentified": 5,
+  "firstTimeCount": 40,
+  "returningCount": 10,
+  "returningPct": 20,
+  "returningPctCI": { "lower": 11.2, "upper": 33.0 },
+  "customers": 45,
+  "returningCustomers": 7,
+  "firstTime": { "n": 40, "mean": 3.75, "ci": { "lower": 3.55, "upper": 3.95 } },
+  "returning": { "n": 10, "mean": 4.8, "ci": { "lower": 4.5, "upper": 5 } }
+}
+```
+
+| Campo | O que é |
+|---|---|
+| `identified` | avaliações com aparelho identificado |
+| `returningPct` | % de `returningCount` sobre `identified`, com o IC de Wilson em `returningPctCI` |
+| `customers` | aparelhos distintos no escopo e no período |
+| `returningCustomers` | desses aparelhos, os que avaliaram de novo no escopo e no período |
+| `firstTime` / `returning` | média das estrelas de cada grupo, com o IC t; `null` sem avaliações |
+
+**Erros:** `400 invalid_period` (datas inválidas) e `404 enterprise_not_found`.
+
+---
+
 ### `GET /api/protected/user/feedbacks/questions`
 
 Retorna métricas agregadas **por pergunta e subpergunta** no escopo selecionado, na escala 1–5. São métricas **determinísticas** — calculadas só sobre as respostas estruturadas (nota por rótulo), **não dependem da IA**. Usado pela aba "Perguntas".
@@ -370,6 +499,7 @@ Retorna métricas agregadas **por pergunta e subpergunta** no escopo selecionado
         "OTIMA": 11
       },
       "confidenceTier": "moderate",
+      "ratingWeight": { "r": 0.62, "ci": { "lower": 0.39, "upper": 0.78 }, "n": 42 },
       "status": "current",
       "subquestions": [
         {
@@ -400,6 +530,12 @@ Por pergunta (e por subpergunta): `mean` (nota média 1–5), `ci` (faixa prová
 - `current` — pergunta ativa e com o texto atual da configuração;
 - `deactivated` — a configuração ainda tem esta redação, mas está desativada (toggle off);
 - `past` — redação antiga (texto editado) ou pergunta removida da configuração.
+
+**O que mais pesa na nota (`ratingWeight`, só nas perguntas).** É a correlação de Spearman entre a nota da pergunta e as estrelas **do mesmo feedback**, com o IC 95% (Fisher z, erro padrão de Bonett–Wright) e o número de pares `n`.
+
+- **Leitura de `r`:** perto de 1, as duas notas sobem e descem juntas, então a pergunta pesa na nota geral. Perto de 0, ela pesa pouco. Negativo, as duas vão em sentidos contrários.
+- **Quando vem `null`:** com menos de 4 pares, ou quando uma das notas não varia.
+- **Limite:** mostra o que anda junto com a nota, não prova a causa. A Web só exibe o peso a partir de 30 respostas.
 
 > Cada redação distinta de uma mesma pergunta vira uma entrada própria (o `question_id` é estável; o snapshot de texto pode mudar), o que separa "atuais" de "antigas".
 >
