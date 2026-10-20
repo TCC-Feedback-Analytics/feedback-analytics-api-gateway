@@ -8,29 +8,10 @@ import {
   API_ERROR_INVALID_TIMELINE,
   API_ERROR_TIMELINE_TOO_MANY_POINTS,
 } from '../../config/errors.js';
-import { normalizeFeedbackAnalysisRows } from '../../libs/iaAnalyze/normalize.js';
 import { resolveScopeCollectionPointIds } from '../../repositories/scope.repository.js';
 import { resolveEnterpriseIdByUser } from '../../repositories/enterprise.repository.js';
 import { fetchScopedInsightsReport } from '../../repositories/feedbackInsights.repository.js';
 import { sendTypedError } from '../../utils/sendTypedError.js';
-import {
-  ratingStats,
-  csatTopTwoBox,
-  netSatisfaction,
-  netSentimentScore,
-  confidenceTier,
-  spearmanCorrelation,
-  wilsonInterval,
-  wilsonLowerBound,
-} from '../../libs/statistics/index.js';
-import {
-  fetchScopedRatingAggregates,
-  fetchScopedAnalysisAggregates,
-} from '../../repositories/feedbackStats.repository.js';
-import {
-  fetchQuestionDefsScoped,
-  fetchSubquestionDefsScoped,
-} from '../../repositories/feedbackQuestions.repository.js';
 import {
   resolveCategoryCollectionPointIds,
   countScopedFeedbacks,
@@ -38,22 +19,16 @@ import {
   fetchCatalogItemsByIds,
   fetchAnswersForFeedbacks,
 } from '../../repositories/feedbackList.repository.js';
-import { fetchScopedFeedbackAnalysisRows } from '../../repositories/feedbackAnalysis.repository.js';
-import { inArray } from 'drizzle-orm';
-import { getDb } from '../../db/client.js';
-import {
-  feedback,
-  feedbackQuestionAnswers,
-  feedbackSubquestionAnswers,
-} from '../../../drizzle/schema.js';
-import { scopedFeedbackWhere } from '../../db/tenantScope.js';
 import { parseMetricsPeriod } from '../../libs/period.js';
-import { fillTimeline, localDateOf, parseTimelineBucket, parseTimezone } from '../../libs/timeline.js';
-import { fetchScopedTimeline } from '../../repositories/feedbackTimeline.repository.js';
-import { fillHeatmap } from '../../libs/heatmap.js';
-import { fetchScopedHeatmap } from '../../repositories/feedbackHeatmap.repository.js';
-import { summarizeCustomers } from '../../libs/customers.js';
-import { fetchScopedCustomerVisits } from '../../repositories/feedbackCustomers.repository.js';
+import { parseTimelineBucket, parseTimezone } from '../../libs/timeline.js';
+import {
+  computeScopedAnalysis,
+  computeScopedCustomers,
+  computeScopedHeatmap,
+  computeScopedStats,
+  computeScopedTimeline,
+} from '../../services/scopeMetrics.service.js';
+import { computeScopedQuestionMetrics } from '../../services/questionMetrics.service.js';
 
 type FeedbackCollectionPoint = {
   id?: string;
@@ -277,68 +252,11 @@ export async function getFeedbacksStatsController(req: Request, res: Response) {
 
     const filteredCollectionPointIds = scopeResolution.ids;
 
-    // Agregações servidas via DRIZZLE, com a contagem feita NO BANCO (GROUP BY),
-    // e SEMPRE com filtro explícito por enterprise_id (isolamento multi-tenant na
-    // aplicação — o Drizzle acessa com role que ignora a RLS). Ver
-    // src/db/tenantScope.ts e src/repositories/feedbackStats.repository.ts.
-    const ratingAgg = await fetchScopedRatingAggregates({
+    return res.json(await computeScopedStats({
       enterpriseId,
       collectionPointIds: filteredCollectionPointIds,
       period,
-    });
-    const analysisAgg = await fetchScopedAnalysisAggregates({
-      enterpriseId,
-      collectionPointIds: filteredCollectionPointIds,
-      period,
-    });
-
-    const totalFeedbacks = ratingAgg.totalFeedbacks;
-    const averageRating = totalFeedbacks > 0 ? ratingAgg.ratingSum / totalFeedbacks : 0;
-    const ratingDistribution = ratingAgg.ratingDistribution;
-
-    // Subconjunto analisado pela IA: total, análise mais recente (trava o
-    // "Gerar insights") e a distribuição de sentimento (lente "texto").
-    const totalAnalyzed = analysisAgg.totalAnalyzed;
-    const latestAnalysisAt = analysisAgg.latestAnalysisAt;
-    const aiCounts = analysisAgg.aiCounts;
-    const pendingCount = totalFeedbacks - totalAnalyzed;
-
-    // Lente SATISFAÇÃO (estrelas): média+IC t, Net Satisfaction e CSAT Top-2-Box.
-    const satisfaction = ratingStats(ratingDistribution);
-    const top2 = ratingDistribution[4] + ratingDistribution[5];
-    const bottom2 = ratingDistribution[1] + ratingDistribution[2];
-
-    return res.json({
-      totalFeedbacks,
-      averageRating: Math.round(averageRating * 10) / 10,
-      ratingDistribution,
-      // Distribuição por estrela (lente satisfação; mantida por compatibilidade).
-      sentimentBreakdown: {
-        positive: ratingDistribution[4] + ratingDistribution[5],
-        neutral: ratingDistribution[3],
-        negative: ratingDistribution[1] + ratingDistribution[2],
-      },
-      totalAnalyzed,
-      pendingCount,
-      latestAnalysisAt,
-      // Lente SATISFAÇÃO (estrelas)
-      starMean: satisfaction.mean,
-      starMeanCI: satisfaction.ci,
-      netSatisfaction: netSatisfaction(top2, bottom2, totalFeedbacks),
-      csat: csatTopTwoBox(ratingDistribution),
-      confidenceTier: confidenceTier(totalFeedbacks),
-      // Lente SENTIMENTO (IA/texto) sobre o subconjunto analisado
-      aiSentiment:
-        totalAnalyzed > 0
-          ? {
-              positive: aiCounts.positive,
-              neutral: aiCounts.neutral,
-              negative: aiCounts.negative,
-              netSentimentScore: netSentimentScore(aiCounts.positive, aiCounts.negative, totalAnalyzed),
-              confidenceTier: confidenceTier(totalAnalyzed),
-            }
-          : undefined,
-    });
+    }));
   } catch (error) {
     console.error('Erro ao buscar estatísticas:', error);
     return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
@@ -393,11 +311,6 @@ export async function getFeedbacksAnalysisController(req: Request, res: Response
       return sendTypedError(res, 404, API_ERROR_ENTERPRISE_NOT_FOUND);
     }
 
-    const emptyResult = {
-      items: [],
-      summary: { totalAnalyzed: 0, sentiments: { positive: 0, neutral: 0, negative: 0 }, topCategories: [], topKeywords: [] },
-    };
-
     const scopeResolution = await resolveScopeCollectionPointIds({
       enterpriseId,
       scopeType,
@@ -408,210 +321,21 @@ export async function getFeedbacksAnalysisController(req: Request, res: Response
       return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_FEEDBACK_ANALYSIS);
     }
 
-    const filteredCollectionPointIds = scopeResolution.ids;
-
-    if (filteredCollectionPointIds && filteredCollectionPointIds.length === 0) {
-      return res.json(emptyResult);
-    }
-
-    const data = await fetchScopedFeedbackAnalysisRows({
+    return res.json(await computeScopedAnalysis({
       enterpriseId,
-      collectionPointIds: filteredCollectionPointIds,
+      collectionPointIds: scopeResolution.ids,
       sentiment: sentimentFilter,
       period,
-    });
-
-    const itemsRaw = normalizeFeedbackAnalysisRows(data);
-    if (itemsRaw.length === 0) return res.json(emptyResult);
-
-    const items = itemsRaw.map((row) => {
-      const sentiment = row.feedback_analysis.sentiment;
-      const rating = row.rating;
-      const starBucket =
-        rating == null ? null : rating >= 4 ? 'positive' : rating === 3 ? 'neutral' : 'negative';
-      const discrepancy: 'silent_detractor' | 'rating_misuse' | null =
-        starBucket === 'positive' && sentiment === 'negative'
-          ? 'silent_detractor'
-          : starBucket === 'negative' && sentiment === 'positive'
-            ? 'rating_misuse'
-            : null;
-      return {
-        id: row.id,
-        message: row.message,
-        rating,
-        created_at: row.created_at,
-        sentiment,
-        categories: row.feedback_analysis.categories ?? [],
-        keywords: row.feedback_analysis.keywords ?? [],
-        discrepancy,
-        aspects: Array.isArray(row.feedback_analysis.aspects) ? row.feedback_analysis.aspects : [],
-        sentiment_score: row.feedback_analysis.sentiment_score ?? null,
-        confidence: row.feedback_analysis.confidence ?? null,
-      };
-    });
-
-    const sentiments = { positive: 0, neutral: 0, negative: 0 };
-    const categoryCounts: Record<string, number> = {};
-    const keywordCounts: Record<string, number> = {};
-    type AspectBucket = { positive: number; neutral: number; negative: number };
-    const aspectCounts: Record<string, AspectBucket> = {};
-
-    for (const item of items) {
-      sentiments[item.sentiment]++;
-      for (const category of item.categories) {
-        const key = category.trim().toLowerCase();
-        if (key) categoryCounts[key] = (categoryCounts[key] ?? 0) + 1;
-      }
-      for (const keyword of item.keywords) {
-        const key = keyword.trim().toLowerCase();
-        if (key) keywordCounts[key] = (keywordCounts[key] ?? 0) + 1;
-      }
-      for (const aspect of item.aspects) {
-        const key = aspect.aspect.trim().toLowerCase();
-        if (!key) continue;
-        const bucket = (aspectCounts[key] ??= { positive: 0, neutral: 0, negative: 0 });
-        bucket[aspect.sentiment]++;
-      }
-    }
-
-    const totalAnalyzed = items.length;
-
-    // Ranqueia termos pelo limite inferior de Wilson (justo p/ amostra pequena),
-    // mantendo a contagem crua e anexando proporção + IC.
-    const rankTerms = (counts: Record<string, number>) =>
-      Object.entries(counts)
-        .map(([name, count]) => ({
-          name,
-          count,
-          proportion: totalAnalyzed > 0 ? count / totalAnalyzed : 0,
-          ci: wilsonInterval(count, totalAnalyzed),
-        }))
-        .sort(
-          (a, b) =>
-            wilsonLowerBound(b.count, totalAnalyzed) - wilsonLowerBound(a.count, totalAnalyzed) ||
-            b.count - a.count,
-        )
-        .slice(0, 10);
-
-    // Aspectos (ABSA) agregados, ranqueados por IMPACTO (volume × |NSS|), com
-    // gate de menção mínima para não destacar aspecto de amostra ínfima.
-    const MIN_ASPECT_MENTIONS = 3;
-    const aspectSentiments = Object.entries(aspectCounts)
-      .map(([aspect, bucket]) => {
-        const count = bucket.positive + bucket.neutral + bucket.negative;
-        return {
-          aspect,
-          positive: bucket.positive,
-          neutral: bucket.neutral,
-          negative: bucket.negative,
-          count,
-          netSentimentScore: netSentimentScore(bucket.positive, bucket.negative, count),
-          ci: wilsonInterval(bucket.positive, count),
-        };
-      })
-      .filter((a) => a.count >= MIN_ASPECT_MENTIONS)
-      .sort(
-        (a, b) =>
-          b.count * Math.abs(b.netSentimentScore) - a.count * Math.abs(a.netSentimentScore),
-      )
-      .slice(0, 12);
-
-    return res.json({
-      items,
-      summary: {
-        totalAnalyzed,
-        sentiments,
-        topCategories: rankTerms(categoryCounts),
-        topKeywords: rankTerms(keywordCounts),
-        netSentimentScore: netSentimentScore(sentiments.positive, sentiments.negative, totalAnalyzed),
-        sentimentCIs: {
-          positive: wilsonInterval(sentiments.positive, totalAnalyzed),
-          neutral: wilsonInterval(sentiments.neutral, totalAnalyzed),
-          negative: wilsonInterval(sentiments.negative, totalAnalyzed),
-        },
-        confidenceTier: confidenceTier(totalAnalyzed),
-        aspectSentiments,
-      },
-    });
+    }));
   } catch (error) {
     console.error('Erro ao buscar análises de feedbacks (IA):', error);
     return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
   }
 }
 
-type AnswerValueKey = 'PESSIMO' | 'RUIM' | 'MEDIANA' | 'BOA' | 'OTIMA';
-
 /**
- * Estado de uma redação de pergunta/subpergunta nas métricas:
- * - `current`: ativa e com o texto atual da config (aparece em "Atuais").
- * - `deactivated`: a config ainda tem esta redação, mas está desativada (toggle off).
- *   Reativar a traz de volta para "Atuais" com todo o histórico (id estável).
- * - `past`: redação antiga (texto editado) ou pergunta removida da config.
- */
-type QuestionMetricStatus = 'current' | 'deactivated' | 'past';
-
-type ConfigEntry = { text: string; isActive: boolean } | undefined;
-
-type QuestionAnswerAgg = {
-  /** question_id ou subquestion_id (estável; a redação pode mudar com o tempo). */
-  id: string;
-  /** Snapshot da redação exata respondida pelo cliente (já trimada). */
-  text: string;
-  counts: Record<number, number>;
-  distribution: Record<AnswerValueKey, number>;
-  /** (nota da resposta, estrelas do mesmo feedback): base do "o que mais pesa na nota". */
-  pairs: Array<[number, number]>;
-};
-
-/**
- * Separador para a chave composta (id + redação). Cada redação distinta de uma
- * mesma pergunta vira uma entrada própria — assim "Atuais" e "Antigas" não se misturam.
- */
-const AGG_KEY_SEP = String.fromCharCode(1);
-
-function newAnswerAgg(id: string, text: string): QuestionAnswerAgg {
-  return {
-    id,
-    text,
-    counts: {},
-    distribution: { PESSIMO: 0, RUIM: 0, MEDIANA: 0, BOA: 0, OTIMA: 0 },
-    pairs: [],
-  };
-}
-
-function addAnswerToAgg(
-  map: Map<string, QuestionAnswerAgg>,
-  id: string,
-  text: string,
-  answerValue: AnswerValueKey,
-  answerScore: number,
-  starRating?: number | null,
-) {
-  const key = `${id}${AGG_KEY_SEP}${text}`;
-  const acc = map.get(key) ?? newAnswerAgg(id, text);
-  acc.counts[answerScore] = (acc.counts[answerScore] ?? 0) + 1;
-  acc.distribution[answerValue] += 1;
-  if (starRating != null) acc.pairs.push([answerScore, starRating]);
-  map.set(key, acc);
-}
-
-function aggToMetricFields(agg: QuestionAnswerAgg) {
-  const rs = ratingStats(agg.counts);
-  return {
-    count: rs.n,
-    mean: rs.mean,
-    ci: rs.ci,
-    satisfiedPct: csatTopTwoBox(agg.counts).pct,
-    distribution: agg.distribution,
-    confidenceTier: confidenceTier(rs.n),
-  };
-}
-
-/**
- * Métricas por pergunta/subpergunta (escala 1–5), agregadas no escopo: nota
- * média + IC, % satisfeitos (BOA+ÓTIMA), distribuição e camada de confiança.
- * Determinístico — só estatística sobre as respostas estruturadas. Ordenado
- * pior→melhor (menor nota no topo).
+ * Métricas por pergunta/subpergunta (escala 1–5), agregadas no escopo e no
+ * período. O cálculo vive em services/questionMetrics.service.ts.
  */
 export async function getFeedbacksQuestionsController(req: Request, res: Response) {
   const user = req.user!;
@@ -638,151 +362,17 @@ export async function getFeedbacksQuestionsController(req: Request, res: Respons
       return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_STATS);
     }
 
-    const filteredCollectionPointIds = scopeResolution.ids;
-    if (filteredCollectionPointIds && filteredCollectionPointIds.length === 0) {
-      return res.json({ questions: [] });
-    }
-
-    // Feedbacks do escopo (SEMPRE por enterprise_id via scopedFeedbackWhere).
-    const feedbackRows = await getDb()
-      .select({ id: feedback.id, rating: feedback.rating })
-      .from(feedback)
-      .where(scopedFeedbackWhere(enterpriseId, filteredCollectionPointIds, period));
-
-    const feedbackIds = feedbackRows.map((f) => f.id);
-    // Estrelas de cada feedback: o "o que mais pesa na nota" cruza com a resposta de cada pergunta.
-    const starsByFeedback = new Map(feedbackRows.map((f) => [f.id, f.rating]));
-    if (feedbackIds.length === 0) return res.json({ questions: [] });
-
-    // Respostas das perguntas → agrega por pergunta. Isolamento transitivo: os
-    // feedbackIds já vêm tenant-scoped.
-    const answerRows = await getDb()
-      .select({
-        feedback_id: feedbackQuestionAnswers.feedbackId,
-        question_id: feedbackQuestionAnswers.questionId,
-        question_text_snapshot: feedbackQuestionAnswers.questionTextSnapshot,
-        answer_value: feedbackQuestionAnswers.answerValue,
-        answer_score: feedbackQuestionAnswers.answerScore,
-      })
-      .from(feedbackQuestionAnswers)
-      .where(inArray(feedbackQuestionAnswers.feedbackId, feedbackIds));
-
-    // Agrupa as respostas por (question_id + redação do snapshot): cada redação
-    // distinta vira uma entrada própria, para separar "atuais" de "antigas".
-    const questionAgg = new Map<string, QuestionAnswerAgg>();
-    for (const row of answerRows) {
-      addAnswerToAgg(
-        questionAgg,
-        row.question_id,
-        String(row.question_text_snapshot ?? '').trim(),
-        row.answer_value as AnswerValueKey,
-        row.answer_score,
-        starsByFeedback.get(row.feedback_id),
-      );
-    }
-
-    // Respostas das subperguntas → agrega por (subquestion_id + redação).
-    const subAnswerRows = await getDb()
-      .select({
-        subquestion_id: feedbackSubquestionAnswers.subquestionId,
-        subquestion_text_snapshot: feedbackSubquestionAnswers.subquestionTextSnapshot,
-        answer_value: feedbackSubquestionAnswers.answerValue,
-        answer_score: feedbackSubquestionAnswers.answerScore,
-      })
-      .from(feedbackSubquestionAnswers)
-      .where(inArray(feedbackSubquestionAnswers.feedbackId, feedbackIds));
-
-    const subAgg = new Map<string, QuestionAnswerAgg>();
-    for (const row of subAnswerRows) {
-      addAnswerToAgg(subAgg, row.subquestion_id, String(row.subquestion_text_snapshot ?? '').trim(), row.answer_value as AnswerValueKey, row.answer_score);
-    }
-
-    // Config ATUAL das perguntas (texto + is_active) por id — base da classificação
-    // "atual" (ativa + texto igual ao configurado) vs "antiga" (editada/removida).
-    // eq(enterprise_id) OBRIGATÓRIO no repo (o Drizzle ignora a RLS).
-    const currentQ = new Map<string, { text: string; isActive: boolean }>();
-    const questionIds = [...new Set([...questionAgg.values()].map((a) => a.id))];
-    for (const def of await fetchQuestionDefsScoped(enterpriseId, questionIds)) {
-      currentQ.set(def.id, { text: String(def.questionText ?? '').trim(), isActive: def.isActive === true });
-    }
-
-    // Config ATUAL das subperguntas (texto + is_active) + mapeamento subpergunta → pai.
-    // O repo reforça o tenant via JOIN na pergunta-pai (enterprise_id).
-    const subParentBySubId = new Map<string, string>();
-    const currentSub = new Map<string, { text: string; isActive: boolean }>();
-    const subIds = [...new Set([...subAgg.values()].map((a) => a.id))];
-    for (const def of await fetchSubquestionDefsScoped(enterpriseId, subIds)) {
-      subParentBySubId.set(def.id, def.questionId);
-      currentSub.set(def.id, { text: String(def.subquestionText ?? '').trim(), isActive: def.isActive === true });
-    }
-
-    // Subperguntas agrupadas por pergunta-pai (todas as redações; cada uma com status).
-    const subsByQuestion = new Map<string, ReturnType<typeof buildSubMetric>[]>();
-    for (const agg of subAgg.values()) {
-      const parentId = subParentBySubId.get(agg.id);
-      if (!parentId) continue;
-      const status = subMetricStatus(currentQ.get(parentId), currentSub.get(agg.id), agg.text);
-      const list = subsByQuestion.get(parentId) ?? [];
-      list.push(buildSubMetric(agg, status));
-      subsByQuestion.set(parentId, list);
-    }
-    for (const list of subsByQuestion.values()) {
-      list.sort((a, b) => a.mean - b.mean);
-    }
-
-    // Agrupa as entradas por question_id para eleger a redação que hospeda as
-    // subperguntas (a redação "viva" — a que casa com o texto da config, seja
-    // atual ou desativada; senão a primeira) — evita duplicar entre redações.
-    const entriesByQid = new Map<string, QuestionAnswerAgg[]>();
-    for (const agg of questionAgg.values()) {
-      const list = entriesByQid.get(agg.id) ?? [];
-      list.push(agg);
-      entriesByQid.set(agg.id, list);
-    }
-
-    const questions = [...entriesByQid.entries()]
-      .flatMap(([qid, aggs]) => {
-        const cfg = currentQ.get(qid);
-        const host = aggs.find((a) => cfg?.text === a.text) ?? aggs[0];
-        return aggs.map((agg) => ({
-          question_id: qid,
-          text: agg.text,
-          ...aggToMetricFields(agg),
-          // O quanto a nota da pergunta anda junto com as estrelas (Spearman + IC).
-          ratingWeight: spearmanCorrelation(agg.pairs),
-          status: questionMetricStatus(cfg, agg.text),
-          subquestions: agg === host ? (subsByQuestion.get(qid) ?? []) : [],
-        }));
-      })
-      .sort((a, b) => a.mean - b.mean);
+    const questions = await computeScopedQuestionMetrics({
+      enterpriseId,
+      collectionPointIds: scopeResolution.ids,
+      period,
+    });
 
     return res.json({ questions });
   } catch (error) {
     console.error('Erro ao buscar métricas por pergunta:', error);
     return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
   }
-}
-
-/** Estado da redação de uma pergunta vs a config atual (ver QuestionMetricStatus). */
-function questionMetricStatus(cfg: ConfigEntry, snapshot: string): QuestionMetricStatus {
-  if (cfg && cfg.text === snapshot) return cfg.isActive ? 'current' : 'deactivated';
-  return 'past';
-}
-
-/** Estado de uma subpergunta: "atual" só com pai ativo + subpergunta ativa + texto atual. */
-function subMetricStatus(
-  parentCfg: ConfigEntry,
-  subCfg: ConfigEntry,
-  snapshot: string,
-): QuestionMetricStatus {
-  if (subCfg && subCfg.text === snapshot) {
-    return parentCfg?.isActive === true && subCfg.isActive === true ? 'current' : 'deactivated';
-  }
-  return 'past';
-}
-
-function buildSubMetric(agg: QuestionAnswerAgg, status: QuestionMetricStatus) {
-  return { subquestion_id: agg.id, text: agg.text, ...aggToMetricFields(agg), status };
 }
 
 /**
@@ -813,20 +403,13 @@ export async function getFeedbacksTimelineController(req: Request, res: Response
       return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_STATS);
     }
 
-    const rows = await fetchScopedTimeline({
+    const points = await computeScopedTimeline({
       enterpriseId,
       collectionPointIds: scopeResolution.ids,
       period,
       bucket,
       timeZone,
     });
-
-    // Do início do período (ou da primeira avaliação) até o fim do período (ou hoje).
-    const today = localDateOf(new Date(), timeZone);
-    const toDate = period.end ? localDateOf(new Date(Date.parse(period.end) - 1), timeZone) : today;
-    const fromDate = period.start ? localDateOf(new Date(period.start), timeZone) : rows[0]?.start ?? toDate;
-
-    const points = fillTimeline(rows, { fromDate, toDate, bucket });
     if (!points) return sendTypedError(res, 400, API_ERROR_TIMELINE_TOO_MANY_POINTS);
 
     return res.json({
@@ -868,8 +451,7 @@ export async function getFeedbacksHeatmapController(req: Request, res: Response)
       return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_STATS);
     }
 
-    const rows = await fetchScopedHeatmap({ enterpriseId, collectionPointIds: scopeResolution.ids, period, timeZone });
-    const cells = fillHeatmap(rows);
+    const cells = await computeScopedHeatmap({ enterpriseId, collectionPointIds: scopeResolution.ids, period, timeZone });
 
     return res.json({
       tz: timeZone,
@@ -908,13 +490,11 @@ export async function getFeedbacksCustomersController(req: Request, res: Respons
       return sendTypedError(res, 500, API_ERROR_FAILED_TO_FETCH_STATS);
     }
 
-    const { rows, customers, returningCustomers } = await fetchScopedCustomerVisits({
+    return res.json(await computeScopedCustomers({
       enterpriseId,
       collectionPointIds: scopeResolution.ids,
       period,
-    });
-
-    return res.json(summarizeCustomers(rows, { customers, returningCustomers }));
+    }));
   } catch (error) {
     console.error('Erro ao buscar os clientes que voltam:', error);
     return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
