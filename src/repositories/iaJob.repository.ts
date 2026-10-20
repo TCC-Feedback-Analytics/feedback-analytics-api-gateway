@@ -17,7 +17,7 @@ import { getDb } from '../db/client.js';
 import { iaAnalysisJob } from '../../drizzle/schema.js';
 import { scopedByEnterprise } from '../db/tenantScope.js';
 
-export type IaJobType = 'analyze_raw' | 'regenerate_insights' | 'generate_company_questions';
+export type IaJobType = 'analyze_raw' | 'regenerate_insights' | 'generate_company_questions' | 'generate_scope_diagnosis';
 
 /** Status que contam como "job em aberto" (participam do dedup). */
 export const ACTIVE_IA_JOB_STATUSES = ['queued', 'running', 'waiting_budget'] as const;
@@ -45,6 +45,8 @@ export type IaJobStatus = {
   errorCode: string | null;
   updatedAt: string | null;
   phase?: string;
+  /** Diagnóstico do escopo: o id do resultado, quando o job termina. */
+  diagnosisId?: string | null;
 };
 
 type ActiveKey = {
@@ -143,6 +145,7 @@ export async function getIaJobByIdScoped(params: {
       errorCode: iaAnalysisJob.errorCode,
       updatedAt: iaAnalysisJob.updatedAt,
       phase: sql<string>`coalesce(${iaAnalysisJob.options}->'checkpoint'->>'phase', ${iaAnalysisJob.options}->>'phase', case when ${iaAnalysisJob.jobType} = 'analyze_raw' or ${iaAnalysisJob.options}->>'analyzePending' = 'true' then 'analyzing' else 'generating' end)`,
+      diagnosisId: sql<string | null>`${iaAnalysisJob.options}->>'diagnosisId'`,
     })
     .from(iaAnalysisJob)
     .where(
@@ -162,6 +165,19 @@ export async function listActiveIaJobsScoped(enterpriseId: string): Promise<IaJo
     .orderBy(desc(iaAnalysisJob.createdAt));
   const jobs = await Promise.all(rows.map(row => getIaJobByIdScoped({ enterpriseId, jobId: row.id })));
   return jobs.filter((job): job is IaJobStatus => job !== null);
+}
+
+/** Jobs ativos de um tipo (só id e escopo; nunca options). */
+export async function listActiveIaJobsForTypeScoped(enterpriseId: string, jobType: IaJobType): Promise<Array<{
+  id: string; scopeType: string; catalogItemId: string | null;
+}>> {
+  return getDb()
+    .select({ id: iaAnalysisJob.id, scopeType: iaAnalysisJob.scopeType, catalogItemId: iaAnalysisJob.catalogItemId })
+    .from(iaAnalysisJob)
+    .where(scopedByEnterprise(iaAnalysisJob.enterpriseId, enterpriseId,
+      eq(iaAnalysisJob.jobType, jobType),
+      inArray(iaAnalysisJob.status, [...ACTIVE_IA_JOB_STATUSES])))
+    .orderBy(desc(iaAnalysisJob.createdAt));
 }
 
 /**

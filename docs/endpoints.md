@@ -871,7 +871,8 @@ o id e acompanhá-lo por `GET /jobs/:id`.
 
 Retorna o objeto de status acima, incluindo jobs terminados.
 
-- `phase`: analyzing ou generating.
+- `phase`: analyzing, generating, generating_questions ou diagnosing (diagnóstico do escopo).
+- `diagnosisId`: no job do diagnóstico do escopo concluído, o id do resultado; `null` nos demais.
 - `done/total`: feedbacks na fase analyzing; lotes na fase generating.
   Os contadores passam a representar a nova fase quando o job unificado avança.
 - `status`: queued, running, waiting_budget, completed ou failed.
@@ -884,6 +885,90 @@ Retorna o objeto de status acima, incluindo jobs terminados.
 O cliente deve aguardar completed; 202 não comprova conclusão. Perda de conexão
 no polling deve reconectar, não declarar falha do job. Operação local e de produção:
 [runbook do worker](etapa-03-operacao-worker.md).
+
+### `POST /api/protected/ia-analyze/scope-diagnosis`
+
+**Diagnóstico do escopo com IA.** A IA lê os números do escopo no período, os mesmos das telas, e os compara com o período anterior de mesmo tamanho. Ela devolve o que vai bem, o que preocupa, o que mudou e de 3 a 5 recomendações, sempre com evidência.
+
+**Como funciona:**
+- O gateway monta um pacote com estrelas, perguntas atuais (com o peso na nota), tom dos comentários e assuntos, movimento, dias e horários de pico, clientes que voltam e uma amostra de comentários de até 20.
+- O pacote vai num job `generate_scope_diagnosis`, que faz uma chamada só ao ia-analyze (`/internal/ia-analyze/diagnose-scope`).
+
+**Body:**
+```json
+{
+  "scope_type": "COMPANY",
+  "catalog_item_id": null,
+  "start_date": "2026-09-01T03:00:00.000Z",
+  "end_date": "2026-10-01T03:00:00.000Z",
+  "tz": "America/Sao_Paulo",
+  "force": false
+}
+```
+- Período: as mesmas regras de `/feedbacks/stats`. Sem datas, vale o histórico inteiro, e aí não há período anterior para comparar.
+- `tz`: o fuso do movimento e dos horários de pico. O padrão é `America/Sao_Paulo`.
+- `catalog_item_id`: só vale em escopos de item e precisa ser um item da empresa do mesmo tipo.
+- `force: true`: gera de novo mesmo sem dados novos.
+
+**Respostas:**
+
+| Status | Corpo | Quando |
+|---|---|---|
+| `202` | `{ "jobId", "status", "deduped", "cached": false, "diagnosisId": null }` | Foi para a fila. Acompanhe por `GET /jobs/:id` até `completed` e leia o `diagnosisId` |
+| `200` | `{ "jobId": null, "status": "completed", "cached": true, "diagnosisId" }` | Já existe diagnóstico do mesmo escopo com exatamente os mesmos dados (mesmo hash): não paga IA de novo |
+
+O job é um só por escopo e item. Pedir de novo enquanto um está ativo devolve o mesmo job (`deduped: true`), mesmo com outro período.
+
+**Erros:**
+- `400`: `invalid_payload` (escopo ou item inválidos), `invalid_period` ou `invalid_timeline` (fuso).
+- `404`: `catalog_item_not_found`.
+- `409`: `ia_config_required`. Sem chave e modelo da empresa, nada é calculado.
+- `422`: `collecting_data_required_for_analysis` ou `insufficient_feedbacks_for_analysis` (menos de 10 avaliações no período).
+
+**No job:**
+- Os erros do provedor seguem a fila: os temporários voltam com espera, e os outros terminam em `failed` com o `errorCode`.
+- Os textos dos comentários saem das `options` do job quando ele termina, com sucesso ou com falha definitiva.
+
+### `GET /api/protected/ia-analyze/scope-diagnosis/latest`
+
+Query: `scope_type` e `catalog_item_id`. Devolve o diagnóstico mais recente do escopo, de qualquer período, e o job em andamento, se houver:
+
+```json
+{
+  "diagnosis": {
+    "id": "uuid",
+    "scopeType": "COMPANY",
+    "catalogItemId": null,
+    "period": { "start": "2026-09-01T03:00:00.000Z", "end": "2026-10-01T03:00:00.000Z" },
+    "previousPeriod": { "start": "2026-08-02T03:00:00.000Z", "end": "2026-09-01T03:00:00.000Z" },
+    "feedbackCount": 42,
+    "newFeedbacksSince": 3,
+    "model": "modelo/da-empresa",
+    "createdAt": "2026-10-02T12:00:00.000Z",
+    "result": {
+      "summary": "…",
+      "going_well": [{ "text": "…", "evidence": "…" }],
+      "concerns": [],
+      "changes": [],
+      "recommendations": [{ "priority": 1, "kind": "fix", "action": "…", "evidence": "…" }],
+      "limitations": []
+    }
+  },
+  "job": null
+}
+```
+
+- `newFeedbacksSince`: avaliações que chegaram no período do diagnóstico depois que ele foi gerado. A Web usa esse número para mostrar quando o diagnóstico ficou velho.
+- `job`: o mesmo objeto de `GET /jobs/:id`.
+- Os tipos estão em `@feedback/lib-shared` `v1.2.0` (`scope-diagnosis.contract.ts`).
+
+### `GET /api/protected/ia-analyze/scope-diagnosis`
+
+Histórico do escopo, com os 20 diagnósticos mais recentes, só com o resumo: `{ "items": [{ "id", "period", "feedbackCount", "model", "createdAt", "summary" }] }`.
+
+### `GET /api/protected/ia-analyze/scope-diagnosis/:id`
+
+Um diagnóstico do histórico completo, no mesmo formato de `diagnosis` acima. Com id inválido, inexistente ou de outra empresa, responde `404 scope_diagnosis_not_found`.
 
 ---
 

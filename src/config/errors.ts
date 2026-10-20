@@ -40,6 +40,7 @@ export const API_ERROR_FAILED_TO_FETCH_FEEDBACK_ANALYSIS =
 // Fila de análise assíncrona (etapa 03).
 export const API_ERROR_IA_JOB_NOT_FOUND = 'ia_job_not_found' as const;
 export const API_ERROR_UNAUTHORIZED_WORKER_REQUEST = 'unauthorized_worker_request' as const;
+export const API_ERROR_SCOPE_DIAGNOSIS_NOT_FOUND = 'scope_diagnosis_not_found' as const;
 
 // Provedor de LLM configurável / BYO-key (etapa 04).
 export const API_ERROR_IA_CONFIG_INVALID_KEY = 'ia_config_invalid_key' as const;
