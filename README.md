@@ -43,7 +43,9 @@ Todas as rotas são montadas sob **`/api`** (`app.use('/api', ...)` em `index.ts
 1. **Endpoints HTTP (`routes/`)** — expõem rotas públicas e protegidas para o frontend.
 2. **Middlewares e segurança (`middlewares/`)** — CORS (allowlist manual) e autenticação: `requireAuth` valida a sessão do cookie via Better Auth (`getAuth().api.getSession()`) e injeta `req.user`/`req.enterpriseId` nas rotas protegidas (os endpoints públicos não passam por `requireAuth`).
 3. **Orquestração / regras de negócio (`controllers/`)** — coordenam o caso de uso; nos fluxos mais complexos delegam para:
-   - **Services (`services/`)** — regras de negócio e orquestração. Hoje o único Service é a **análise de IA** (`iaAnalyze.service.ts`): monta lotes por escopo, aplica regras e persiste.
+   - **Services (`services/`)** — regras de negócio e orquestração. Exemplos:
+     - a **análise de IA** (`iaAnalyze.service.ts`): monta lotes por escopo, aplica regras e persiste;
+     - as **métricas do escopo** (`scopeMetrics.service.ts` e `questionMetrics.service.ts`): calculam estrelas, comentários, perguntas, movimento, pico e clientes no período. As telas e o diagnóstico do escopo usam os mesmos números.
    - **Providers (`providers/`)** — adaptadores de rede para serviços externos (ex.: `iaAnalyze.provider.ts`, o ponto que faz a chamada HTTP ao serviço `ia-analyze`).
    - **Repositories (`repositories/`)** — acesso a dados via **Drizzle** (`DATABASE_URL`), com isolamento por `enterprise_id` forçado na aplicação (a role do Drizzle ignora a RLS). Detalhes em [Arquitetura e estrutura](docs/arquitetura-estrutura.md).
 4. **Contratos e respostas tipadas** — payloads e erros padronizados (`sendTypedError`), com schemas Zod de `@feedback/lib-shared`.
