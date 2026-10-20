@@ -1,4 +1,4 @@
-import { count, eq, max } from 'drizzle-orm';
+import { and, count, eq, max, sql } from 'drizzle-orm';
 import { getDb } from '../db/client.js';
 import { feedback, feedbackAnalysis } from '../../drizzle/schema.js';
 import { scopedFeedbackWhere } from '../db/tenantScope.js';
@@ -118,4 +118,20 @@ export async function fetchScopedAnalysisAggregates(
   }
 
   return { totalAnalyzed, latestAnalysisAt, aiCounts };
+}
+
+/**
+ * Quantos feedbacks do escopo têm comentário escrito (texto não vazio). Base de
+ * "comentários ainda não analisados" no diagnóstico do escopo.
+ */
+export async function fetchScopedCommentCount(params: ScopedStatsParams): Promise<number> {
+  const { enterpriseId, collectionPointIds, period } = params;
+  if (scopeHasNoPoints(collectionPointIds)) return 0;
+
+  const [row] = await getDb()
+    .select({ c: count() })
+    .from(feedback)
+    .where(and(scopedFeedbackWhere(enterpriseId, collectionPointIds, period), sql`length(trim(${feedback.message})) > 0`));
+
+  return Number(row?.c ?? 0);
 }
