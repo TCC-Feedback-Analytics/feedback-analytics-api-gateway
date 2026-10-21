@@ -19,9 +19,9 @@ INSERT INTO public."user" (id, name, email, email_verified, phone) VALUES
   ('22222222-2222-2222-2222-222222222222', 'Gestor B', 'gestor.b@teste.local', true, '+5511999990002');
 
 -- Empresas
-INSERT INTO public.enterprise (id, auth_user_id, document, account_type, terms_version, terms_accepted_at, trial_ends_at, subscription_status) VALUES
-  ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', '12.345.678/0001-99', 'CNPJ', 'v1', now(), now() + interval '4 months', 'TRIAL'),
-  ('bbbbbbbb-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222222', '98.765.432/0001-11', 'CNPJ', 'v1', now(), now() + interval '4 months', 'TRIAL');
+INSERT INTO public.enterprise (id, auth_user_id, terms_version, terms_accepted_at, trial_ends_at, subscription_status) VALUES
+  ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'v1', now(), now() + interval '4 months', 'TRIAL'),
+  ('bbbbbbbb-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222222', 'v1', now(), now() + interval '4 months', 'TRIAL');
 
 -- Dados de coleta / contexto de IA
 INSERT INTO public.collecting_data_enterprise (enterprise_id, company_objective, analytics_goal, business_summary, main_products_or_services, uses_company_products) VALUES

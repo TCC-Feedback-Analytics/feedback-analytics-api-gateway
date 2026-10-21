@@ -2,32 +2,27 @@ import type { Request, Response } from 'express';
 import { registerSchema } from '@feedback/lib-shared/schemas/public/registerSchema';
 import {
   API_ERROR_DATABASE_ERROR,
-  API_ERROR_DOCUMENT_TAKEN,
   API_ERROR_INTERNAL_ERROR,
   API_ERROR_INVALID_PAYLOAD,
   API_ERROR_PHONE_TAKEN,
   API_ERROR_EMAIL_TAKEN,
-  API_ERROR_DOCUMENT_REQUIRED,
+  API_ERROR_PASSWORD_TOO_WEAK,
 } from '../../config/errors.js';
+import { PASSWORD_TOO_WEAK_MESSAGE } from '@feedback/lib-shared/schemas/public/passwordPolicy';
+import { isStrongPassword } from '../../libs/passwordStrength.js';
 import { sendTypedError } from '../../utils/sendTypedError.js';
 import { sql } from 'drizzle-orm';
 import { APIError } from 'better-auth/api';
 import { getAuth } from '../../auth/auth.js';
 import { getDb } from '../../db/client.js';
 import { mapRegisterError } from '../../auth/errorMap.js';
-import {
-  provisionEnterpriseForUser,
-  DocumentRequiredError,
-  DocumentTakenError,
-} from '../../auth/enterpriseOnSignup.js';
+import { provisionEnterpriseForUser } from '../../auth/enterpriseOnSignup.js';
 
 type RegisterData = {
   email: string;
   password: string;
   fullName: string;
   phone: string;
-  document: string;
-  accountType: string;
 };
 
 /**
@@ -65,13 +60,19 @@ export async function registerUserController(req: Request, res: Response) {
 }
 
 /**
- * Cadastro no Better Auth: pré-checa telefone/documento, cria o usuário
+ * Cadastro no Better Auth: pré-checa o telefone, cria o usuário
  * (signUpEmail dispara o e-mail de verificação via SMTP) e provisiona a empresa +
  * perguntas padrão. Preserva os códigos tipados e a anti-enumeração de e-mail
  * (duplicado → 200 confirmation_required). Erros inesperados sobem para o
  * try/catch do registerUserController (→ 500).
  */
 async function registerBetter(res: Response, data: RegisterData) {
+  // A mesma régua da Web: o tamanho já passou no schema; aqui, a força (zxcvbn),
+  // sem aceitar o nome do negócio, o e-mail ou o telefone dentro da senha.
+  if (!isStrongPassword(data.password, [data.fullName, data.email, data.email.split('@')[0], data.phone])) {
+    return sendTypedError(res, 400, API_ERROR_PASSWORD_TOO_WEAK, { message: PASSWORD_TOO_WEAK_MESSAGE });
+  }
+
   const db = getDb();
 
   // Pré-checagem de duplicidade (mensagem 409 amigável; a barreira real são as UNIQUE).
@@ -80,12 +81,6 @@ async function registerBetter(res: Response, data: RegisterData) {
   );
   if (phoneDup.length > 0) {
     return sendTypedError(res, 409, API_ERROR_PHONE_TAKEN, { message: 'Telefone já cadastrado.' });
-  }
-  const docDup = await db.execute(
-    sql`SELECT 1 FROM public.enterprise WHERE document = ${data.document} LIMIT 1`,
-  );
-  if (docDup.length > 0) {
-    return sendTypedError(res, 409, API_ERROR_DOCUMENT_TAKEN, { message: 'Documento já cadastrado.' });
   }
 
   // E-mail já cadastrado → anti-enumeração (200 confirmation_required). Feito ANTES
@@ -128,18 +123,10 @@ async function registerBetter(res: Response, data: RegisterData) {
   // Provisiona empresa (trial 4 meses, TRIAL) + 3 perguntas COMPANY padrão.
   try {
     await provisionEnterpriseForUser(userId, {
-      accountType: data.accountType,
-      document: data.document,
       termsVersion: 'v1',
       termsAcceptedAt: new Date().toISOString(),
     });
   } catch (err) {
-    if (err instanceof DocumentRequiredError) {
-      return sendTypedError(res, 400, API_ERROR_DOCUMENT_REQUIRED, { message: 'Documento é obrigatório.' });
-    }
-    if (err instanceof DocumentTakenError) {
-      return sendTypedError(res, 409, API_ERROR_DOCUMENT_TAKEN, { message: 'Documento já cadastrado.' });
-    }
     logRegisterDiagnostic('provision_enterprise', err);
     return sendTypedError(res, 400, API_ERROR_DATABASE_ERROR, { message: 'Erro ao salvar novo usuário.' });
   }

@@ -107,7 +107,7 @@ export function mapLoginError(err: unknown): MappedError {
   return { http: 401, code: API_ERROR_LOGIN_FAILED, message: 'Não foi possível realizar o login no momento.' };
 }
 
-/** POST /api/public/auth/register (erros do signUpEmail; document/phone são tratados no controller) */
+/** POST /api/public/auth/register (erros do signUpEmail; o telefone é tratado no controller) */
 export function mapRegisterError(err: unknown): MappedError {
   const { status, code, message } = normalize(err);
   const msg = message.toLowerCase();

@@ -50,8 +50,6 @@ function isIntegrityViolation(err: unknown): boolean {
 
 export interface EnterpriseProfile {
   id: string;
-  document: string;
-  account_type: string | null;
   terms_version: string | null;
   terms_accepted_at: string | null;
   created_at: string | null;
@@ -61,8 +59,6 @@ export interface EnterpriseProfile {
 
 const enterpriseProfileColumns = {
   id: enterprise.id,
-  document: enterprise.document,
-  account_type: enterprise.accountType,
   terms_version: enterprise.termsVersion,
   terms_accepted_at: enterprise.termsAcceptedAt,
   created_at: enterprise.createdAt,
@@ -80,8 +76,6 @@ export async function getEnterpriseByUser(userId: string): Promise<EnterprisePro
 }
 
 export interface EnterprisePatch {
-  document?: string;
-  account_type?: 'CPF' | 'CNPJ';
   terms_version?: string;
   terms_accepted_at?: string;
 }
@@ -91,8 +85,6 @@ export async function updateEnterpriseByUser(
   patch: EnterprisePatch,
 ): Promise<EnterpriseProfile | null> {
   const set: Record<string, unknown> = {};
-  if (patch.document !== undefined) set.document = patch.document;
-  if (patch.account_type !== undefined) set.accountType = patch.account_type;
   if (patch.terms_version !== undefined) set.termsVersion = patch.terms_version;
   if (patch.terms_accepted_at !== undefined) set.termsAcceptedAt = patch.terms_accepted_at;
 

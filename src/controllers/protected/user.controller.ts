@@ -5,6 +5,7 @@ import { resetPasswordSchema } from '@feedback/lib-shared/schemas/user/resetPass
 import {
   API_ERROR_INVALID_PAYLOAD,
   API_ERROR_RESET_PASSWORD_INVALID_TOKEN,
+  API_ERROR_RESET_PASSWORD_WEAK,
   API_ERROR_UPDATE_FAILED,
 } from '../../config/errors.js';
 import { sendTypedError } from '../../utils/sendTypedError.js';
@@ -13,6 +14,8 @@ import { fromNodeHeaders } from 'better-auth/node';
 import { getAuth } from '../../auth/auth.js';
 import { getDb } from '../../db/client.js';
 import { mapResetPasswordError } from '../../auth/errorMap.js';
+import { PASSWORD_TOO_WEAK_MESSAGE } from '@feedback/lib-shared/schemas/public/passwordPolicy';
+import { isStrongPassword } from '../../libs/passwordStrength.js';
 
 export async function getAuthUserController(req: Request, res: Response) {
   const u = req.user;
@@ -96,6 +99,11 @@ export async function resetPasswordController(req: Request, res: Response) {
       issues: parsed.error.issues,
       message: 'Dados inválidos para redefinição de senha.',
     });
+  }
+
+  // Senha nova com a mesma régua do cadastro (tamanho no schema, força aqui).
+  if (!isStrongPassword(parsed.data.password)) {
+    return sendTypedError(res, 400, API_ERROR_RESET_PASSWORD_WEAK, { message: PASSWORD_TOO_WEAK_MESSAGE });
   }
 
   // O token de reset veio do cookie ba_reset (setado pelo callback) → requireAuth

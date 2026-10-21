@@ -73,8 +73,6 @@ function mockReq(overrides: Partial<Request> = {}): Request {
 
 const ENT_PROFILE = {
   id: 'ent-1',
-  document: '12345678000199',
-  account_type: 'CNPJ' as const,
   terms_version: 'v1',
   terms_accepted_at: null,
   created_at: null,
@@ -133,17 +131,17 @@ describe('patchEnterpriseController', () => {
   });
 
   it('200 quando atualiza', async () => {
-    mockUpdateEnterpriseByUser.mockResolvedValueOnce({ ...ENT_PROFILE, account_type: 'CPF' });
+    mockUpdateEnterpriseByUser.mockResolvedValueOnce({ ...ENT_PROFILE, terms_version: 'v2' });
     const res = mockRes();
-    await patchEnterpriseController(mockReq({ body: { account_type: 'CPF' } }), res);
+    await patchEnterpriseController(mockReq({ body: { terms_version: 'v2' } }), res);
     expect(res.statusCode).toBe(200);
-    expect((res.body as { enterprise: { account_type: string } }).enterprise.account_type).toBe('CPF');
+    expect((res.body as { enterprise: { terms_version: string } }).enterprise.terms_version).toBe('v2');
   });
 
   it('401 quando o update não encontra a empresa', async () => {
     mockUpdateEnterpriseByUser.mockResolvedValueOnce(null);
     const res = mockRes();
-    await patchEnterpriseController(mockReq({ body: { account_type: 'CPF' } }), res);
+    await patchEnterpriseController(mockReq({ body: { terms_version: 'v2' } }), res);
     expect(res.statusCode).toBe(401);
     expect((res.body as { error: string }).error).toBe('enterprise_not_found');
   });

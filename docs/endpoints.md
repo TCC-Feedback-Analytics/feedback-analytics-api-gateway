@@ -144,8 +144,6 @@ Retorna os dados cadastrais da empresa associada ao usuário autenticado, inclui
 {
   "enterprise": {
     "id": "uuid",
-    "document": "12.345.678/0001-99",
-    "account_type": "CNPJ",
     "terms_version": "v1",
     "terms_accepted_at": "2026-01-15T10:00:00Z",
     "created_at": "2026-01-15T10:00:00Z",
@@ -166,19 +164,17 @@ Retorna os dados cadastrais da empresa associada ao usuário autenticado, inclui
 
 ### `PATCH /api/protected/user/enterprise`
 
-Atualiza dados cadastrais parciais da empresa (termos, tipo de conta).
+Atualiza dados cadastrais parciais da empresa (versão e aceite dos termos).
 
 **Body (todos os campos são opcionais)**
 ```json
 {
-  "document": "12.345.678/0001-99",
-  "account_type": "CNPJ",
   "terms_version": "v2",
   "terms_accepted_at": "2026-05-24T10:00:00Z"
 }
 ```
 
-> `document` (string, 11–18 caracteres) também é aceito e gravado.
+> O CPF/CNPJ não é mais pedido nem guardado (migration `0009`): o sistema não usa esse dado (LGPD, necessidade).
 
 **Response 200** — mesmo formato de `GET /enterprise`.
 
@@ -1162,16 +1158,19 @@ Cria uma nova conta. Por segurança (RNE-014), e-mail já cadastrado **não** é
 **Body**
 ```json
 {
-  "accountType": "CPF",
-  "fullName": "Maria Silva",
-  "document": "52998224725",
+  "fullName": "Padaria Bom Pão",
   "email": "maria@empresa.com",
   "phone": "+5511999990000",
-  "password": "senha123",
-  "confirmPassword": "senha123",
+  "password": "sol azul de manha",
+  "confirmPassword": "sol azul de manha",
   "terms": true
 }
 ```
+
+- `fullName` é o **nome do negócio**, para pessoa física ou jurídica.
+- **Senha:** pelo menos 10 caracteres (`MIN_PASSWORD_LENGTH`) e nota 4 no zxcvbn, com dicionário em português (`MIN_PASSWORD_SCORE`). A mesma regra vale na Web e na redefinição de senha.
+  - O zxcvbn reconhece palavras comuns, nomes, sequências e repetições. "Palavra123palavra" não passa; uma frase curta ("sol azul de manha") passa.
+  - O nome do negócio, o e-mail e o telefone dentro da senha derrubam a nota.
 
 **Response 200**
 ```json
@@ -1183,10 +1182,9 @@ Cria uma nova conta. Por segurança (RNE-014), e-mail já cadastrado **não** é
 | Status | Código | Descrição |
 |---|---|---|
 | `400` | `invalid_payload` | Dados de cadastro inválidos |
-| `400` | `document_required` | Documento obrigatório ausente |
+| `400` | `password_too_weak` | Senha fácil de adivinhar (nota abaixo de 4 no zxcvbn) |
 | `400` | `database_error` | Falha ao salvar o novo usuário |
 | `409` | `phone_taken` | Telefone já cadastrado |
-| `409` | `document_taken` | Documento já cadastrado |
 | `400` | `signup_failed` | Falha de cadastro (e-mail/senha inválidos, captcha ou erro genérico) |
 | `429` | `signup_failed` | Muitas tentativas (rate limit) |
 | `503` | `signup_failed` | Cadastro temporariamente indisponível — Better Auth respondeu 5xx (inclui falha ao enviar o e-mail de confirmação) |
