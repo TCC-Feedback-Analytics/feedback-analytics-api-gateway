@@ -14,6 +14,7 @@ import {
 import { decryptSecret, encryptSecret } from '../utils/crypto.js';
 import { IaConfigError } from '../libs/iaConfig/iaConfigError.js';
 import { DEFAULT_IA_MODEL, openRouterModels, type IaModelsCatalog } from '../libs/iaConfig/openRouterModels.js';
+import { exchangeOpenRouterCode, pickConnectModel } from '../libs/iaConfig/openRouterAuth.js';
 
 function readStoredKey(config: IaConfigRow | null): string {
   if (!config?.apiKeyCiphertext || config.provider !== 'openrouter') {
@@ -51,6 +52,25 @@ export async function getIaModelsForEnterprise(enterpriseId: string) {
 export async function saveIaConfigForEnterprise(enterpriseId: string, apiKey: string, model: string) {
   // /models/user valida a credencial E as restrições da conta, sem geração paga.
   const catalog = await openRouterModels.get({ kind: 'user', enterpriseId, apiKey }, { forceRefresh: true });
+  return storeIaConfig(enterpriseId, apiKey, model, catalog);
+}
+
+/**
+ * "Conectar com OpenRouter": troca o código pela chave da conta (sem passar pelo
+ * navegador), valida, escolhe o modelo (o pedido, o já salvo ou um gratuito) e salva.
+ */
+export async function connectOpenRouterForEnterprise(
+  enterpriseId: string,
+  params: { code: string; codeVerifier: string; model?: string },
+) {
+  const apiKey = await exchangeOpenRouterCode(params.code, params.codeVerifier);
+  const catalog = await openRouterModels.get({ kind: 'user', enterpriseId, apiKey }, { forceRefresh: true });
+  const current = await getIaConfigByEnterprise(enterpriseId);
+  const model = pickConnectModel(catalog, [params.model, current?.model]);
+  return storeIaConfig(enterpriseId, apiKey, model, catalog);
+}
+
+async function storeIaConfig(enterpriseId: string, apiKey: string, model: string, catalog: IaModelsCatalog) {
   assertModelAvailable(catalog, model);
   const encrypted = encryptSecret(apiKey);
   const keyHint = apiKey.slice(-4);

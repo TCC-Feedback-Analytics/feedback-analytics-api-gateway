@@ -40,7 +40,11 @@ export async function provisionEnterpriseForUser(
       VALUES
         (${meta.termsVersion ?? null}, ${meta.termsAcceptedAt ?? null}, ${userId},
          NOW() + INTERVAL '4 months', 'TRIAL')
-      ON CONFLICT (auth_user_id) DO NOTHING
+      -- Quem entra com o Google já tem a empresa (criada na conta); ao completar o
+      -- cadastro, só o aceite dos termos é gravado. Nunca apaga um aceite existente.
+      ON CONFLICT (auth_user_id) DO UPDATE SET
+        terms_version = COALESCE(EXCLUDED.terms_version, public.enterprise.terms_version),
+        terms_accepted_at = COALESCE(EXCLUDED.terms_accepted_at, public.enterprise.terms_accepted_at)
     `);
 
     const rows = await tx.execute(

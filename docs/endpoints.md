@@ -71,6 +71,28 @@ Atualiza metadados do usuário (ex.: `full_name`).
 
 ---
 
+### `POST /api/protected/user/complete-signup`
+
+**Primeira entrada com o Google.** A entrada passa pelo handler nativo do Better Auth: `POST /api/auth/sign-in/social` com `{ provider: "google", callbackURL, errorCallbackURL }` e, na volta, `/api/auth/callback/google`.
+
+O Google dá o nome da pessoa e o e-mail, que já vem verificado. Ao criar a conta, a empresa já é criada (hook `account.create.after`), sem os termos. Esta rota completa o que falta.
+
+**Body:**
+```json
+{ "fullName": "Padaria Bom Pão", "phone": "+5511987654321", "terms": true }
+```
+
+- `fullName` é o nome do negócio e vai para `user.name`; `phone` vai para `user.phone`.
+- O aceite (`terms_version: v1` e a data) vai para a empresa. A empresa também é criada aqui, se ainda não existir.
+- **Respostas:**
+  - `200 { ok: true }`;
+  - `400 invalid_payload`;
+  - `409 phone_taken`: o telefone é de outra conta.
+- **Mesmo e-mail com senha e com Google = a mesma conta** (`accountLinking` com o Google como provedor confiável).
+- **Ligar e desligar:** o Google só funciona com `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` no ambiente.
+
+---
+
 ### `POST /api/protected/user/phone/start`
 
 Registra/atualiza o telefone do usuário. **Não há provedor de SMS**: o número é salvo diretamente e a verificação por OTP em `/phone/verify` é um no-op. O contrato (`200 { ok: true }`) foi preservado.
@@ -1089,6 +1111,30 @@ Além dos erros de validação/autenticação/catálogo do PUT:
 O UPDATE exige a mesma empresa, ID da configuração, chave cifrada/IV/tag e modelo lidos antes da validação externa. Isso impede que a operação sobrescreva uma troca concorrente ou recrie uma configuração removida. Em qualquer falha, a configuração anterior é preservada.
 
 **Efeito imediato nos jobs em espera.** Depois de gravar o modelo (e antes de tentar de novo a geração automática das perguntas), o Gateway antecipa para agora o `next_run_at` dos jobs de IA da empresa em `queued` ou `waiting_budget` agendados para o futuro (ex.: backoff de 429, até 300 s) e dispara um passo do worker (`kickWorkerIfPending`). Como o job resolve as credenciais a cada tentativa, a próxima já usa o modelo novo — a Web pode trocar o modelo pela tela de espera ("Preparando sua conta"/análises) sem sair dela. Jobs `running` não são alterados (pertencem a um worker com lease); se a troca falhar (`409`), nada é antecipado.
+
+### `POST /api/protected/user/ia-config/openrouter/connect`
+
+**"Conectar com OpenRouter" (OAuth PKCE).** Funciona assim:
+
+1. A Web manda a pessoa para `https://openrouter.ai/auth`, com o `callback_url` e o `code_challenge` (S256).
+2. O OpenRouter devolve um `code` à Web.
+3. A Web envia o `code` e o verificador para cá.
+4. Aqui, o código é trocado pela chave em `POST https://openrouter.ai/api/v1/auth/keys`. A chave **nunca passa pelo navegador**: é validada em `/models/user`, cifrada e salva, como no `PUT`.
+
+**Body:**
+```json
+{ "code": "…", "codeVerifier": "43 a 128 caracteres [A-Za-z0-9._~-]", "model": "opcional" }
+```
+
+- **Modelo salvo:** o `model` pedido, se a conta tem acesso a ele. Senão, o que já estava salvo. Senão, `openrouter/free` (o roteador que só usa modelos gratuitos). Senão, o primeiro modelo `:free`.
+- **Resposta:** a mesma do `PUT`, sem a chave: `{ hasKey, provider, model, keyHint }`. Também dispara a geração das perguntas personalizadas.
+- **Erros:**
+  - `400 invalid_payload`;
+  - `400 openrouter_connect_failed`: código vencido, já usado ou verificador errado; a pessoa conecta de novo;
+  - `502` ou `503 openrouter_connect_failed`: o OpenRouter não respondeu;
+  - os mesmos erros de validação da chave do `PUT`.
+
+---
 
 ### `DELETE /api/protected/user/ia-config`
 

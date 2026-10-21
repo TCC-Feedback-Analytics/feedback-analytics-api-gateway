@@ -6,6 +6,7 @@ import {
   deleteIaConfigController,
   getIaModelsController,
   patchIaModelController,
+  connectOpenRouterController,
 } from '../../controllers/protected/iaConfig.controller.js';
 
 const router = Router();
@@ -19,5 +20,6 @@ router.put('/protected/user/ia-config', noStore, requireAuth, putIaConfigControl
 router.delete('/protected/user/ia-config', noStore, requireAuth, deleteIaConfigController);
 router.get('/protected/user/ia-models', noStore, requireAuth, getIaModelsController);
 router.patch('/protected/user/ia-config/model', noStore, requireAuth, patchIaModelController);
+router.post('/protected/user/ia-config/openrouter/connect', noStore, requireAuth, connectOpenRouterController);
 
 export default router;

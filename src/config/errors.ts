@@ -49,6 +49,7 @@ export const API_ERROR_IA_CONFIG_CHANGED = 'ia_config_changed' as const;
 export const API_ERROR_IA_MODEL_UNAVAILABLE = 'ia_model_unavailable' as const;
 export const API_ERROR_IA_MODELS_UNAVAILABLE = 'ia_models_unavailable' as const;
 export const API_ERROR_IA_MODELS_FORBIDDEN = 'ia_models_forbidden' as const;
+export const API_ERROR_OPENROUTER_CONNECT_FAILED = 'openrouter_connect_failed' as const;
 
 export const API_ERROR_PHONE_TAKEN = 'phone_taken' as const;
 export const API_ERROR_SIGNUP_FAILED = 'signup_failed' as const;
