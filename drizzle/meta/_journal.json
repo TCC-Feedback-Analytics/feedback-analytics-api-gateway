@@ -57,6 +57,13 @@
       "when": 1792275577478,
       "tag": "0007_feedback_enterprise_created_at",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792496793207,
+      "tag": "0008_scope_diagnosis",
+      "breakpoints": true
     }
   ]
 }

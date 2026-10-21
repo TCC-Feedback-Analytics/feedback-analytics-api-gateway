@@ -17,6 +17,7 @@ import { companyQuestionContextSchema, companyQuestionContextHash } from '../iaA
 import { resolveCompanyQuestionCreds } from '../../services/companyQuestionSuggestions.service.js';
 import { runCompanyQuestionSuggestions } from '../../providers/companyQuestionSuggestions.provider.js';
 import { applyCompanyQuestionsIfDefault } from '../../repositories/collectingData.repository.js';
+import { executeScopeDiagnosisJob, readScopeDiagnosisJobOptions } from '../../services/scopeDiagnosis.service.js';
 
 export type DrainJobResult = {
   jobId: string; jobType: string;
@@ -89,6 +90,27 @@ async function processJob(job: ClaimedIaJob): Promise<DrainJobResult> {
       job.done = 1;
       await save({ status: 'completed', total: 1, done: 1, errorCode: null,
         options: { contextHash: job.options.contextHash, phase: 'generating_questions', suggestions, applied } });
+      return result('completed');
+    }
+    if (job.jobType === 'generate_scope_diagnosis') {
+      // Uma chamada só: o pacote já veio pronto do pedido; a chave e o modelo são
+      // lidos a cada tentativa (trocar o modelo vale na próxima).
+      const diagnosisOptions = readScopeDiagnosisJobOptions(job.options);
+      const creds = await resolveCompanyQuestionCreds(job.enterpriseId);
+      const budget = await reserveIaBudget(job.enterpriseId);
+      if (!budget.ok) {
+        const now = Date.now();
+        const windowMs = budget.reason === 'day' ? 86_400_000 : 60_000;
+        await save({ status: 'waiting_budget', delaySeconds: Math.ceil((windowMs - now % windowMs) / 1000) });
+        return result('rescheduled');
+      }
+      batchesRun = 1;
+      const diagnosisId = await executeScopeDiagnosisJob(job, diagnosisOptions, creds);
+      job.total = 1;
+      job.done = 1;
+      // Os comentários do pacote saem do job: o resultado fica na tabela do diagnóstico.
+      await save({ status: 'completed', total: 1, done: 1, errorCode: null,
+        options: { phase: 'diagnosing', dataHash: diagnosisOptions.dataHash, diagnosisId } });
       return result('completed');
     }
     let checkpoint = job.options.checkpoint as IaJobCheckpoint | undefined;
@@ -216,6 +238,10 @@ async function processJob(job: ClaimedIaJob): Promise<DrainJobResult> {
     const retry = RETRYABLE.has(code) && failures < (questionsRateLimited ? QUESTIONS_RATE_LIMIT_MAX_FAILURES : MAX_FAILURES);
     if (!retry && job.jobType === 'generate_company_questions') {
       confirmedOptions = { contextHash: confirmedOptions.contextHash, phase: 'generating_questions' };
+    }
+    // Falhou de vez: o pacote (com textos de comentários) não fica guardado no job.
+    if (!retry && job.jobType === 'generate_scope_diagnosis') {
+      confirmedOptions = { dataHash: confirmedOptions.dataHash, phase: 'diagnosing' };
     }
     const delaySeconds = questionsRateLimited
       ? Math.min(QUESTIONS_RATE_LIMIT_MAX_DELAY_SECONDS, QUESTIONS_RATE_LIMIT_BASE_DELAY_SECONDS * 2 ** failures)

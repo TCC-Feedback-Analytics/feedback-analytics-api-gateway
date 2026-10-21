@@ -9,6 +9,12 @@ import {
   retryCompanyQuestionsController,
   dismissCompanyQuestionsFailureController,
 } from '../../controllers/protected/iaAnalyze.controller.js';
+import {
+  requestScopeDiagnosisController,
+  getLatestScopeDiagnosisController,
+  listScopeDiagnosesController,
+  getScopeDiagnosisController,
+} from '../../controllers/protected/scopeDiagnosis.controller.js';
 
 const router = Router();
 
@@ -19,5 +25,11 @@ router.get('/protected/ia-analyze/jobs/company-questions/latest', requireAuth, g
 router.post('/protected/ia-analyze/jobs/company-questions/retry', requireAuth, retryCompanyQuestionsController);
 router.post('/protected/ia-analyze/jobs/company-questions/dismiss', requireAuth, dismissCompanyQuestionsFailureController);
 router.get('/protected/ia-analyze/jobs/:id', requireAuth, getIaJobController);
+
+// Diagnóstico do escopo com IA: /latest antes de /:id.
+router.post('/protected/ia-analyze/scope-diagnosis', requireAuth, requestScopeDiagnosisController);
+router.get('/protected/ia-analyze/scope-diagnosis', requireAuth, listScopeDiagnosesController);
+router.get('/protected/ia-analyze/scope-diagnosis/latest', requireAuth, getLatestScopeDiagnosisController);
+router.get('/protected/ia-analyze/scope-diagnosis/:id', requireAuth, getScopeDiagnosisController);
 
 export default router;
