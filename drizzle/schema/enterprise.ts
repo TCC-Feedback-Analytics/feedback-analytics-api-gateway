@@ -3,13 +3,12 @@ import { pgTable, foreignKey, index, uuid, text, integer, timestamp, boolean, un
 import { sql } from "drizzle-orm";
 import { user } from "./auth.js";
 
+// Sem CPF/CNPJ (migration 0009): o sistema não usa esse dado e não o guarda (LGPD).
 export const enterprise = pgTable("enterprise", {
-	document: text().notNull(),
 	authUserId: uuid("auth_user_id").notNull(),
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow(),
-	accountType: text("account_type"),
 	termsVersion: text("terms_version"),
 	termsAcceptedAt: timestamp("terms_accepted_at", { withTimezone: true, mode: 'string' }),
 	trialEndsAt: timestamp("trial_ends_at", { withTimezone: true, mode: 'string' }),
@@ -20,10 +19,8 @@ export const enterprise = pgTable("enterprise", {
 			foreignColumns: [user.id],
 			name: "enterprise_auth_user_id_user_fkey"
 		}).onDelete("cascade"),
-	unique("enterprise_document_key").on(table.document),
 	unique("enterprise_auth_user_id_key").on(table.authUserId),
 	check("enterprise_subscription_status_check", sql`subscription_status = ANY (ARRAY['TRIAL'::text, 'ACTIVE'::text, 'EXPIRED'::text, 'CANCELED'::text])`),
-	check("enterprise_account_type_check", sql`(account_type IS NULL) OR (account_type = ANY (ARRAY['CPF'::text, 'CNPJ'::text]))`),
 ]);
 
 export const catalogItems = pgTable("catalog_items", {

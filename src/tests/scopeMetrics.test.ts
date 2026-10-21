@@ -9,6 +9,7 @@ import { computeScopedQuestionMetrics } from '../services/questionMetrics.servic
 import {
   fetchScopedRatingAggregates,
   fetchScopedAnalysisAggregates,
+  fetchScopedRatingByComment,
 } from '../repositories/feedbackStats.repository.js';
 import { fetchScopedFeedbackAnalysisRows } from '../repositories/feedbackAnalysis.repository.js';
 import { fetchScopedTimeline } from '../repositories/feedbackTimeline.repository.js';
@@ -21,6 +22,7 @@ vi.mock('../db/client.js', () => ({ getDb, closeDb: vi.fn() }));
 vi.mock('../repositories/feedbackStats.repository.js', () => ({
   fetchScopedRatingAggregates: vi.fn(),
   fetchScopedAnalysisAggregates: vi.fn(),
+  fetchScopedRatingByComment: vi.fn(),
 }));
 vi.mock('../repositories/feedbackAnalysis.repository.js', () => ({ fetchScopedFeedbackAnalysisRows: vi.fn() }));
 vi.mock('../repositories/feedbackTimeline.repository.js', () => ({ fetchScopedTimeline: vi.fn() }));
@@ -46,13 +48,23 @@ describe('serviços de métricas do escopo', () => {
     vi.mocked(fetchScopedAnalysisAggregates).mockResolvedValue({
       totalAnalyzed: 4, latestAnalysisAt: '2026-09-20T12:00:00.000Z', aiCounts: { positive: 3, neutral: 0, negative: 1 },
     });
+    // 10 avaliações, 7 com comentário e 4 analisadas: faltam 3 (sem comentário não espera a IA).
+    vi.mocked(fetchScopedRatingByComment).mockResolvedValue([
+      { hasComment: true, rating: 2, count: 1 },
+      { hasComment: true, rating: 4, count: 2 },
+      { hasComment: true, rating: 5, count: 4 },
+      { hasComment: false, rating: 3, count: 1 },
+      { hasComment: false, rating: 4, count: 1 },
+      { hasComment: false, rating: 5, count: 1 },
+    ]);
 
     const stats = await computeScopedStats({ enterpriseId: ENTERPRISE_ID, collectionPointIds: null, period: SEPTEMBER });
 
     expect(fetchScopedRatingAggregates).toHaveBeenCalledWith({ enterpriseId: ENTERPRISE_ID, collectionPointIds: null, period: SEPTEMBER });
     expect(stats.totalFeedbacks).toBe(10);
     expect(stats.averageRating).toBe(4.2);
-    expect(stats.pendingCount).toBe(6);
+    expect(stats.pendingCount).toBe(3);
+    expect(stats.commentParticipation).toMatchObject({ total: 10, withComment: 7, pct: 70 });
     expect(stats.csat.pct).toBe(80);
     expect(stats.aiSentiment?.netSentimentScore).toBe(50);
   });

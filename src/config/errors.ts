@@ -51,21 +51,19 @@ export const API_ERROR_IA_MODELS_UNAVAILABLE = 'ia_models_unavailable' as const;
 export const API_ERROR_IA_MODELS_FORBIDDEN = 'ia_models_forbidden' as const;
 
 export const API_ERROR_PHONE_TAKEN = 'phone_taken' as const;
-export const API_ERROR_DOCUMENT_TAKEN = 'document_taken' as const;
 export const API_ERROR_SIGNUP_FAILED = 'signup_failed' as const;
 export const API_ERROR_EMAIL_TAKEN = 'email_taken' as const;
+export const API_ERROR_PASSWORD_TOO_WEAK = 'password_too_weak' as const;
 export const API_ERROR_RESET_PASSWORD_FAILED = 'reset_password_failed' as const;
 export const API_ERROR_RESET_PASSWORD_WEAK = 'reset_password_weak' as const;
 export const API_ERROR_RESET_PASSWORD_INVALID_TOKEN = 'reset_password_invalid_token' as const;
-export const API_ERROR_DOCUMENT_REQUIRED = 'document_required' as const;
 export const API_ERROR_DATABASE_ERROR = 'database_error' as const;
 
 export type ApiRegisterErrorCode =
 	| typeof API_ERROR_SIGNUP_FAILED
 	| typeof API_ERROR_EMAIL_TAKEN
 	| typeof API_ERROR_PHONE_TAKEN
-	| typeof API_ERROR_DOCUMENT_TAKEN
-	| typeof API_ERROR_DOCUMENT_REQUIRED
+	| typeof API_ERROR_PASSWORD_TOO_WEAK
 	| typeof API_ERROR_DATABASE_ERROR;
 
 export type ApiQrErrorCode =

@@ -4,6 +4,7 @@ import app from '../../index.js';
 import {
   fetchScopedRatingAggregates,
   fetchScopedAnalysisAggregates,
+  fetchScopedRatingByComment,
 } from '../repositories/feedbackStats.repository.js';
 import { resolveEnterpriseIdByUser } from '../repositories/enterprise.repository.js';
 
@@ -29,6 +30,7 @@ vi.mock('../middlewares/auth.js', () => ({
 vi.mock('../repositories/feedbackStats.repository.js', () => ({
   fetchScopedRatingAggregates: vi.fn(),
   fetchScopedAnalysisAggregates: vi.fn(),
+  fetchScopedRatingByComment: vi.fn(async () => []),
 }));
 vi.mock('../repositories/enterprise.repository.js', () => ({
   resolveEnterpriseIdByUser: vi.fn(),
@@ -36,6 +38,7 @@ vi.mock('../repositories/enterprise.repository.js', () => ({
 
 const mockRatingAgg = vi.mocked(fetchScopedRatingAggregates);
 const mockAnalysisAgg = vi.mocked(fetchScopedAnalysisAggregates);
+const mockRatingByComment = vi.mocked(fetchScopedRatingByComment);
 const mockResolveEnterprise = vi.mocked(resolveEnterpriseIdByUser);
 
 describe('[Integração] GET /api/protected/user/feedbacks', () => {
@@ -85,6 +88,12 @@ describe('[Integração] GET /api/protected/user/feedbacks/stats', () => {
       latestAnalysisAt: null,
       aiCounts: { positive: 0, neutral: 0, negative: 0 },
     });
+    // 4 avaliações, 3 com comentário: só essas 3 esperam pela IA (o comentário é opcional).
+    mockRatingByComment.mockResolvedValueOnce([
+      { hasComment: true, rating: 3, count: 1 },
+      { hasComment: true, rating: 5, count: 2 },
+      { hasComment: false, rating: 4, count: 1 },
+    ]);
 
     const res = await request(app).get('/api/protected/user/feedbacks/stats');
 
@@ -92,7 +101,8 @@ describe('[Integração] GET /api/protected/user/feedbacks/stats', () => {
     expect(res.body.totalFeedbacks).toBe(4);
     expect(res.body.averageRating).toBe(4.3); // 17/4 = 4.25 → 4.3
     expect(res.body.ratingDistribution).toEqual({ 1: 0, 2: 0, 3: 1, 4: 1, 5: 2 });
-    expect(res.body.pendingCount).toBe(4);
+    expect(res.body.pendingCount).toBe(3);
+    expect(res.body.commentParticipation).toMatchObject({ total: 4, withComment: 3, pct: 75 });
   });
 
   it('repassa o período (start_date/end_date) para as agregações', async () => {
