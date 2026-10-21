@@ -21,6 +21,7 @@ import { getDb } from '../db/client.js';
 // Tabelas do Better Auth vêm da FONTE ÚNICA (drizzle/schema.ts) — ADR-0001 Fase 2.
 import { user, session, account, verification } from '../../drizzle/schema.js';
 import { sendResetPasswordEmail, sendVerificationEmail } from './email.js';
+import { provisionEnterpriseForUser } from './enterpriseOnSignup.js';
 
 export function hashBetterAuthPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 10);
@@ -38,6 +39,32 @@ function buildTrustedOrigins(): string[] {
     }
   }
   return [...origins];
+}
+
+/**
+ * "Entrar com Google": só liga com as credenciais no ambiente (GOOGLE_CLIENT_ID e
+ * GOOGLE_CLIENT_SECRET). O endereço de retorno no Google Cloud é
+ * {BETTER_AUTH_URL}/api/auth/callback/google (a URL da Web, que repassa ao gateway).
+ */
+export function googleProviderConfig(env: NodeJS.ProcessEnv = process.env) {
+  const clientId = env.GOOGLE_CLIENT_ID?.trim();
+  const clientSecret = env.GOOGLE_CLIENT_SECRET?.trim();
+  return clientId && clientSecret ? { google: { clientId, clientSecret } } : undefined;
+}
+
+/**
+ * Conta criada por um provedor social (Google): cria a empresa na hora, sem os
+ * termos — a Web leva a pessoa a "Complete seu cadastro" (telefone, nome do
+ * negócio e aceite). O cadastro com senha cria a empresa no próprio controller.
+ */
+export async function provisionEnterpriseForSocialAccount(account: { userId: string; providerId: string }) {
+  if (account.providerId === 'credential') return;
+  try {
+    await provisionEnterpriseForUser(account.userId, {});
+  } catch {
+    // Não derruba a entrada: a empresa é criada ao completar o cadastro.
+    console.error('[auth] falha ao criar a empresa da conta social');
+  }
 }
 
 function createAuth() {
@@ -87,6 +114,18 @@ function createAuth() {
       additionalFields: {
         // Telefone do gestor (UNIQUE em `user.phone`); enviado no signUpEmail.
         phone: { type: 'string', required: false, input: true },
+      },
+    },
+    socialProviders: googleProviderConfig(),
+    account: {
+      // Mesmo e-mail com senha e com Google = a mesma conta (o Google verifica o e-mail).
+      accountLinking: { enabled: true, trustedProviders: ['google'] },
+    },
+    databaseHooks: {
+      account: {
+        create: {
+          after: async (account) => provisionEnterpriseForSocialAccount(account),
+        },
       },
     },
     trustedOrigins: buildTrustedOrigins(),

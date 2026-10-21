@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth } from '../../middlewares/auth.js';
 import { getSystemGuideController, putSystemGuideController } from '../../controllers/protected/onboarding.controller.js';
+import { completeSignupController } from '../../controllers/protected/completeSignup.controller.js';
 import {
   getAuthUserController,
   patchUserEmailController,
@@ -18,6 +19,8 @@ router.put('/protected/user/onboarding/system-guide', requireAuth, putSystemGuid
 router.get('/protected/user/auth_user', requireAuth, getAuthUserController);
 router.patch('/protected/user/email', requireAuth, patchUserEmailController);
 router.patch('/protected/user/metadados', requireAuth, patchUserMetadadosController);
+// Primeira entrada com Google: nome do negócio, telefone e aceite dos termos.
+router.post('/protected/user/complete-signup', requireAuth, completeSignupController);
 router.post('/protected/user/phone/start', requireAuth, startUserPhoneVerificationController);
 router.post('/protected/user/phone/verify', requireAuth, verifyUserPhoneController);
 router.patch('/protected/user/password', requireAuth, resetPasswordController);
