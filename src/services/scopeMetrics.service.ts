@@ -12,9 +12,11 @@ import {
 import { fillTimeline, localDateOf, type TimelineBucket, type TimelinePoint } from '../libs/timeline.js';
 import { fillHeatmap, type HeatmapCell } from '../libs/heatmap.js';
 import { summarizeCustomers, type CustomersSummary } from '../libs/customers.js';
+import { summarizeCommentParticipation } from '../libs/commentParticipation.js';
 import {
   fetchScopedRatingAggregates,
   fetchScopedAnalysisAggregates,
+  fetchScopedRatingByComment,
 } from '../repositories/feedbackStats.repository.js';
 import { fetchScopedFeedbackAnalysisRows } from '../repositories/feedbackAnalysis.repository.js';
 import { fetchScopedTimeline } from '../repositories/feedbackTimeline.repository.js';
@@ -40,6 +42,7 @@ export async function computeScopedStats(params: ScopeMetricsParams) {
   // src/db/tenantScope.ts e src/repositories/feedbackStats.repository.ts.
   const ratingAgg = await fetchScopedRatingAggregates(params);
   const analysisAgg = await fetchScopedAnalysisAggregates(params);
+  const commentParticipation = summarizeCommentParticipation(await fetchScopedRatingByComment(params));
 
   const totalFeedbacks = ratingAgg.totalFeedbacks;
   const averageRating = totalFeedbacks > 0 ? ratingAgg.ratingSum / totalFeedbacks : 0;
@@ -50,7 +53,8 @@ export async function computeScopedStats(params: ScopeMetricsParams) {
   const totalAnalyzed = analysisAgg.totalAnalyzed;
   const latestAnalysisAt = analysisAgg.latestAnalysisAt;
   const aiCounts = analysisAgg.aiCounts;
-  const pendingCount = totalFeedbacks - totalAnalyzed;
+  // O comentário é opcional: só quem escreveu algo espera pela análise da IA.
+  const pendingCount = Math.max(0, commentParticipation.withComment - totalAnalyzed);
 
   // Lente SATISFAÇÃO (estrelas): média+IC t, Net Satisfaction e CSAT Top-2-Box.
   const satisfaction = ratingStats(ratingDistribution);
@@ -87,6 +91,8 @@ export async function computeScopedStats(params: ScopeMetricsParams) {
             confidenceTier: confidenceTier(totalAnalyzed),
           }
         : undefined,
+    // Quem escreve comentário: quanto o tom dos comentários representa o escopo.
+    commentParticipation,
   };
 }
 

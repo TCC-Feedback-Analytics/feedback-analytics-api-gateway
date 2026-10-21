@@ -61,7 +61,11 @@ async function buildFeedbackInputs(params: {
   const { enterpriseId, scopedCollectionPointIds, limit, onlyAnalyzed, onlyPending } = params;
   const db = getDb();
 
-  const conds: SQL[] = [scopedFeedbackWhere(enterpriseId, scopedCollectionPointIds)];
+  // Só feedbacks com comentário vão para a IA: o comentário é opcional no formulário.
+  const conds: SQL[] = [
+    scopedFeedbackWhere(enterpriseId, scopedCollectionPointIds),
+    sql`length(trim(${feedback.message})) > 0`,
+  ];
   if (onlyAnalyzed) {
     conds.push(
       exists(
@@ -89,7 +93,7 @@ async function buildFeedbackInputs(params: {
     })
     .from(feedback)
     .leftJoin(collectionPoints, eq(collectionPoints.id, feedback.collectionPointId))
-    .where(conds.length === 1 ? conds[0] : and(...conds))
+    .where(and(...conds))
     .orderBy(onlyPending ? asc(feedback.createdAt) : desc(feedback.createdAt), asc(feedback.id));
   const feedbackRows = await (limit === undefined ? query : query.limit(limit));
 

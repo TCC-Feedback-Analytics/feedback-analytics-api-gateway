@@ -36,6 +36,12 @@ describe('seleção SQL dos pendentes', () => {
     expect(ordering.sql).toContain('asc');
   });
 
+  it('só manda para a IA feedback com comentário (o comentário é opcional)', async () => {
+    await fetchFeedbacksForAnalysis({ enterpriseId: 'ent-A', onlyPending: true });
+    const compiled = new PgDialect().sqlToQuery(query.where.mock.calls[0][0] as SQL);
+    expect(compiled.sql).toContain('length(trim("feedback"."message")) > 0');
+  });
+
   it('o fluxo sem limite não restringe o total de pendentes', async () => {
     await fetchFeedbacksForAnalysis({ enterpriseId: 'ent-A', onlyPending: true });
     expect(query.limit).not.toHaveBeenCalled();

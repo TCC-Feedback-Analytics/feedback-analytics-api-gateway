@@ -65,7 +65,8 @@ function createAuth() {
       enabled: true,
       requireEmailVerification: true,
       autoSignIn: false,
-      minPasswordLength: 8,
+      // Mesmo mínimo do schema (MIN_PASSWORD_LENGTH); a força é conferida nos controllers.
+      minPasswordLength: 10,
       password: {
         hash: hashBetterAuthPassword,
         verify: ({ hash, password }: { hash: string; password: string }) =>

@@ -133,6 +133,13 @@ export function toDiagnosisMetrics(snapshot: ScopeMetricsSnapshot): ScopeDiagnos
     peak_times: snapshot.heatmap
       .filter((cell) => cell.count > 0)
       .map((cell) => ({ weekday: cell.weekday, band: cell.band, count: cell.count, mean: cell.mean })),
+    comment_participation: stats.commentParticipation && stats.commentParticipation.total > 0
+      ? {
+          pct: stats.commentParticipation.pct,
+          with_comment_mean: stats.commentParticipation.withCommentRating?.mean ?? null,
+          without_comment_mean: stats.commentParticipation.withoutCommentRating?.mean ?? null,
+        }
+      : null,
     customers: customers.identified > 0
       ? {
           identified: customers.identified,
