@@ -401,3 +401,77 @@ describe('[Integração] Validação compartilhada de modelo e segurança', () =
     }
   });
 });
+
+describe('[Integração] POST /api/protected/user/ia-config/openrouter/connect', () => {
+  const VERIFIER = 'v'.repeat(64);
+  const freeCatalog: IaModelsCatalog = {
+    ...catalog,
+    models: [
+      ...catalog.models,
+      { id: 'openrouter/free', name: 'Gratuito', contextLength: null, maxCompletionTokens: null, isAutomatic: true },
+    ],
+  };
+
+  function stubExchange(response: Response) {
+    const fetchMock = vi.fn(async () => response);
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
+  it('troca o código pela chave no servidor, escolhe o roteador gratuito e salva sem devolver a chave', async () => {
+    mGet.mockResolvedValue(null);
+    mCatalog.mockResolvedValue(freeCatalog);
+    const fetchMock = stubExchange(new Response(JSON.stringify({ key: 'sk-or-oauth-key-5678' }), { status: 200 }));
+
+    const res = await request(app)
+      .post('/api/protected/user/ia-config/openrouter/connect')
+      .send({ code: 'code-123', codeVerifier: VERIFIER });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ hasKey: true, provider: 'openrouter', model: 'openrouter/free', keyHint: '5678' });
+    expect(JSON.stringify(res.body)).not.toContain('sk-or-oauth');
+    expect(fetchMock).toHaveBeenCalledWith('https://openrouter.ai/api/v1/auth/keys', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ code: 'code-123', code_verifier: VERIFIER, code_challenge_method: 'S256' }),
+    }));
+    expect(mEncrypt).toHaveBeenCalledWith('sk-or-oauth-key-5678');
+    expect(mAutoGenerate).toHaveBeenCalledWith(ENT, TEST_USER_ID);
+    vi.unstubAllGlobals();
+  });
+
+  it('mantém o modelo pedido ou o já salvo, quando a conta tem', async () => {
+    mCatalog.mockResolvedValue(freeCatalog);
+    stubExchange(new Response(JSON.stringify({ key: 'sk-or-oauth-key-5678' }), { status: 200 }));
+
+    const res = await request(app)
+      .post('/api/protected/user/ia-config/openrouter/connect')
+      .send({ code: 'code-123', codeVerifier: VERIFIER, model: 'vendor/model' });
+
+    expect(res.body.model).toBe('vendor/model');
+    vi.unstubAllGlobals();
+  });
+
+  it('código vencido ou já usado → 400 openrouter_connect_failed, sem salvar', async () => {
+    stubExchange(new Response(JSON.stringify({ error: 'invalid code' }), { status: 403 }));
+
+    const res = await request(app)
+      .post('/api/protected/user/ia-config/openrouter/connect')
+      .send({ code: 'code-123', codeVerifier: VERIFIER });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('openrouter_connect_failed');
+    expect(mUpsert).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it('verificador fora do formato do PKCE → 400 invalid_payload, sem chamar o OpenRouter', async () => {
+    const fetchMock = stubExchange(new Response('{}', { status: 200 }));
+    const res = await request(app)
+      .post('/api/protected/user/ia-config/openrouter/connect')
+      .send({ code: 'code-123', codeVerifier: 'curto' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_payload');
+    expect(fetchMock).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+});
