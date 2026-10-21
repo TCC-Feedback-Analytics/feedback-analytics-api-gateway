@@ -71,6 +71,28 @@ Atualiza metadados do usuário (ex.: `full_name`).
 
 ---
 
+### `POST /api/protected/user/complete-signup`
+
+**Primeira entrada com o Google.** A entrada passa pelo handler nativo do Better Auth: `POST /api/auth/sign-in/social` com `{ provider: "google", callbackURL, errorCallbackURL }` e, na volta, `/api/auth/callback/google`.
+
+O Google dá o nome da pessoa e o e-mail, que já vem verificado. Ao criar a conta, a empresa já é criada (hook `account.create.after`), sem os termos. Esta rota completa o que falta.
+
+**Body:**
+```json
+{ "fullName": "Padaria Bom Pão", "phone": "+5511987654321", "terms": true }
+```
+
+- `fullName` é o nome do negócio e vai para `user.name`; `phone` vai para `user.phone`.
+- O aceite (`terms_version: v1` e a data) vai para a empresa. A empresa também é criada aqui, se ainda não existir.
+- **Respostas:**
+  - `200 { ok: true }`;
+  - `400 invalid_payload`;
+  - `409 phone_taken`: o telefone é de outra conta.
+- **Mesmo e-mail com senha e com Google = a mesma conta** (`accountLinking` com o Google como provedor confiável).
+- **Ligar e desligar:** o Google só funciona com `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` no ambiente.
+
+---
+
 ### `POST /api/protected/user/phone/start`
 
 Registra/atualiza o telefone do usuário. **Não há provedor de SMS**: o número é salvo diretamente e a verificação por OTP em `/phone/verify` é um no-op. O contrato (`200 { ok: true }`) foi preservado.
