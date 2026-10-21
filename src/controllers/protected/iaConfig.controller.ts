@@ -13,6 +13,7 @@ import {
   removeIaConfigForEnterprise,
   saveIaConfigForEnterprise,
   updateIaModelForEnterprise,
+  connectOpenRouterForEnterprise,
 } from '../../services/iaConfig.service.js';
 import { IaConfigError } from '../../libs/iaConfig/iaConfigError.js';
 import { DEFAULT_IA_MODEL } from '../../libs/iaConfig/openRouterModels.js';
@@ -34,6 +35,13 @@ const updateSchema = z.object({
 });
 
 const modelSchema = z.object({ model: z.string().trim().min(1).max(120) }).strict();
+
+// PKCE: o verificador tem de 43 a 128 caracteres (RFC 7636).
+const connectSchema = z.object({
+  code: z.string().trim().min(1).max(512),
+  codeVerifier: z.string().trim().regex(/^[A-Za-z0-9._~-]{43,128}$/),
+  model: z.string().trim().min(1).max(120).optional(),
+}).strict();
 
 function handleIaConfigError(res: Response, error: unknown) {
   if (error instanceof IaConfigError) return sendTypedError(res, error.status, error.code);
@@ -76,6 +84,26 @@ export async function putIaConfigController(req: Request, res: Response) {
     if (!enterpriseId) return sendTypedError(res, 404, API_ERROR_ENTERPRISE_NOT_FOUND);
     const { apiKey, model } = parsed.data;
     const saved = await saveIaConfigForEnterprise(enterpriseId, apiKey, model || DEFAULT_IA_MODEL);
+    await autoGenerateCompanyQuestions(enterpriseId, req.user!.id);
+    return res.json(saved);
+  } catch (error) {
+    return handleIaConfigError(res, error);
+  }
+}
+
+/**
+ * "Conectar com OpenRouter" (OAuth PKCE): recebe o código que o OpenRouter
+ * devolveu à Web e o verificador; a troca pela chave acontece aqui. Responde
+ * como o PUT, sem a chave, e já dispara as perguntas personalizadas.
+ */
+export async function connectOpenRouterController(req: Request, res: Response) {
+  const parsed = connectSchema.safeParse(req.body);
+  if (!parsed.success) return sendTypedError(res, 400, API_ERROR_INVALID_PAYLOAD);
+
+  try {
+    const enterpriseId = await resolveEnterpriseId(req);
+    if (!enterpriseId) return sendTypedError(res, 404, API_ERROR_ENTERPRISE_NOT_FOUND);
+    const saved = await connectOpenRouterForEnterprise(enterpriseId, parsed.data);
     await autoGenerateCompanyQuestions(enterpriseId, req.user!.id);
     return res.json(saved);
   } catch (error) {

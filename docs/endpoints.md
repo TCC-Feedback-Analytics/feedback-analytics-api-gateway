@@ -1090,6 +1090,30 @@ O UPDATE exige a mesma empresa, ID da configuração, chave cifrada/IV/tag e mod
 
 **Efeito imediato nos jobs em espera.** Depois de gravar o modelo (e antes de tentar de novo a geração automática das perguntas), o Gateway antecipa para agora o `next_run_at` dos jobs de IA da empresa em `queued` ou `waiting_budget` agendados para o futuro (ex.: backoff de 429, até 300 s) e dispara um passo do worker (`kickWorkerIfPending`). Como o job resolve as credenciais a cada tentativa, a próxima já usa o modelo novo — a Web pode trocar o modelo pela tela de espera ("Preparando sua conta"/análises) sem sair dela. Jobs `running` não são alterados (pertencem a um worker com lease); se a troca falhar (`409`), nada é antecipado.
 
+### `POST /api/protected/user/ia-config/openrouter/connect`
+
+**"Conectar com OpenRouter" (OAuth PKCE).** Funciona assim:
+
+1. A Web manda a pessoa para `https://openrouter.ai/auth`, com o `callback_url` e o `code_challenge` (S256).
+2. O OpenRouter devolve um `code` à Web.
+3. A Web envia o `code` e o verificador para cá.
+4. Aqui, o código é trocado pela chave em `POST https://openrouter.ai/api/v1/auth/keys`. A chave **nunca passa pelo navegador**: é validada em `/models/user`, cifrada e salva, como no `PUT`.
+
+**Body:**
+```json
+{ "code": "…", "codeVerifier": "43 a 128 caracteres [A-Za-z0-9._~-]", "model": "opcional" }
+```
+
+- **Modelo salvo:** o `model` pedido, se a conta tem acesso a ele. Senão, o que já estava salvo. Senão, `openrouter/free` (o roteador que só usa modelos gratuitos). Senão, o primeiro modelo `:free`.
+- **Resposta:** a mesma do `PUT`, sem a chave: `{ hasKey, provider, model, keyHint }`. Também dispara a geração das perguntas personalizadas.
+- **Erros:**
+  - `400 invalid_payload`;
+  - `400 openrouter_connect_failed`: código vencido, já usado ou verificador errado; a pessoa conecta de novo;
+  - `502` ou `503 openrouter_connect_failed`: o OpenRouter não respondeu;
+  - os mesmos erros de validação da chave do `PUT`.
+
+---
+
 ### `DELETE /api/protected/user/ia-config`
 
 Remove a config. As análises ficam bloqueadas com `ia_config_required` até uma nova chave ser configurada. **Response 200** — `{ "hasKey": false, "provider": null, "model": null, "keyHint": null }`.
