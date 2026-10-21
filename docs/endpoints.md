@@ -1341,7 +1341,7 @@ Submete um feedback via formulário público. Não requer autenticação. O `dev
 | `enterprise_id` | `string (UUID)` | Sim | — |
 | `channel` | `"QRCODE"` | Sim | literal |
 | `rating` | `number` | Sim | inteiro de 1 a 5 |
-| `message` | `string` | Sim | 3 a 5000 caracteres |
+| `message` | `string` | Não | Comentário opcional, até 5000 caracteres (vazio ou ausente = só as estrelas e as respostas). Sem comentário, o feedback não vai para a IA nem conta como "aguardando análise" |
 | `answers` | `array` | Sim | contagem variável (0 a 3), igual ao número de perguntas ativas do escopo; `answer_value` ∈ `PESSIMO\|RUIM\|MEDIANA\|BOA\|OTIMA` |
 | `subanswers` | `array` | Não | deve cobrir **todas** as subperguntas ativas (máx. 9) |
 | `collection_point_id` / `catalog_item_id` | `string (UUID)` | Não | resolvem o escopo |

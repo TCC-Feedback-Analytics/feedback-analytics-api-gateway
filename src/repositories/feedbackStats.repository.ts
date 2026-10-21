@@ -3,6 +3,7 @@ import { getDb } from '../db/client.js';
 import { feedback, feedbackAnalysis } from '../../drizzle/schema.js';
 import { scopedFeedbackWhere } from '../db/tenantScope.js';
 import type { MetricsPeriod } from '../libs/period.js';
+import type { CommentRatingRow } from '../libs/commentParticipation.js';
 
 export interface ScopedStatsParams {
   enterpriseId: string;
@@ -118,6 +119,24 @@ export async function fetchScopedAnalysisAggregates(
   }
 
   return { totalAnalyzed, latestAnalysisAt, aiCounts };
+}
+
+/**
+ * Estrelas agrupadas por "escreveu comentário ou não" (o comentário é opcional):
+ * base da participação nos comentários e de quantos esperam pela análise da IA.
+ */
+export async function fetchScopedRatingByComment(params: ScopedStatsParams): Promise<CommentRatingRow[]> {
+  const { enterpriseId, collectionPointIds, period } = params;
+  if (scopeHasNoPoints(collectionPointIds)) return [];
+
+  const hasComment = sql<boolean>`length(trim(${feedback.message})) > 0`;
+  const rows = await getDb()
+    .select({ hasComment, rating: feedback.rating, c: count() })
+    .from(feedback)
+    .where(scopedFeedbackWhere(enterpriseId, collectionPointIds, period))
+    .groupBy(hasComment, feedback.rating);
+
+  return rows.map((row) => ({ hasComment: row.hasComment === true, rating: row.rating, count: Number(row.c) }));
 }
 
 /**
