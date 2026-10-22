@@ -128,6 +128,7 @@ describe('[Integração] POST /api/public/qrcode/feedback', () => {
     expect(res.status).toBe(200);
     expect(mockFetchCommentField).toHaveBeenCalledWith({ enterpriseId: ENTERPRISE_ID, scopeType: 'COMPANY', catalogItemId: null });
     expect(mockPersistQrFeedback.mock.calls[0][0].message).toBe('');
+    expect(mockPersistQrFeedback.mock.calls[0][0].commentPrompt).toBeNull();
   });
 
   it('com a pergunta própria, guarda o comentário normalmente', async () => {
@@ -137,6 +138,19 @@ describe('[Integração] POST /api/public/qrcode/feedback', () => {
     await request(app).post('/api/public/qrcode/feedback').send(VALID_PAYLOAD);
 
     expect(mockPersistQrFeedback.mock.calls[0][0].message).toBe('Ótimo atendimento!');
+    // A pergunta vai junto, para a IA ler o comentário como resposta a ela.
+    expect(mockPersistQrFeedback.mock.calls[0][0].commentPrompt).toBe('O que faltou no atendimento?');
+  });
+
+  it('com o convite padrão ou sem comentário, não guarda pergunta', async () => {
+    mockFetchQuestions.mockResolvedValue({ data: VALID_QUESTIONS, error: null } as never);
+    mockFetchCommentField.mockResolvedValueOnce({ mode: 'CUSTOM', prompt: 'O que faltou no atendimento?' });
+
+    await request(app).post('/api/public/qrcode/feedback').send({ ...VALID_PAYLOAD, message: '' });
+    await request(app).post('/api/public/qrcode/feedback').send(VALID_PAYLOAD);
+
+    expect(mockPersistQrFeedback.mock.calls[0][0].commentPrompt).toBeNull();
+    expect(mockPersistQrFeedback.mock.calls[1][0].commentPrompt).toBeNull();
   });
 
   it('[CT-UC04-02] retorna 400 com payload inválido (sem enterprise_id e channel)', async () => {
