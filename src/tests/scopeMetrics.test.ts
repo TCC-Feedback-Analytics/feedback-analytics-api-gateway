@@ -25,6 +25,9 @@ vi.mock('../repositories/feedbackStats.repository.js', () => ({
   fetchScopedRatingByComment: vi.fn(),
 }));
 vi.mock('../repositories/feedbackAnalysis.repository.js', () => ({ fetchScopedFeedbackAnalysisRows: vi.fn() }));
+vi.mock('../repositories/commentField.repository.js', () => ({
+  fetchScopeCommentField: vi.fn(async () => ({ hidden: 'none', prompt: null })),
+}));
 vi.mock('../repositories/feedbackTimeline.repository.js', () => ({ fetchScopedTimeline: vi.fn() }));
 vi.mock('../repositories/feedbackCustomers.repository.js', () => ({ fetchScopedCustomerVisits: vi.fn() }));
 vi.mock('../repositories/feedbackQuestions.repository.js', () => ({
@@ -65,6 +68,7 @@ describe('serviços de métricas do escopo', () => {
     expect(stats.averageRating).toBe(4.2);
     expect(stats.pendingCount).toBe(3);
     expect(stats.commentParticipation).toMatchObject({ total: 10, withComment: 7, pct: 70 });
+    expect(stats.commentField).toEqual({ hidden: 'none', prompt: null });
     expect(stats.csat.pct).toBe(80);
     expect(stats.aiSentiment?.netSentimentScore).toBe(50);
   });

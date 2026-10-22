@@ -24,7 +24,7 @@ describe('participação nos comentários', () => {
   it('sem avaliações: 0% e grupos vazios', () => {
     expect(summarizeCommentParticipation([])).toEqual({
       total: 0, withComment: 0, pct: 0, ci: { lower: 0, upper: 0 }, confidenceTier: 'insufficient',
-      withCommentRating: null, withoutCommentRating: null,
+      withCommentRating: null, withoutCommentRating: null, shortComments: 0,
     });
   });
 
@@ -33,13 +33,13 @@ describe('participação nos comentários', () => {
     const chain = {
       from: () => chain,
       where: (where: SQL) => { calls.where = where; return chain; },
-      groupBy: (...args: unknown[]) => { calls.groupBy = args; return Promise.resolve([{ hasComment: true, rating: 4, c: '3' }]); },
+      groupBy: (...args: unknown[]) => { calls.groupBy = args; return Promise.resolve([{ hasComment: true, isShort: false, rating: 4, c: '3' }]); },
     };
     getDb.mockReturnValue({ select: () => chain });
 
     const rows = await fetchScopedRatingByComment({ enterpriseId: 'ent-A', collectionPointIds: ['cp-A'], period: null });
 
-    expect(rows).toEqual([{ hasComment: true, rating: 4, count: 3 }]);
+    expect(rows).toEqual([{ hasComment: true, isShort: false, rating: 4, count: 3 }]);
     const where = new PgDialect().sqlToQuery(calls.where as SQL);
     expect(where.params).toEqual(['ent-A', 'cp-A']);
     const group = new PgDialect().sqlToQuery(calls.groupBy?.[0] as SQL);

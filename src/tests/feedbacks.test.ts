@@ -35,6 +35,9 @@ vi.mock('../repositories/feedbackStats.repository.js', () => ({
 vi.mock('../repositories/enterprise.repository.js', () => ({
   resolveEnterpriseIdByUser: vi.fn(),
 }));
+vi.mock('../repositories/commentField.repository.js', () => ({
+  fetchScopeCommentField: vi.fn(async () => ({ hidden: 'none', prompt: null })),
+}));
 
 const mockRatingAgg = vi.mocked(fetchScopedRatingAggregates);
 const mockAnalysisAgg = vi.mocked(fetchScopedAnalysisAggregates);

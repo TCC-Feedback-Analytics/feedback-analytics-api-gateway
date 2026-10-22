@@ -346,6 +346,8 @@ O endpoint expõe **duas lentes** complementares, ambas segmentadas pelo escopo 
 - **Lente SATISFAÇÃO (estrelas):** `starMean` (média de notas 1–5) com `starMeanCI` (IC t, em unidade de nota), `netSatisfaction` (%(4–5) − %(1–2), em [-100,100]), `csat` (Top-2-Box: % de notas 4–5 + IC de Wilson em %) e `confidenceTier` pela quantidade de feedbacks no escopo.
 - **Lente SENTIMENTO (IA/texto):** `aiSentiment` agrega o sentimento classificado pela IA sobre o **subconjunto já analisado**, com `netSentimentScore` (NSS = (pos−neg)/analisados × 100) e `confidenceTier` por quantidade analisada. **Só está presente quando `totalAnalyzed > 0`** (omitido caso contrário).
 
+`commentParticipation` diz quantos escreveram comentário (`withComment`, `pct`) e quantos desses comentários são curtos, com menos de 20 caracteres (`shortComments`). `commentField` diz como está o campo de comentário nos pontos de coleta do recorte: `hidden` ∈ `all` · `some` · `none` e `prompt` (a pergunta própria, quando o recorte é um ponto só). A Web usa os dois para sugerir mudar o campo, pela mesma regra que vai ao diagnóstico da IA.
+
 `totalAnalyzed`/`pendingCount` indicam quantos feedbacks do escopo já têm análise da IA e quantos faltam (`totalFeedbacks − totalAnalyzed`); `latestAnalysisAt` é o timestamp ISO da análise mais recente (ou `null`).
 
 > `sentimentBreakdown` é derivado **por estrela** (positive = notas 4–5, neutral = 3, negative = 1–2) e mantido por **compatibilidade**. O sentimento real do texto vem da IA em `aiSentiment` — as duas leituras podem divergir.
@@ -773,6 +775,40 @@ Desativa o QR Code de um item de catálogo específico.
 ```json
 { "catalog_item_id": "uuid", "active": false }
 ```
+
+---
+
+### `GET /api/protected/user/collection-points/comment-field`
+
+Campo de comentário do formulário de um escopo: a empresa (`scope_type=COMPANY`) ou um item do catálogo (`scope_type` do item + `catalog_item_id`). Sem configuração salva, vale o convite padrão.
+
+**Response 200**
+```json
+{ "mode": "DEFAULT | CUSTOM | HIDDEN", "prompt": "O que faltou no atendimento? | null" }
+```
+
+**Response 400** `invalid_payload` — escopo ou id inválido. **404** `catalog_item_not_found` — item de outra empresa ou de outro tipo.
+
+---
+
+### `PUT /api/protected/user/collection-points/comment-field`
+
+Salva o campo de comentário de um escopo (uma configuração por empresa ou por item).
+
+**Body**
+```json
+{ "scope_type": "PRODUCT", "catalog_item_id": "uuid", "mode": "CUSTOM", "prompt": "O que mudaria neste produto?" }
+```
+
+| `mode` | No formulário |
+|---|---|
+| `DEFAULT` | Convite padrão ("Conte-nos mais sobre sua experiência"), opcional |
+| `CUSTOM` | A pergunta de `prompt` (10 a 150 caracteres) no lugar do convite, opcional |
+| `HIDDEN` | Sem campo de comentário; o envio ignora o texto, se vier |
+
+`prompt` só é guardado no modo `CUSTOM`. `catalog_item_id` é obrigatório fora de `COMPANY` e proibido nela.
+
+**Response 200** — a configuração salva, no formato do `GET`. **400** `invalid_payload` · **404** `catalog_item_not_found`.
 
 ---
 
@@ -1346,10 +1382,13 @@ Retorna os dados públicos de uma empresa **e as perguntas do escopo** para mont
       "question_text": "Como você avalia o atendimento?",
       "subquestions": []
     }
-  ]
+  ],
+  "comment": { "mode": "DEFAULT | CUSTOM | HIDDEN", "prompt": "string | null" }
 }
 ```
 
+> `comment` é o campo de comentário do escopo (ver `PUT /api/protected/user/collection-points/comment-field`). Sem conseguir lê-lo, vem o convite padrão.
+>
 > Os campos `full_name` e `status` **não** são retornados por este endpoint. A leitura é feita da view `enterprise_public` (apenas `id` e `name`).
 
 **Response 404** `enterprise_not_found` — empresa inexistente.
@@ -1387,7 +1426,7 @@ Submete um feedback via formulário público. Não requer autenticação. O `dev
 | `enterprise_id` | `string (UUID)` | Sim | — |
 | `channel` | `"QRCODE"` | Sim | literal |
 | `rating` | `number` | Sim | inteiro de 1 a 5 |
-| `message` | `string` | Não | Comentário opcional, até 5000 caracteres (vazio ou ausente = só as estrelas e as respostas). Sem comentário, o feedback não vai para a IA nem conta como "aguardando análise" |
+| `message` | `string` | Não | Comentário opcional, até 5000 caracteres (vazio ou ausente = só as estrelas e as respostas). Sem comentário, o feedback não vai para a IA nem conta como "aguardando análise". Com o campo oculto no escopo, o texto é descartado |
 | `answers` | `array` | Sim | contagem variável (0 a 3), igual ao número de perguntas ativas do escopo; `answer_value` ∈ `PESSIMO\|RUIM\|MEDIANA\|BOA\|OTIMA` |
 | `subanswers` | `array` | Não | deve cobrir **todas** as subperguntas ativas (máx. 9) |
 | `collection_point_id` / `catalog_item_id` | `string (UUID)` | Não | resolvem o escopo |

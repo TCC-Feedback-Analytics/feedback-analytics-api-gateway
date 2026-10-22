@@ -19,6 +19,7 @@ import {
   fetchScopedRatingByComment,
 } from '../repositories/feedbackStats.repository.js';
 import { fetchScopedFeedbackAnalysisRows } from '../repositories/feedbackAnalysis.repository.js';
+import { fetchScopeCommentField } from '../repositories/commentField.repository.js';
 import { fetchScopedTimeline } from '../repositories/feedbackTimeline.repository.js';
 import { fetchScopedHeatmap } from '../repositories/feedbackHeatmap.repository.js';
 import { fetchScopedCustomerVisits } from '../repositories/feedbackCustomers.repository.js';
@@ -43,6 +44,8 @@ export async function computeScopedStats(params: ScopeMetricsParams) {
   const ratingAgg = await fetchScopedRatingAggregates(params);
   const analysisAgg = await fetchScopedAnalysisAggregates(params);
   const commentParticipation = summarizeCommentParticipation(await fetchScopedRatingByComment(params));
+  // Campo oculto em todos os pontos do recorte: a Web e a IA não cobram comentário.
+  const commentField = await fetchScopeCommentField(params);
 
   const totalFeedbacks = ratingAgg.totalFeedbacks;
   const averageRating = totalFeedbacks > 0 ? ratingAgg.ratingSum / totalFeedbacks : 0;
@@ -93,6 +96,7 @@ export async function computeScopedStats(params: ScopeMetricsParams) {
         : undefined,
     // Quem escreve comentário: quanto o tom dos comentários representa o escopo.
     commentParticipation,
+    commentField,
   };
 }
 
