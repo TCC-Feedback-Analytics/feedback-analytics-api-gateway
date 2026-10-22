@@ -14,3 +14,4 @@ export * from "./schema/iaConfig.js";
 export * from "./schema/onboarding.js";
 export * from "./schema/authRateLimit.js";
 export * from "./schema/scopeDiagnosis.js";
+export * from "./schema/commentField.js";

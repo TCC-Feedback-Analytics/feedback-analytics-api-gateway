@@ -92,7 +92,7 @@ describe('diagnóstico do escopo — números de um período', () => {
     expect(metrics.questions[0]).toMatchObject({ satisfied_pct: 40, rating_weight: { r: 0.6, n: 18 }, subquestions: [] });
     expect(metrics.comments).toMatchObject({ net_sentiment_score: 20, silent_detractors: 1, rating_misuse: 0 });
     expect(metrics.peak_times).toEqual([{ weekday: 1, band: 2, count: 4, mean: 4.5 }]);
-    expect(metrics.comment_participation).toEqual({ pct: 60, with_comment_mean: 3.6, without_comment_mean: 4.8 });
+    expect(metrics.comment_participation).toEqual({ pct: 60, with_comment_mean: 3.6, without_comment_mean: 4.8, short_pct: null });
     expect(metrics.customers).toEqual({ identified: 15, returning_pct: 20, returning_pct_ci: { lower: 7, upper: 45 }, first_time_mean: 4, returning_mean: 4.7 });
   });
 

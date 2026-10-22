@@ -4,6 +4,7 @@ import { feedback, feedbackAnalysis } from '../../drizzle/schema.js';
 import { scopedFeedbackWhere } from '../db/tenantScope.js';
 import type { MetricsPeriod } from '../libs/period.js';
 import type { CommentRatingRow } from '../libs/commentParticipation.js';
+import { SHORT_COMMENT_MAX_LENGTH } from '@feedback/lib-shared/schemas/public/commentField';
 
 export interface ScopedStatsParams {
   enterpriseId: string;
@@ -130,13 +131,21 @@ export async function fetchScopedRatingByComment(params: ScopedStatsParams): Pro
   if (scopeHasNoPoints(collectionPointIds)) return [];
 
   const hasComment = sql<boolean>`length(trim(${feedback.message})) > 0`;
+  // Curto ("bom", "ok"): escrito, mas com menos de SHORT_COMMENT_MAX_LENGTH caracteres. O limite
+  // vai literal (sql.raw): com parâmetro, o SELECT e o GROUP BY viram expressões diferentes.
+  const isShort = sql<boolean>`length(trim(${feedback.message})) between 1 and ${sql.raw(String(SHORT_COMMENT_MAX_LENGTH - 1))}`;
   const rows = await getDb()
-    .select({ hasComment, rating: feedback.rating, c: count() })
+    .select({ hasComment, isShort, rating: feedback.rating, c: count() })
     .from(feedback)
     .where(scopedFeedbackWhere(enterpriseId, collectionPointIds, period))
-    .groupBy(hasComment, feedback.rating);
+    .groupBy(hasComment, isShort, feedback.rating);
 
-  return rows.map((row) => ({ hasComment: row.hasComment === true, rating: row.rating, count: Number(row.c) }));
+  return rows.map((row) => ({
+    hasComment: row.hasComment === true,
+    isShort: row.isShort === true,
+    rating: row.rating,
+    count: Number(row.c),
+  }));
 }
 
 /**

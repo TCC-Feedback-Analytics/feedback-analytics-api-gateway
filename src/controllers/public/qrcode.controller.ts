@@ -14,6 +14,7 @@ import {
 } from '../../config/errors.js';
 import { sendTypedError } from '../../utils/sendTypedError.js';
 import { fetchActiveQuestionsForScope } from '../../repositories/publicQuestions.repository.js';
+import { fetchCommentField } from '../../repositories/commentField.repository.js';
 import {
   getPublicEnterpriseById,
   resolveQrCollectionPoint,
@@ -244,6 +245,19 @@ export async function submitQrCodeFeedbackController(req: Request, res: Response
     }
   }
 
+  // Campo de comentário oculto neste escopo: não guarda texto (mesmo que venha no payload).
+  let message = payload.message;
+  try {
+    const commentField = await fetchCommentField({
+      enterpriseId: payload.enterprise_id,
+      scopeType: contextScope,
+      catalogItemId: collectionPoint.catalogItemId ?? null,
+    });
+    if (commentField.mode === 'HIDDEN') message = '';
+  } catch (err) {
+    console.error('Erro ao ler o campo de comentário do escopo:', err);
+  }
+
   // 10. Escrita atômica: device + feedback + respostas numa transação.
   const feedbackId = crypto.randomUUID();
 
@@ -253,7 +267,7 @@ export async function submitQrCodeFeedbackController(req: Request, res: Response
       enterpriseId: payload.enterprise_id,
       collectionPointId: collectionPoint.id,
       feedbackId,
-      message: payload.message,
+      message,
       rating: payload.rating,
       trackedDevice,
       customerId,

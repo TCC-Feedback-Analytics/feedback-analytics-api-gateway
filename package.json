@@ -21,7 +21,7 @@
     "verify:stats": "tsx scripts/verify-stats-drizzle.ts"
   },
   "dependencies": {
-    "@feedback/lib-shared": "github:TCC-Feedback-Analytics/feedback-analytics-contracts#v1.4.0",
+    "@feedback/lib-shared": "github:TCC-Feedback-Analytics/feedback-analytics-contracts#v1.5.0",
     "@vercel/functions": "^3.9.9",
     "@zxcvbn-ts/core": "^4.2.0",
     "@zxcvbn-ts/language-common": "^4.1.3",
