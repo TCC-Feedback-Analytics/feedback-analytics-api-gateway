@@ -6,6 +6,8 @@ import { feedbackQuestionSubquestions, questionsOfFeedbacks } from "./questions.
 
 export const feedback = pgTable("feedback", {
 	message: text().notNull(),
+	/** A pergunta própria que o cliente viu no campo de comentário (null = convite padrão). */
+	commentPrompt: text("comment_prompt"),
 	rating: integer(),
 	collectionPointId: uuid("collection_point_id").notNull(),
 	enterpriseId: uuid("enterprise_id").notNull(),

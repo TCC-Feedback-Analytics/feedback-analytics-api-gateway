@@ -247,6 +247,7 @@ export async function submitQrCodeFeedbackController(req: Request, res: Response
 
   // Campo de comentário oculto neste escopo: não guarda texto (mesmo que venha no payload).
   let message = payload.message;
+  let commentPrompt: string | null = null;
   try {
     const commentField = await fetchCommentField({
       enterpriseId: payload.enterprise_id,
@@ -254,6 +255,8 @@ export async function submitQrCodeFeedbackController(req: Request, res: Response
       catalogItemId: collectionPoint.catalogItemId ?? null,
     });
     if (commentField.mode === 'HIDDEN') message = '';
+    // Guarda a pergunta que o cliente viu: a IA lê o comentário como resposta a ela.
+    if (commentField.mode === 'CUSTOM' && message.trim()) commentPrompt = commentField.prompt;
   } catch (err) {
     console.error('Erro ao ler o campo de comentário do escopo:', err);
   }
@@ -268,6 +271,7 @@ export async function submitQrCodeFeedbackController(req: Request, res: Response
       collectionPointId: collectionPoint.id,
       feedbackId,
       message,
+      commentPrompt,
       rating: payload.rating,
       trackedDevice,
       customerId,

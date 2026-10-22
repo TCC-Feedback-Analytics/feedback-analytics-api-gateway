@@ -144,6 +144,8 @@ export async function persistQrFeedback(params: {
   collectionPointId: string;
   feedbackId: string;
   message: string;
+  /** A pergunta própria do escopo, quando o cliente a viu (guardada com o comentário). */
+  commentPrompt?: string | null;
   rating: number;
   trackedDevice: TrackedDeviceRow | null;
   customerId: string | null;
@@ -200,6 +202,7 @@ export async function persistQrFeedback(params: {
         collectionPointId: params.collectionPointId,
         trackedDeviceId,
         message: params.message,
+        commentPrompt: params.commentPrompt ?? null,
         rating: params.rating,
       });
 
