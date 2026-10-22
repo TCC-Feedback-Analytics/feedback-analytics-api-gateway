@@ -83,6 +83,7 @@ async function buildFeedbackInputs(params: {
     .select({
       id: feedback.id,
       message: feedback.message,
+      commentPrompt: feedback.commentPrompt,
       rating: feedback.rating,
       createdAt: feedback.createdAt,
       cpId: collectionPoints.id,
@@ -179,6 +180,8 @@ async function buildFeedbackInputs(params: {
     return {
       id: r.id,
       message: r.message,
+      // Só com pergunta própria: sem ela, o pedido fica igual ao de antes.
+      ...(r.commentPrompt ? { comment_prompt: r.commentPrompt } : {}),
       rating: r.rating ?? null,
       created_at: r.createdAt ?? null,
       scope_type: scopeType,

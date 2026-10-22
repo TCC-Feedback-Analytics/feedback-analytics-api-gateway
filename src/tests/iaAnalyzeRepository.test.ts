@@ -9,13 +9,16 @@ vi.mock('../repositories/scope.repository.js', () => ({ resolveScopeCollectionPo
 import { fetchFeedbacksForAnalysis, fetchAlreadyAnalyzedFeedbacks } from '../repositories/iaAnalyze.repository.js';
 
 const offlineDb = drizzle.mock();
+// Linhas que cada consulta devolve, em ordem (vazio quando acabam).
+const queuedRows: unknown[][] = [];
 const query = {
   from: vi.fn(), leftJoin: vi.fn(), where: vi.fn(), orderBy: vi.fn(), limit: vi.fn(),
-  then: (resolve: (rows: never[]) => unknown) => Promise.resolve([]).then(resolve),
+  then: (resolve: (rows: unknown[]) => unknown) => Promise.resolve(queuedRows.shift() ?? []).then(resolve),
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  queuedRows.length = 0;
   for (const name of ['from', 'leftJoin', 'where', 'orderBy', 'limit'] as const) query[name].mockReturnValue(query);
   mocks.scope.mockResolvedValue({ error: false, ids: ['cp-A'] });
   mocks.getDb.mockReturnValue({
@@ -40,6 +43,17 @@ describe('seleção SQL dos pendentes', () => {
     await fetchFeedbacksForAnalysis({ enterpriseId: 'ent-A', onlyPending: true });
     const compiled = new PgDialect().sqlToQuery(query.where.mock.calls[0][0] as SQL);
     expect(compiled.sql).toContain('length(trim("feedback"."message")) > 0');
+  });
+
+  it('manda a pergunta própria do comentário só quando o cliente a viu', async () => {
+    const base = { rating: 4, createdAt: '2026-10-20T12:00:00Z', cpId: 'cp-A', cpName: 'QR', cpType: 'QRCODE', cpIdentifier: null, cpCatalogItemId: null };
+    queuedRows.push([
+      { ...base, id: 'fb-1', message: 'Faltou guardanapo.', commentPrompt: 'O que faltou no atendimento?' },
+      { ...base, id: 'fb-2', message: 'Tudo certo.', commentPrompt: null },
+    ]);
+    const [withPrompt, withoutPrompt] = await fetchFeedbacksForAnalysis({ enterpriseId: 'ent-A', onlyPending: true });
+    expect(withPrompt.comment_prompt).toBe('O que faltou no atendimento?');
+    expect('comment_prompt' in withoutPrompt).toBe(false);
   });
 
   it('o fluxo sem limite não restringe o total de pendentes', async () => {
