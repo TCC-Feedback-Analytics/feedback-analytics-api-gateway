@@ -8,6 +8,8 @@ import { confidenceTier, pctInterval, ratingStats } from './statistics/index.js'
 
 export interface CommentRatingRow {
   hasComment: boolean;
+  /** Comentário escrito, mas curto demais para dizer algo ("bom", "ok"). */
+  isShort?: boolean;
   rating: number | null;
   count: number;
 }
@@ -33,5 +35,6 @@ export function summarizeCommentParticipation(rows: CommentRatingRow[]): Comment
     confidenceTier: confidenceTier(total),
     withCommentRating: groupRating(rows, true),
     withoutCommentRating: groupRating(rows, false),
+    shortComments: rows.filter((row) => row.hasComment && row.isShort).reduce((sum, row) => sum + row.count, 0),
   };
 }

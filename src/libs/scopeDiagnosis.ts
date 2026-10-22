@@ -5,7 +5,9 @@
  * só interpreta.
  */
 import { createHash } from 'node:crypto';
+import { commentFieldAdvice } from '@feedback/lib-shared/schemas/public/commentField';
 import type {
+  ScopeDiagnosisCommentField,
   ScopeDiagnosisCommentSample,
   ScopeDiagnosisMetrics,
   ScopeDiagnosisPeriod,
@@ -138,6 +140,9 @@ export function toDiagnosisMetrics(snapshot: ScopeMetricsSnapshot): ScopeDiagnos
           pct: stats.commentParticipation.pct,
           with_comment_mean: stats.commentParticipation.withCommentRating?.mean ?? null,
           without_comment_mean: stats.commentParticipation.withoutCommentRating?.mean ?? null,
+          short_pct: stats.commentParticipation.withComment > 0 && typeof stats.commentParticipation.shortComments === 'number'
+            ? Math.round((stats.commentParticipation.shortComments / stats.commentParticipation.withComment) * 1000) / 10
+            : null,
         }
       : null,
     customers: customers.identified > 0
@@ -149,6 +154,19 @@ export function toDiagnosisMetrics(snapshot: ScopeMetricsSnapshot): ScopeDiagnos
           returning_mean: customers.returning?.mean ?? null,
         }
       : null,
+  };
+}
+
+/**
+ * O campo de comentário do escopo para a IA: oculto (em tudo ou em parte), a
+ * pergunta própria e a sugestão de mudá-lo, pela mesma regra que a Web mostra.
+ */
+export function toDiagnosisCommentField(stats: ScopedStats): ScopeDiagnosisCommentField {
+  const field = stats.commentField ?? { hidden: 'none' as const, prompt: null };
+  return {
+    hidden: field.hidden,
+    prompt: field.prompt,
+    advice: commentFieldAdvice(stats.commentParticipation, field),
   };
 }
 

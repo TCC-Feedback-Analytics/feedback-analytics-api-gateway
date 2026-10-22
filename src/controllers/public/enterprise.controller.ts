@@ -6,6 +6,8 @@ import {
 } from '../../config/errors.js';
 import { sendTypedError } from '../../utils/sendTypedError.js';
 import { fetchActiveQuestionsForScope } from '../../repositories/publicQuestions.repository.js';
+import { fetchCommentField } from '../../repositories/commentField.repository.js';
+import { DEFAULT_COMMENT_FIELD } from '@feedback/lib-shared/schemas/public/commentField';
 import {
   getPublicEnterpriseById,
   resolveQrCollectionPoint,
@@ -72,6 +74,16 @@ export async function getPublicEnterpriseController(req: Request, res: Response)
       console.error('Erro ao buscar perguntas públicas de feedback:', questionsError);
     }
 
+    // Sem conseguir ler, o formulário mostra o convite padrão (o campo segue opcional).
+    const comment = await fetchCommentField({
+      enterpriseId: enterprise.id,
+      scopeType: currentScope,
+      catalogItemId: contextCatalogItemId,
+    }).catch((err) => {
+      console.error('Erro ao buscar o campo de comentário público:', err);
+      return DEFAULT_COMMENT_FIELD;
+    });
+
     return res.json({
       id: enterprise.id,
       name: enterprise.name || 'Empresa',
@@ -80,6 +92,7 @@ export async function getPublicEnterpriseController(req: Request, res: Response)
       item_name: contextItemName,
       item_kind: contextItemKind,
       questions: questions ?? [],
+      comment,
     });
   } catch (err) {
     console.error('Erro ao buscar empresa:', err);

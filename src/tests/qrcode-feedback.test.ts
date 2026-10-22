@@ -15,6 +15,7 @@ import {
   persistQrFeedback,
   updateTrackedDeviceCounters,
 } from '../repositories/qrFeedback.repository.js';
+import { fetchCommentField } from '../repositories/commentField.repository.js';
 
 // fetchActiveQuestionsForScope virou Drizzle (coberto por integração) — mockado.
 vi.mock('../repositories/publicQuestions.repository.js', () => ({
@@ -43,7 +44,13 @@ vi.mock('../repositories/qrFeedback.repository.js', async (importActual) => {
   };
 });
 
+// Campo de comentário por escopo (Drizzle): padrão, salvo onde o teste muda.
+vi.mock('../repositories/commentField.repository.js', () => ({
+  fetchCommentField: vi.fn(),
+}));
+
 const mockFetchQuestions = vi.mocked(fetchActiveQuestionsForScope);
+const mockFetchCommentField = vi.mocked(fetchCommentField);
 const mockGetPublicEnterprise = vi.mocked(getPublicEnterpriseById);
 const mockResolveQrCollectionPoint = vi.mocked(resolveQrCollectionPoint);
 const mockFindTrackedDevice = vi.mocked(findTrackedDevice);
@@ -109,6 +116,27 @@ describe('[Integração] POST /api/public/qrcode/feedback', () => {
     mockInsertCustomer.mockResolvedValue({ id: 'customer-id' });
     mockPersistQrFeedback.mockResolvedValue({ trackedDeviceId: 'new-device-id', priorFeedbackCount: 0 });
     mockUpdateCounters.mockResolvedValue(undefined);
+    mockFetchCommentField.mockResolvedValue({ mode: 'DEFAULT', prompt: null });
+  });
+
+  it('com o campo de comentário oculto no escopo, não guarda o texto enviado', async () => {
+    mockFetchQuestions.mockResolvedValueOnce({ data: VALID_QUESTIONS, error: null } as never);
+    mockFetchCommentField.mockResolvedValueOnce({ mode: 'HIDDEN', prompt: null });
+
+    const res = await request(app).post('/api/public/qrcode/feedback').send(VALID_PAYLOAD);
+
+    expect(res.status).toBe(200);
+    expect(mockFetchCommentField).toHaveBeenCalledWith({ enterpriseId: ENTERPRISE_ID, scopeType: 'COMPANY', catalogItemId: null });
+    expect(mockPersistQrFeedback.mock.calls[0][0].message).toBe('');
+  });
+
+  it('com a pergunta própria, guarda o comentário normalmente', async () => {
+    mockFetchQuestions.mockResolvedValueOnce({ data: VALID_QUESTIONS, error: null } as never);
+    mockFetchCommentField.mockResolvedValueOnce({ mode: 'CUSTOM', prompt: 'O que faltou no atendimento?' });
+
+    await request(app).post('/api/public/qrcode/feedback').send(VALID_PAYLOAD);
+
+    expect(mockPersistQrFeedback.mock.calls[0][0].message).toBe('Ótimo atendimento!');
   });
 
   it('[CT-UC04-02] retorna 400 com payload inválido (sem enterprise_id e channel)', async () => {
@@ -329,6 +357,7 @@ describe('[Integração] GET /api/public/enterprise/:id', () => {
     // default: nenhuma pergunta; testes específicos sobrescrevem com mockResolvedValueOnce.
     mockFetchQuestions.mockResolvedValue({ data: [], error: null } as never);
     mockResolveQrCollectionPoint.mockResolvedValue(null);
+    mockFetchCommentField.mockResolvedValue({ mode: 'DEFAULT', prompt: null });
   });
 
   it('retorna 200 com dados públicos da empresa', async () => {
@@ -351,7 +380,27 @@ describe('[Integração] GET /api/public/enterprise/:id', () => {
       catalog_item_id: null,
       item_kind: null,
       questions: [],
+      comment: { mode: 'DEFAULT', prompt: null },
     });
+  });
+
+  it('o formulário público recebe a pergunta própria do escopo', async () => {
+    mockGetPublicEnterprise.mockResolvedValueOnce({ id: ENTERPRISE_ID, name: 'Empresa Teste' });
+    mockFetchCommentField.mockResolvedValueOnce({ mode: 'CUSTOM', prompt: 'O que mudaria neste prato?' });
+
+    const res = await request(app).get(`/api/public/enterprise/${ENTERPRISE_ID}`);
+
+    expect(res.body.comment).toEqual({ mode: 'CUSTOM', prompt: 'O que mudaria neste prato?' });
+  });
+
+  it('sem conseguir ler o campo, o formulário usa o convite padrão', async () => {
+    mockGetPublicEnterprise.mockResolvedValueOnce({ id: ENTERPRISE_ID, name: 'Empresa Teste' });
+    mockFetchCommentField.mockRejectedValueOnce(new Error('db'));
+
+    const res = await request(app).get(`/api/public/enterprise/${ENTERPRISE_ID}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.comment).toEqual({ mode: 'DEFAULT', prompt: null });
   });
 
   it('[CT-UC04-02] retorna 404 quando empresa não encontrada', async () => {

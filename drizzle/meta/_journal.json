@@ -71,6 +71,13 @@
       "when": 1792589591299,
       "tag": "0009_remove_enterprise_document",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792636943979,
+      "tag": "0010_comment_field",
+      "breakpoints": true
     }
   ]
 }

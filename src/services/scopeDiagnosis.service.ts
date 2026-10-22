@@ -15,6 +15,7 @@ import {
   movementBucketFor,
   previousPeriodOf,
   selectCommentSamples,
+  toDiagnosisCommentField,
   toDiagnosisMetrics,
   toDiagnosisPeriod,
   type ScopeMetricsSnapshot,
@@ -113,6 +114,7 @@ export async function buildScopeDiagnosisPackage(params: ScopeTarget & {
       // Sem avaliações no período anterior, não há com o que comparar.
       previous: previous && previous.stats.totalFeedbacks > 0 ? toDiagnosisMetrics(previous) : null,
       comment_samples: selectCommentSamples(current.analysis),
+      comment_field: toDiagnosisCommentField(current.stats),
     },
   };
 }
