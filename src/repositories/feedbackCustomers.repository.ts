@@ -1,7 +1,7 @@
 import { and, count, eq, gte, inArray, lt, sql, type SQL } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { getDb } from '../db/client.js';
-import { assertEnterpriseId } from '../db/tenantScope.js';
+import { assertEnterpriseId, notTestFeedback } from '../db/tenantScope.js';
 import * as schema from '../../drizzle/schema.js';
 import { feedback } from '../../drizzle/schema.js';
 import type { MetricsPeriod } from '../libs/period.js';
@@ -34,7 +34,7 @@ export function customerVisitsQueries(db: PostgresJsDatabase<typeof schema>, par
       seq: sql<number>`row_number() over (partition by ${feedback.trackedDeviceId} order by ${feedback.createdAt}, ${feedback.id})`.as('seq'),
     })
     .from(feedback)
-    .where(eq(feedback.enterpriseId, enterpriseId))
+    .where(and(eq(feedback.enterpriseId, enterpriseId), notTestFeedback()))
     .as('visits');
 
   const conds: SQL[] = [];

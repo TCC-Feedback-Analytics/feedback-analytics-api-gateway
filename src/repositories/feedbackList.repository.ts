@@ -81,7 +81,8 @@ export async function resolveCategoryCollectionPointIds(params: {
 }
 
 function buildListWhere(enterpriseId: string, filter: FeedbackListFilter): SQL {
-  const conds: SQL[] = [scopedFeedbackWhere(enterpriseId, filter.collectionPointIds)];
+  // A lista mostra também os testes do dono, marcados pelo `channel`.
+  const conds: SQL[] = [scopedFeedbackWhere(enterpriseId, filter.collectionPointIds, null, { includeTests: true })];
   if (filter.rating != null) conds.push(eq(feedback.rating, filter.rating));
   if (filter.search) conds.push(ilike(feedback.message, `%${filter.search}%`));
   return (conds.length === 1 ? conds[0] : and(...conds)) as SQL;
@@ -116,6 +117,7 @@ export async function fetchScopedFeedbackPage(params: {
       id: feedback.id,
       message: feedback.message,
       rating: feedback.rating,
+      channel: feedback.channel,
       createdAt: feedback.createdAt,
       updatedAt: feedback.updatedAt,
       cpId: collectionPoints.id,
@@ -148,6 +150,7 @@ export async function fetchScopedFeedbackPage(params: {
     id: r.id,
     message: r.message,
     rating: r.rating,
+    channel: r.channel,
     created_at: r.createdAt,
     updated_at: r.updatedAt,
     collection_points: {
