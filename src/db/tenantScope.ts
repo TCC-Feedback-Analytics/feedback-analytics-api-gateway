@@ -1,7 +1,12 @@
-import { and, eq, gte, inArray, isNull, lt, type SQL } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, lt, sql, type SQL } from 'drizzle-orm';
 import type { PgColumn } from 'drizzle-orm/pg-core';
 import { collectionPoints, feedback } from '../../drizzle/schema.js';
 import type { MetricsPeriod } from '../libs/period.js';
+
+/** Feedback de cliente, fora os do "Testar o formulário". `channel` nulo (antes da marca de canal) conta. */
+export function notTestFeedback(): SQL {
+  return sql`${feedback.channel} IS DISTINCT FROM 'TEST'`;
+}
 
 /**
  * Garante que nenhuma query tenant-scoped seja construída sem um enterprise_id.
@@ -31,15 +36,22 @@ export function assertEnterpriseId(enterpriseId: string): void {
  * `period` (etapa 02) recorta por `created_at`: início incluído, fim excluído.
  * Sem período, vale o histórico inteiro. O índice `(enterprise_id, created_at)`
  * sustenta o recorte.
+ *
+ * Os feedbacks do "Testar o formulário" (canal `TEST`) ficam de fora: são do
+ * dono, não de clientes, e não entram em métrica, mínimo nem análise da IA. Só
+ * a lista de feedbacks os mostra (`includeTests`), marcados como teste.
  */
 export function scopedFeedbackWhere(
   enterpriseId: string,
   collectionPointIds?: string[] | null,
   period?: MetricsPeriod | null,
+  { includeTests = false }: { includeTests?: boolean } = {},
 ): SQL {
   assertEnterpriseId(enterpriseId);
 
   const conds: SQL[] = [eq(feedback.enterpriseId, enterpriseId)];
+
+  if (!includeTests) conds.push(notTestFeedback());
 
   if (collectionPointIds && collectionPointIds.length > 0) {
     conds.push(inArray(feedback.collectionPointId, collectionPointIds));

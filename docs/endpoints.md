@@ -245,7 +245,7 @@ Upsert completo (cria se não existir, substitui se existir). **Response 200** �
 
 ### `GET /api/protected/user/feedbacks`
 
-Lista todos os feedbacks da empresa com paginação e filtros.
+Lista todos os feedbacks da empresa com paginação e filtros. Inclui os do "Testar o formulário" (`channel: "TEST"`), para a Web marcá-los como teste. Todas as outras leituras de feedback (métricas, mínimo de 10, análise e diagnóstico da IA, clientes que voltam) deixam esses testes de fora.
 
 **Query Params**
 
@@ -266,6 +266,7 @@ Lista todos os feedbacks da empresa com paginação e filtros.
       "id": "uuid",
       "message": "Ótimo atendimento!",
       "rating": 5,
+      "channel": "QR | LINK | NFC | TEST | null",
       "created_at": "2026-05-12T12:00:00Z",
       "collection_points": {
         "id": "uuid",
@@ -346,7 +347,7 @@ O endpoint expõe **duas lentes** complementares, ambas segmentadas pelo escopo 
 - **Lente SATISFAÇÃO (estrelas):** `starMean` (média de notas 1–5) com `starMeanCI` (IC t, em unidade de nota), `netSatisfaction` (%(4–5) − %(1–2), em [-100,100]), `csat` (Top-2-Box: % de notas 4–5 + IC de Wilson em %) e `confidenceTier` pela quantidade de feedbacks no escopo.
 - **Lente SENTIMENTO (IA/texto):** `aiSentiment` agrega o sentimento classificado pela IA sobre o **subconjunto já analisado**, com `netSentimentScore` (NSS = (pos−neg)/analisados × 100) e `confidenceTier` por quantidade analisada. **Só está presente quando `totalAnalyzed > 0`** (omitido caso contrário).
 
-`channelBreakdown` diz por onde chegaram as avaliações no recorte: `[{ channel: "QR" | "LINK" | "NFC" | null, count, mean, ci }]`, na ordem QR, link, NFC e sem marca (`null`, os feedbacks de antes da etapa 06 e QR Codes antigos). O `TEST` não entra.
+`channelBreakdown` diz por onde chegaram as avaliações no recorte: `[{ channel: "QR" | "LINK" | "NFC" | null, count, mean, ci }]`, na ordem QR, link, NFC e sem marca (`null`, os feedbacks de antes da etapa 06 e QR Codes antigos). O `TEST` não entra, como em todas as métricas.
 
 `commentParticipation` diz quantos escreveram comentário (`withComment`, `pct`) e quantos desses comentários são curtos, com menos de 20 caracteres (`shortComments`). `commentField` diz como está o campo de comentário nos pontos de coleta do recorte: `hidden` ∈ `all` · `some` · `none` e `prompt` (a pergunta própria, quando o recorte é um ponto só). A Web usa os dois para sugerir mudar o campo, pela mesma regra que vai ao diagnóstico da IA.
 

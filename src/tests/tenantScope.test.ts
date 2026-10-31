@@ -45,6 +45,18 @@ describe('[Unit] tenantScope — isolamento multi-tenant', () => {
     expect(sql).not.toMatch(/created_at/);
   });
 
+  it('deixa de fora os feedbacks do "Testar o formulário", sem mudar os parâmetros', () => {
+    const { sql, params } = compile(scopedFeedbackWhere('ent-A', ['cp-1']));
+    // IS DISTINCT FROM mantém os feedbacks sem canal (anteriores à marca).
+    expect(sql).toMatch(/channel"? IS DISTINCT FROM 'TEST'/);
+    expect(params).toEqual(['ent-A', 'cp-1']);
+  });
+
+  it('a lista de feedbacks pode incluir os testes', () => {
+    const { sql } = compile(scopedFeedbackWhere('ent-A', null, null, { includeTests: true }));
+    expect(sql).not.toMatch(/channel/);
+  });
+
   it('recusa enterprise_id vazio — não permite query sem tenant', () => {
     expect(() => scopedFeedbackWhere('', null)).toThrow();
     expect(() => assertEnterpriseId('')).toThrow();
