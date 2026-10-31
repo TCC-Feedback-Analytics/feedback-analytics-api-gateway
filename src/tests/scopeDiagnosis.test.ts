@@ -42,6 +42,10 @@ function snapshot(overrides: Partial<ScopeMetricsSnapshot> = {}): ScopeMetricsSn
         total: 20, withComment: 12, pct: 60, ci: { lower: 39, upper: 78 }, confidenceTier: 'low',
         withCommentRating: { n: 12, mean: 3.6, ci: { lower: 3, upper: 4.2 } }, withoutCommentRating: { n: 8, mean: 4.8, ci: { lower: 4.4, upper: 5 } },
       },
+      channelBreakdown: [
+        { channel: 'QR', count: 12, mean: 4.2, ci: { lower: 3.8, upper: 4.6 } },
+        { channel: null, count: 8, mean: 3.9, ci: { lower: 3.2, upper: 4.6 } },
+      ],
     } as ScopeMetricsSnapshot['stats'],
     analysis: analysisOf([item('a', { discrepancy: 'silent_detractor', sentiment: 'negative' })]),
     questions: [
@@ -93,6 +97,10 @@ describe('diagnóstico do escopo — números de um período', () => {
     expect(metrics.comments).toMatchObject({ net_sentiment_score: 20, silent_detractors: 1, rating_misuse: 0 });
     expect(metrics.peak_times).toEqual([{ weekday: 1, band: 2, count: 4, mean: 4.5 }]);
     expect(metrics.comment_participation).toEqual({ pct: 60, with_comment_mean: 3.6, without_comment_mean: 4.8, short_pct: null });
+    expect(metrics.channels).toEqual([
+      { channel: 'QR', count: 12, mean: 4.2 },
+      { channel: null, count: 8, mean: 3.9 },
+    ]);
     expect(metrics.customers).toEqual({ identified: 15, returning_pct: 20, returning_pct_ci: { lower: 7, upper: 45 }, first_time_mean: 4, returning_mean: 4.7 });
   });
 

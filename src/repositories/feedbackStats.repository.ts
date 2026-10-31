@@ -4,6 +4,7 @@ import { feedback, feedbackAnalysis } from '../../drizzle/schema.js';
 import { scopedFeedbackWhere } from '../db/tenantScope.js';
 import type { MetricsPeriod } from '../libs/period.js';
 import type { CommentRatingRow } from '../libs/commentParticipation.js';
+import type { ChannelRatingRow } from '../libs/channelBreakdown.js';
 import { SHORT_COMMENT_MAX_LENGTH } from '@feedback/lib-shared/schemas/public/commentField';
 
 export interface ScopedStatsParams {
@@ -120,6 +121,20 @@ export async function fetchScopedAnalysisAggregates(
   }
 
   return { totalAnalyzed, latestAnalysisAt, aiCounts };
+}
+
+/** Estrelas agrupadas por canal de coleta (QR, link, NFC, teste, sem marca), no mesmo recorte. */
+export async function fetchScopedRatingByChannel(params: ScopedStatsParams): Promise<ChannelRatingRow[]> {
+  const { enterpriseId, collectionPointIds, period } = params;
+  if (scopeHasNoPoints(collectionPointIds)) return [];
+
+  const rows = await getDb()
+    .select({ channel: feedback.channel, rating: feedback.rating, c: count() })
+    .from(feedback)
+    .where(scopedFeedbackWhere(enterpriseId, collectionPointIds, period))
+    .groupBy(feedback.channel, feedback.rating);
+
+  return rows.map((row) => ({ channel: row.channel, rating: row.rating, count: Number(row.c) }));
 }
 
 /**

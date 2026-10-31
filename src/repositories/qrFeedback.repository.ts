@@ -1,4 +1,5 @@
 import { and, eq, gte } from 'drizzle-orm';
+import type { FeedbackChannel } from '@feedback/lib-shared/schemas/public/feedbackChannel';
 import { getDb } from '../db/client.js';
 import {
   customer,
@@ -146,6 +147,8 @@ export async function persistQrFeedback(params: {
   message: string;
   /** A pergunta própria do escopo, quando o cliente a viu (guardada com o comentário). */
   commentPrompt?: string | null;
+  /** Canal de coleta já normalizado (QR, LINK, NFC, TEST); null = sem a marca de canal. */
+  channel?: FeedbackChannel | null;
   rating: number;
   trackedDevice: TrackedDeviceRow | null;
   customerId: string | null;
@@ -203,6 +206,7 @@ export async function persistQrFeedback(params: {
         trackedDeviceId,
         message: params.message,
         commentPrompt: params.commentPrompt ?? null,
+        channel: params.channel ?? null,
         rating: params.rating,
       });
 

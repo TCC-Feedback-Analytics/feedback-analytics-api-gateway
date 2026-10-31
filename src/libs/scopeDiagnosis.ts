@@ -145,6 +145,7 @@ export function toDiagnosisMetrics(snapshot: ScopeMetricsSnapshot): ScopeDiagnos
             : null,
         }
       : null,
+    channels: (stats.channelBreakdown ?? []).map(({ channel, count, mean }) => ({ channel, count, mean })),
     customers: customers.identified > 0
       ? {
           identified: customers.identified,
