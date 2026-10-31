@@ -85,6 +85,13 @@
       "when": 1792677081081,
       "tag": "0011_feedback_comment_prompt",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793450837816,
+      "tag": "0012_feedback_channel",
+      "breakpoints": true
     }
   ]
 }

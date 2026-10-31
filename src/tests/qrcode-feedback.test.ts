@@ -119,6 +119,17 @@ describe('[Integração] POST /api/public/qrcode/feedback', () => {
     mockFetchCommentField.mockResolvedValue({ mode: 'DEFAULT', prompt: null });
   });
 
+  it('grava o canal da marca da URL e trata o antigo QRCODE e valores estranhos como não identificado', async () => {
+    mockFetchQuestions.mockResolvedValue({ data: VALID_QUESTIONS, error: null } as never);
+
+    await request(app).post('/api/public/qrcode/feedback').send({ ...VALID_PAYLOAD, channel: 'NFC' });
+    await request(app).post('/api/public/qrcode/feedback').send({ ...VALID_PAYLOAD, channel: 'link' });
+    await request(app).post('/api/public/qrcode/feedback').send(VALID_PAYLOAD);
+    await request(app).post('/api/public/qrcode/feedback').send({ ...VALID_PAYLOAD, channel: 'qualquer' });
+
+    expect(mockPersistQrFeedback.mock.calls.map((call) => call[0].channel)).toEqual(['NFC', 'LINK', null, null]);
+  });
+
   it('com o campo de comentário oculto no escopo, não guarda o texto enviado', async () => {
     mockFetchQuestions.mockResolvedValueOnce({ data: VALID_QUESTIONS, error: null } as never);
     mockFetchCommentField.mockResolvedValueOnce({ mode: 'HIDDEN', prompt: null });

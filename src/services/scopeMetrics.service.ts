@@ -13,10 +13,12 @@ import { fillTimeline, localDateOf, type TimelineBucket, type TimelinePoint } fr
 import { fillHeatmap, type HeatmapCell } from '../libs/heatmap.js';
 import { summarizeCustomers, type CustomersSummary } from '../libs/customers.js';
 import { summarizeCommentParticipation } from '../libs/commentParticipation.js';
+import { summarizeChannels } from '../libs/channelBreakdown.js';
 import {
   fetchScopedRatingAggregates,
   fetchScopedAnalysisAggregates,
   fetchScopedRatingByComment,
+  fetchScopedRatingByChannel,
 } from '../repositories/feedbackStats.repository.js';
 import { fetchScopedFeedbackAnalysisRows } from '../repositories/feedbackAnalysis.repository.js';
 import { fetchScopeCommentField } from '../repositories/commentField.repository.js';
@@ -46,6 +48,7 @@ export async function computeScopedStats(params: ScopeMetricsParams) {
   const commentParticipation = summarizeCommentParticipation(await fetchScopedRatingByComment(params));
   // Campo oculto em todos os pontos do recorte: a Web e a IA não cobram comentário.
   const commentField = await fetchScopeCommentField(params);
+  const channelBreakdown = summarizeChannels(await fetchScopedRatingByChannel(params));
 
   const totalFeedbacks = ratingAgg.totalFeedbacks;
   const averageRating = totalFeedbacks > 0 ? ratingAgg.ratingSum / totalFeedbacks : 0;
@@ -97,6 +100,8 @@ export async function computeScopedStats(params: ScopeMetricsParams) {
     // Quem escreve comentário: quanto o tom dos comentários representa o escopo.
     commentParticipation,
     commentField,
+    // Por onde chegaram (QR, link, NFC, sem marca), sem o teste do dono.
+    channelBreakdown,
   };
 }
 

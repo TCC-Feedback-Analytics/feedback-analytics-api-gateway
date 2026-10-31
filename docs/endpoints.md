@@ -346,6 +346,8 @@ O endpoint expõe **duas lentes** complementares, ambas segmentadas pelo escopo 
 - **Lente SATISFAÇÃO (estrelas):** `starMean` (média de notas 1–5) com `starMeanCI` (IC t, em unidade de nota), `netSatisfaction` (%(4–5) − %(1–2), em [-100,100]), `csat` (Top-2-Box: % de notas 4–5 + IC de Wilson em %) e `confidenceTier` pela quantidade de feedbacks no escopo.
 - **Lente SENTIMENTO (IA/texto):** `aiSentiment` agrega o sentimento classificado pela IA sobre o **subconjunto já analisado**, com `netSentimentScore` (NSS = (pos−neg)/analisados × 100) e `confidenceTier` por quantidade analisada. **Só está presente quando `totalAnalyzed > 0`** (omitido caso contrário).
 
+`channelBreakdown` diz por onde chegaram as avaliações no recorte: `[{ channel: "QR" | "LINK" | "NFC" | null, count, mean, ci }]`, na ordem QR, link, NFC e sem marca (`null`, os feedbacks de antes da etapa 06 e QR Codes antigos). O `TEST` não entra.
+
 `commentParticipation` diz quantos escreveram comentário (`withComment`, `pct`) e quantos desses comentários são curtos, com menos de 20 caracteres (`shortComments`). `commentField` diz como está o campo de comentário nos pontos de coleta do recorte: `hidden` ∈ `all` · `some` · `none` e `prompt` (a pergunta própria, quando o recorte é um ponto só). A Web usa os dois para sugerir mudar o campo, pela mesma regra que vai ao diagnóstico da IA.
 
 `totalAnalyzed`/`pendingCount` indicam quantos feedbacks do escopo já têm análise da IA e quantos faltam (`totalFeedbacks − totalAnalyzed`); `latestAnalysisAt` é o timestamp ISO da análise mais recente (ou `null`).
@@ -1403,7 +1405,7 @@ Submete um feedback via formulário público. Não requer autenticação. O `dev
 ```json
 {
   "enterprise_id": "uuid",
-  "channel": "QRCODE",
+  "channel": "NFC",
   "rating": 5,
   "message": "Ótimo atendimento!",
   "answers": [
@@ -1424,7 +1426,7 @@ Submete um feedback via formulário público. Não requer autenticação. O `dev
 | Campo | Tipo | Obrigatório | Observação |
 |---|---|---|---|
 | `enterprise_id` | `string (UUID)` | Sim | — |
-| `channel` | `"QRCODE"` | Sim | literal |
+| `channel` | `string` | Não | Canal de coleta, vindo da marca `canal` da URL do formulário: `QR`, `LINK`, `NFC` ou `TEST` (o "Testar o formulário"). Valor ausente, desconhecido ou o antigo `QRCODE` grava `null` (não identificado), sem recusar a resposta |
 | `rating` | `number` | Sim | inteiro de 1 a 5 |
 | `message` | `string` | Não | Comentário opcional, até 5000 caracteres (vazio ou ausente = só as estrelas e as respostas). Sem comentário, o feedback não vai para a IA nem conta como "aguardando análise". Com o campo oculto no escopo, o texto é descartado. Com pergunta própria, a pergunta é guardada com o comentário (`feedback.comment_prompt`) e vai à IA na análise |
 | `answers` | `array` | Sim | contagem variável (0 a 3), igual ao número de perguntas ativas do escopo; `answer_value` ∈ `PESSIMO\|RUIM\|MEDIANA\|BOA\|OTIMA` |
