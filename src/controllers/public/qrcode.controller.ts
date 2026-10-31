@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import type { Request, Response } from 'express';
 import { qrcodeFeedbackSchema } from '@feedback/lib-shared/schemas/public/feedbackSchema';
+import { normalizeFeedbackChannel } from '@feedback/lib-shared/schemas/public/feedbackChannel';
 import {
   API_ERROR_COLLECTION_POINT_ERROR,
   API_ERROR_COLLECTION_POINT_NOT_FOUND,
@@ -272,6 +273,7 @@ export async function submitQrCodeFeedbackController(req: Request, res: Response
       feedbackId,
       message,
       commentPrompt,
+      channel: normalizeFeedbackChannel(payload.channel),
       rating: payload.rating,
       trackedDevice,
       customerId,

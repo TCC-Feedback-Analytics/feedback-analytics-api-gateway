@@ -31,6 +31,7 @@ vi.mock('../repositories/feedbackStats.repository.js', () => ({
   fetchScopedRatingAggregates: vi.fn(),
   fetchScopedAnalysisAggregates: vi.fn(),
   fetchScopedRatingByComment: vi.fn(async () => []),
+  fetchScopedRatingByChannel: vi.fn(async () => []),
 }));
 vi.mock('../repositories/enterprise.repository.js', () => ({
   resolveEnterpriseIdByUser: vi.fn(),

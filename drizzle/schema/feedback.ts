@@ -8,6 +8,8 @@ export const feedback = pgTable("feedback", {
 	message: text().notNull(),
 	/** A pergunta própria que o cliente viu no campo de comentário (null = convite padrão). */
 	commentPrompt: text("comment_prompt"),
+	/** Por onde o cliente chegou: QR, LINK, NFC ou TEST (null = sem a marca de canal). */
+	channel: text(),
 	rating: integer(),
 	collectionPointId: uuid("collection_point_id").notNull(),
 	enterpriseId: uuid("enterprise_id").notNull(),
@@ -23,6 +25,7 @@ export const feedback = pgTable("feedback", {
 			foreignColumns: [enterprise.id],
 			name: "feedback_enterprise_id_fkey"
 		}).onDelete("cascade"),
+	check("feedback_channel_check", sql`(channel IS NULL) OR (channel = ANY (ARRAY['QR'::text, 'LINK'::text, 'NFC'::text, 'TEST'::text]))`),
 ]);
 
 export const feedbackQuestionAnswers = pgTable("feedback_question_answers", {

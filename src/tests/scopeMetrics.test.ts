@@ -23,6 +23,10 @@ vi.mock('../repositories/feedbackStats.repository.js', () => ({
   fetchScopedRatingAggregates: vi.fn(),
   fetchScopedAnalysisAggregates: vi.fn(),
   fetchScopedRatingByComment: vi.fn(),
+  fetchScopedRatingByChannel: vi.fn(async () => [
+    { channel: 'QR', rating: 5, count: 2 },
+    { channel: 'TEST', rating: 5, count: 1 },
+  ]),
 }));
 vi.mock('../repositories/feedbackAnalysis.repository.js', () => ({ fetchScopedFeedbackAnalysisRows: vi.fn() }));
 vi.mock('../repositories/commentField.repository.js', () => ({
@@ -71,6 +75,8 @@ describe('serviços de métricas do escopo', () => {
     expect(stats.commentField).toEqual({ hidden: 'none', prompt: null });
     expect(stats.csat.pct).toBe(80);
     expect(stats.aiSentiment?.netSentimentScore).toBe(50);
+    // O teste do dono não vira canal.
+    expect(stats.channelBreakdown).toEqual([{ channel: 'QR', count: 2, mean: 5, ci: expect.any(Object) }]);
   });
 
   it('análise: escopo sem pontos de coleta devolve vazio sem consultar o banco', async () => {
