@@ -17,12 +17,12 @@ Variáveis de ambiente **obrigatórias** (Settings → Environment Variables →
 | `PUBLIC_SITE_URL` | URL pública do **web** (usada em callbacks/redirects). |
 | `CORS_ALLOWED_ORIGINS` | origens do web permitidas (CSV). |
 | `COOKIE_CROSS_SITE` | `true` se web e api estão em domínios diferentes (cookie `SameSite=None; Secure`). |
-| `SMTP_HOST` | `smtp.sendgrid.net` (SendGrid). |
+| `SMTP_HOST` | `smtp-relay.brevo.com` (Brevo). |
 | `SMTP_PORT` | `587` (`SMTP_SECURE=false`) — ou `465` (`SMTP_SECURE=true`) se a 587 travar. |
 | `SMTP_SECURE` | `false` p/ 587, `true` p/ 465. |
-| `SMTP_USER` | `apikey` (literal — é assim no SendGrid). |
-| `SMTP_PASS` | a **API Key do SendGrid** (`SG.…`), criada em Settings → API Keys (permissão Mail Send). |
-| `MAIL_FROM` | remetente **verificado** no SendGrid (Single Sender p/ testar, Domain Authentication p/ produção). |
+| `SMTP_USER` | o **login SMTP** da conta Brevo (SMTP & API → SMTP). |
+| `SMTP_PASS` | uma **chave SMTP** da Brevo, criada em SMTP & API → SMTP keys (não é a API key). |
+| `MAIL_FROM` | remetente **verificado** na Brevo (remetente avulso p/ testar, domínio autenticado p/ produção). |
 
 ## Passo único no banco (idempotente)
 
@@ -113,7 +113,7 @@ INSERT INTO drizzle."__drizzle_migrations" (hash, created_at) VALUES
 - **E-mail de verificação é fire-and-forget**: se o envio falhar, o signup ainda
   cria a conta (porém `email_verified=false` → não loga). Para destravar um teste:
   `UPDATE public."user" SET email_verified = true WHERE lower(email) = '<email>';`
-- **Deliverability**: com Single Sender de um Gmail dá pra testar, mas para
-  usuários reais faça **Domain Authentication** no SendGrid (registros DNS).
+- **Deliverability**: com um remetente avulso de Gmail dá pra testar, mas para
+  usuários reais autentique o **domínio** na Brevo (registros DNS).
 - **Rollback**: como o modo Supabase foi removido, o rollback é **redeploy do
   commit anterior** no Vercel (Deployments → Promote), não mais por env var.
