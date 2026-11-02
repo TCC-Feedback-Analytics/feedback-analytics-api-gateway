@@ -155,6 +155,35 @@ Redefine a senha do usuário. Usado na etapa final do fluxo "Esqueci minha senha
 
 ---
 
+### `POST /api/auth/delete-user`
+
+"Excluir minha conta" (etapa 07, LGPD art. 18). Handler nativo do Better Auth (`user.deleteUser` em `src/auth/auth.ts`), com a sessão do cookie.
+
+Apaga **tudo**, sem volta. Antes de apagar o usuário, `deleteEnterpriseOfUser` (`src/auth/enterpriseOnDelete.ts`) apaga, numa transação, a empresa (feedbacks, análises, catálogo, perguntas, pontos de coleta, aparelhos, configuração de IA, jobs e diagnósticos vão em cascata) e as tabelas sem chave estrangeira para ela: `customer`, `collecting_data_enterprise`, `ia_rate_budget` e os links de nova senha. Depois o Better Auth apaga o usuário, e `session`, `account` e `user_onboarding` vão em cascata. O cookie de sessão é limpo.
+
+**Body**
+```json
+{ "password": "senhaAtual" }
+```
+
+Com `password`, o Better Auth confere a senha (a Web sempre pede a senha a quem tem uma). Sem `password`, como quem só entra pelo Google, ele exige uma sessão recente (entrada nas últimas 24 h).
+
+**Response 200**
+```json
+{ "success": true, "message": "User deleted" }
+```
+
+**Erros Possíveis** (códigos do Better Auth)
+
+| Status | Código | Descrição |
+|---|---|---|
+| `400` | `INVALID_PASSWORD` | Senha errada |
+| `400` | `CREDENTIAL_ACCOUNT_NOT_FOUND` | Mandou senha, mas a conta só entra pelo Google |
+| `400` | `SESSION_EXPIRED` | Sem senha e com a sessão aberta há mais de 24 h: entrar de novo |
+| `401` | — | Sem sessão |
+
+---
+
 ## Enterprise
 
 ### `GET /api/protected/user/enterprise`
