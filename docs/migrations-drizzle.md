@@ -48,6 +48,7 @@ Antes da Fase 2 o schema vivia em **dois lugares** que precisavam ser espelhados
 
 1. Edite o arquivo de **domínio** em `drizzle/schema/` (ex.: `enterprise.ts`, `feedback.ts`) — o `schema.ts` é só barrel, não precisa tocar (a não ser que adicione um domínio novo).
 2. `npm run db:generate` → cria `drizzle/000N_*.sql` (**revise o SQL!**).
+   - **Tabela nova:** acrescente na mesma migration `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` e a policy `feedback_app_all`; sem ela, o app (papel `feedback_app`) não enxerga a tabela. Ver [Banco com o mínimo de privilégio](banco-menor-privilegio.md).
 3. `npm run db:migrate` (produção) ou `npm run db:reset` (recria o local) → aplica.
 4. Commit do `schema.ts` + da migration + do snapshot juntos.
 

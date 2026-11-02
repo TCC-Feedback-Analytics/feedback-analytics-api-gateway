@@ -92,6 +92,13 @@
       "when": 1793450837816,
       "tag": "0012_feedback_channel",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793656675596,
+      "tag": "0013_banco_menor_privilegio",
+      "breakpoints": true
     }
   ]
 }
