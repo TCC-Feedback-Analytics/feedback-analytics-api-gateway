@@ -4,6 +4,7 @@
 - [Arquitetura e estrutura](arquitetura-estrutura.md)
 - [Endpoints](endpoints.md)
 - [Migrations (Drizzle)](migrations-drizzle.md)
+- [Banco com o mínimo de privilégio](banco-menor-privilegio.md)
 - [Operação do worker assíncrono (etapa 03)](etapa-03-operacao-worker.md)
 - [Decisões de arquitetura (ADR)](adr/0001-fonte-unica-de-schema.md)
 
