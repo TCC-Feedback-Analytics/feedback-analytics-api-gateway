@@ -22,6 +22,7 @@ import { getDb } from '../db/client.js';
 import { user, session, account, verification } from '../../drizzle/schema.js';
 import { sendResetPasswordEmail, sendVerificationEmail } from './email.js';
 import { provisionEnterpriseForUser } from './enterpriseOnSignup.js';
+import { deleteEnterpriseOfUser } from './enterpriseOnDelete.js';
 
 export function hashBetterAuthPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 10);
@@ -114,6 +115,13 @@ function createAuth() {
       additionalFields: {
         // Telefone do gestor (UNIQUE em `user.phone`); enviado no signUpEmail.
         phone: { type: 'string', required: false, input: true },
+      },
+      // "Excluir minha conta" (POST /api/auth/delete-user): pede a senha de quem tem
+      // uma, ou uma sessão recente (entrada nas últimas 24 h) de quem só entra pelo
+      // Google. Antes de apagar o usuário, apaga a empresa e tudo dela.
+      deleteUser: {
+        enabled: true,
+        beforeDelete: async (deleted) => deleteEnterpriseOfUser(deleted.id),
       },
     },
     socialProviders: googleProviderConfig(),
