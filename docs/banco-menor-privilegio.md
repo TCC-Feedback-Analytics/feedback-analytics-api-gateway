@@ -29,9 +29,9 @@ Com o gateway local rodando como `feedback_app`:
 
 ## Passo a passo da troca (dono)
 
-Faça primeiro no ambiente **developer** e só depois em **produção**.
+A migration só chega ao Supabase pelo workflow **Deploy Api Gateway (Vercel)**, que roda manualmente e só na `main`. Merge na `developer` não muda o banco: o papel `feedback_app` só existe depois do deploy de produção.
 
-1. **Merge e deploy.** O deploy do gateway aplica a migration `0013` com o usuário `postgres`. Nada muda para o app ainda: ele continua entrando como `postgres`.
+1. **Release e deploy.** Faça o merge da release na `main` e rode o workflow **Deploy Api Gateway (Vercel)** com `ok`. Ele aplica a migration `0013` com o usuário `postgres`. Nada muda para o app ainda: ele continua entrando como `postgres`. Para conferir, rode `SELECT rolname FROM pg_roles WHERE rolname = 'feedback_app';` no SQL Editor; deve voltar uma linha.
 2. **Dar a senha ao `feedback_app`.** Gere uma senha só com letras e números, para não precisar escapar na URL:
 
     ```bash
