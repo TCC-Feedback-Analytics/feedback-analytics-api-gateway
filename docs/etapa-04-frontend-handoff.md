@@ -1,5 +1,12 @@
 # Etapa 04 — Handoff para o Frontend (config de IA por empresa / BYO-key)
 
+> **Situação em 03/11/2026: entregue, e o fluxo mudou depois deste handoff.** A tela existe na Web desde 26/08/2026 (rota `/user/edit/ia-settings`, com os arquivos da seção 4). Depois dela:
+> - **04/09/2026:** o modelo passou a vir do catálogo dinâmico `GET /api/protected/user/ia-models` (com busca na Web desde 10/09/2026), no lugar da lista curada da seção 3. A troca só de modelo, com chave já salva, usa `PATCH /api/protected/user/ia-config/model`.
+> - **21/10/2026:** o gestor pode **conectar a conta sem colar a chave**, pelo botão "Conectar com OpenRouter" (OAuth PKCE). A Web manda o código para `POST /api/protected/user/ia-config/openrouter/connect` e o gateway troca pela chave. Colar a chave pelo `PUT` continua possível.
+> - O `PUT` hoje valida chave e modelo em `/models/user` do OpenRouter, não mais em `/auth/key`, e recusa modelo fora do catálogo da conta.
+>
+> O contrato atual está em [endpoints.md](endpoints.md). O resto deste documento é o plano de 31/08/2026; as notas *"Hoje:"* marcam o que mudou.
+
 > **Para quem vai implementar o frontend.** O backend do "cada empresa usa a própria chave OpenRouter" já está pronto e testado no gateway. Falta a **tela no perfil** onde o gestor cola a chave OpenRouter e escolhe o modelo. Este doc tem o contrato dos endpoints, a UX e os arquivos a tocar.
 
 ---
@@ -29,6 +36,7 @@ Base: mesma de hoje (`/api/protected/...`, cookie httpOnly, `credentials: 'inclu
 - **`200`:** `{ "hasKey": true, "provider": "openrouter", "model": "openrouter/auto", "keyHint": "1234" }`
 - **`400` `{ "error": "ia_config_invalid_key" }`** — a chave não passou na validação do OpenRouter (o backend testa em `/auth/key` antes de salvar).
 - **`400` `{ "error": "invalid_payload" }`** — corpo inválido (ex.: sem `apiKey`).
+- *Hoje:* a validação é em `/models/user` e o modelo precisa estar no catálogo da conta. Sem `model`, o backend usa `openrouter/auto`. Erros novos: `400 ia_model_unavailable`, `403 ia_models_forbidden` e `503 ia_models_unavailable`. Com sucesso, o `PUT` também dispara a geração automática das perguntas da empresa.
 
 ### 2.3 Remover a config
 `DELETE /api/protected/user/ia-config`
@@ -51,9 +59,11 @@ Uma seção **"Configuração de IA"** no perfil/configurações do usuário. Co
   - `anthropic/claude-3.5-sonnet`
   - `openai/gpt-4o-mini`
   - `deepseek/deepseek-chat`
+  - *Hoje:* a lista curada saiu. O select carrega `GET /api/protected/user/ia-models` (catálogo público sem chave, catálogo da conta com chave) e tem busca.
 - **Botão "Salvar":** `PUT` com `{ provider: "openrouter", model, apiKey }`. Em sucesso → badge "Configurada" + toast; em erro → toast com a mensagem (ver seção 5).
 - **Botão "Remover chave":** `DELETE` → badge "Sem chave".
 - **Link de ajuda:** um link para `https://openrouter.ai/keys` ("Pegar minha chave OpenRouter").
+- *Hoje:* a tela tem também o botão **"Conectar com OpenRouter"** (`components/user/shared/ConnectOpenRouterButton`), que dispensa colar a chave, e a troca só de modelo vai por `PATCH /api/protected/user/ia-config/model`, sem reenviar a chave.
 
 > O `provider` da tela é sempre **`openrouter`** — os modelos da lista são ids do OpenRouter (inclusive o `google/gemini-2.5-flash`, que roteia pro Gemini). Não precisa de um seletor de provedor.
 
@@ -87,12 +97,14 @@ O `PUT` pode voltar erro tipado em `{ error }`. Mapeie para mensagens claras (pa
 | `enterprise_not_found` | "Empresa não encontrada." (raro; sessão inconsistente) |
 | 5xx / genérico | "Não foi possível salvar agora. Tente novamente." |
 
+*Hoje* há também `ia_model_unavailable`, `ia_models_forbidden`, `ia_models_unavailable` e, no connect, `openrouter_connect_failed`. A lista completa está em [endpoints.md](endpoints.md).
+
 ---
 
 ## 6. Como testar localmente
 
 1. **Gateway** rodando (`npm run dev`) com **`IA_CONFIG_ENCRYPTION_KEY`** setada no `.env` do gateway (gere: `openssl rand -base64 32`). Sem ela, o `PUT` retorna 500.
-2. Precisa de uma **chave OpenRouter real** para o `PUT` passar (o backend valida no `/auth/key`). Pegue em `https://openrouter.ai/keys`.
+2. Precisa de uma **chave OpenRouter real** para o `PUT` passar (o backend valida no `/auth/key`; *hoje*, no `/models/user`). Pegue em `https://openrouter.ai/keys`.
 3. Fluxo: abrir a tela (GET → "Sem chave") → colar a chave + escolher modelo → Salvar (PUT → "Configurada", badge + hint) → recarregar (GET mantém provider/model/hint, campo da chave vazio) → Remover (DELETE → "Sem chave").
 4. Erro: colar uma chave inválida (`sk-or-invalid`) → toast "Chave inválida".
 
@@ -115,3 +127,4 @@ O `PUT` pode voltar erro tipado em `{ error }`. Mapeie para mensagens claras (pa
 - `PUT  /api/protected/user/ia-config` `{ provider:"openrouter", model, apiKey }` → `{ hasKey:true, ... }` | `400 ia_config_invalid_key`
 - `DELETE /api/protected/user/ia-config` → `{ hasKey:false, ... }`
 - A chave **nunca** trafega no GET. Provider da tela = `openrouter`. Modelos = ids do OpenRouter.
+- *Hoje, além destes:* `GET /api/protected/user/ia-models` (catálogo), `PATCH /api/protected/user/ia-config/model` `{ model }` e `POST /api/protected/user/ia-config/openrouter/connect` `{ code, codeVerifier, model? }`.

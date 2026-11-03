@@ -9,83 +9,50 @@ O `api-gateway` é o **Backend-for-Frontend (BFF)** do sistema. Ele é o único 
 Centralizar o backend permite:
 - **Autenticação uniforme** — um único middleware valida a sessão do Better Auth (cookie HttpOnly) para todos os endpoints **protegidos** (os públicos não passam por `requireAuth`)
 - **Isolamento do banco** — as queries ficam no backend; o frontend não precisa de acesso direto ao banco
-- **Orquestração da IA** — o Gateway prepara os dados, chama o `ia-analyze` e persiste os resultados. A análise pode rodar **de forma assíncrona** (fila + worker, etapa 03) e cada empresa pode usar a **própria chave de LLM** (BYO-key, etapa 04) — sem expor a complexidade ao cliente
+- **Orquestração da IA** — o Gateway prepara os dados, chama o `ia-analyze` e persiste os resultados. Todo trabalho de IA roda **de forma assíncrona** (fila + worker, etapa 03) e cada empresa usa a **própria chave de LLM** (BYO-key OpenRouter, etapa 04) — sem expor a complexidade ao cliente
 
 ## Responsabilidades
 
-1. **Validar autenticação** lendo a sessão do cookie httpOnly via Better Auth (`getAuth().api.getSession()`, no middleware `requireAuth`)
+1. **Autenticar** — cadastro com e-mail e senha ou entrada com o Google, sessão em cookie httpOnly validada via Better Auth (`getAuth().api.getSession()`, no middleware `requireAuth`) e exclusão da conta com tudo da empresa
 2. **Expor endpoints REST** para o frontend React
 3. **Ler e escrever** no banco de dados (Postgres, via Drizzle)
-4. **Orquestrar serviços** — enfileira pedidos; o worker busca feedbacks, monta batches, chama `ia-analyze` e persiste resultados
+4. **Calcular as métricas do escopo** — os números das telas e do diagnóstico saem do mesmo cálculo
+5. **Orquestrar serviços** — enfileira pedidos; o worker busca feedbacks, monta batches, chama `ia-analyze` e persiste resultados
 
-## Endpoints Disponíveis
+## Funcionalidades
 
-### Protegidos (sessão via cookie HttpOnly)
+- **Conta:** cadastro com senha (cria a empresa e as 3 perguntas padrão), entrada com o Google (a empresa nasce na primeira entrada e a pessoa completa o cadastro com nome, telefone e aceite dos termos), confirmação de e-mail, recuperação de senha e **exclusão da conta** (`src/auth/enterpriseOnDelete.ts` apaga a empresa e tudo dela antes de o Better Auth apagar o usuário).
+- **Empresa e coleta:** dados da empresa, perguntas do feedback geral e dos itens do catálogo (produto, serviço, departamento), ativação do QR Code da empresa e de cada item, e o **campo de comentário por escopo** (padrão, texto próprio ou oculto).
+- **Formulário público:** dados da empresa e perguntas do escopo, envio do feedback com o **canal de coleta** (QR Code, link ou NFC; o "Testar o formulário" fica fora das métricas).
+- **Métricas do escopo:** estatísticas, perguntas, movimento no tempo, dias e horários de pico, clientes que voltam, avaliações por canal e participação nos comentários.
+- **IA:** análise dos feedbacks pendentes, relatório de insights, **diagnóstico do escopo** e **geração automática das perguntas da empresa** quando o contexto e a IA estão configurados — tudo pela fila.
+- **Configuração de IA:** chave OpenRouter da empresa (colada ou por "Conectar com OpenRouter"), cifrada no banco, e escolha do modelo.
+- **Guia do sistema:** estado do tour da Web por usuário ([integração](onboarding-api.md)).
 
-| Método | Caminho | Descrição |
+## Superfícies da API
+
+Todas as rotas ficam sob `/api`. A referência completa, rota a rota, está em [Endpoints](./endpoints.md).
+
+| Superfície | Prefixo | Acesso |
 |---|---|---|
-| `GET` | `/api/protected/user/auth_user` | Dados do usuário autenticado (da sessão) |
-| `PATCH` | `/api/protected/user/email` | Atualiza e-mail (envia confirmação) |
-| `PATCH` | `/api/protected/user/metadados` | Atualiza metadados do usuário (ex.: nome) |
-| `POST` | `/api/protected/user/phone/start` | Inicia verificação de telefone (envia SMS) |
-| `POST` | `/api/protected/user/phone/verify` | Confirma o código SMS do telefone |
-| `PATCH` | `/api/protected/user/password` | Redefine a senha (usa sessão de recuperação) |
-| `GET` | `/api/protected/user/enterprise` | Dados da empresa |
-| `PATCH` | `/api/protected/user/enterprise` | Atualiza empresa |
-| `GET` | `/api/protected/user/collecting_data` | Configurações de coleta |
-| `PATCH` / `PUT` | `/api/protected/user/collecting_data` | Atualiza / upsert coleta |
-| `GET` | `/api/protected/user/feedbacks` | Lista feedbacks |
-| `GET` | `/api/protected/user/feedbacks/stats` | Estatísticas (inclui contagem de pendentes por escopo `pendingCount` e métricas de satisfação/sentimento) |
-| `GET` | `/api/protected/user/feedbacks/questions` | Métricas determinísticas por pergunta/subpergunta no escopo |
-| `GET` | `/api/protected/user/feedbacks/timeline` | Movimento no tempo: avaliações e média por dia, semana ou mês, no fuso do gestor |
-| `GET` | `/api/protected/user/feedbacks/heatmap` | Dias e horários de pico: avaliações e média por dia da semana × faixa do dia |
-| `GET` | `/api/protected/user/feedbacks/customers` | Clientes que voltam: % de avaliações de quem já avaliou e média de quem volta × primeira vez |
-| `GET` | `/api/protected/user/feedbacks/insights/report` | Relatório de insights |
-| `GET` | `/api/protected/user/feedbacks/analysis` | Análises da IA |
-| `GET` | `/api/protected/user/collection-points/qr/status` | Status do QR Code da empresa |
-| `POST` | `/api/protected/user/collection-points/qr/enable` | Ativa o QR Code da empresa |
-| `POST` | `/api/protected/user/collection-points/qr/disable` | Desativa o QR Code da empresa |
-| `GET` | `/api/protected/user/collection-points/qr/catalog` | Lista itens de catálogo + status de QR (query `kind`) |
-| `POST` | `/api/protected/user/collection-points/qr/catalog/questions/upsert` | Upsert das perguntas de um item de catálogo |
-| `POST` | `/api/protected/user/collection-points/qr/catalog/enable` | Ativa o QR Code de um item de catálogo |
-| `POST` | `/api/protected/user/collection-points/qr/catalog/disable` | Desativa o QR Code de um item de catálogo |
-| `POST` | `/api/protected/ia-analyze/analyze-raw` | Sempre enfileira análise de pendentes: **`202` + `jobId`** |
-| `POST` | `/api/protected/ia-analyze/regenerate-insights` | Sempre enfileira relatório; `analyze_pending: true` inclui a análise prévia |
-| `GET` | `/api/protected/ia-analyze/jobs/:id` | Status/progresso de um job de análise (polling) |
-| `GET` | `/api/protected/user/ia-config` | Config de IA da empresa (BYO-key) — `hasKey`/provedor/modelo (**nunca** a chave) |
-| `PUT` | `/api/protected/user/ia-config` | Salva/atualiza a chave OpenRouter (cifrada) + modelo |
-| `DELETE` | `/api/protected/user/ia-config` | Remove a config de IA (bloqueia análises até nova configuração) |
-
-### Públicos (sem autenticação)
-
-| Método | Caminho | Descrição |
-|---|---|---|
-| `GET` | `/api/health` | Health check |
-| `POST` | `/api/public/auth/login` | Login (cria sessão via cookie) |
-| `POST` | `/api/public/auth/logout` | Logout (invalida o cookie) |
-| `POST` | `/api/public/auth/register` | Cadastro de nova conta |
-| `POST` | `/api/public/auth/forgot-password` | Solicita e-mail de redefinição de senha |
-| `POST` | `/api/public/auth/resend-confirmation` | Reenvia o e-mail de confirmação de cadastro |
-| `GET` | `/api/public/auth/callback` | Callback de confirmação/recuperação (redireciona) |
-| `GET` | `/api/public/enterprise/:id` | Dados públicos da empresa + perguntas para o formulário |
-| `POST` | `/api/public/qrcode/feedback` | Submissão de feedback via QR Code |
-
-### Interno (token, não sessão)
-
-| Método | Caminho | Descrição |
-|---|---|---|
-| `POST` | `/api/internal/worker/tick` | Drena a fila de análise (etapa 03). Protegido por `WORKER_TICK_TOKEN` (header `x-worker-token`), chamado por um cron externo. |
+| Pública | `/api/public/...` e `/api/health` | Sem autenticação |
+| Protegida | `/api/protected/...` | Sessão do Better Auth (cookie HttpOnly), via `requireAuth` |
+| Interna | `/api/internal/worker/tick` | Token `WORKER_TICK_TOKEN` (header `x-worker-token`), chamado pelo cron de reserva do GitHub Actions |
+| Better Auth | `/api/auth/*` | Handler nativo do Better Auth (Google, exclusão de conta e demais rotas dele) |
 
 ## Tecnologias
 
 - **Runtime:** Node.js 20+ com TypeScript (ESM)
 - **Framework:** Express 5
-- **Auth:** **Better Auth** (único provedor) — sessão em cookie httpOnly, validada por `getAuth().api.getSession()` em `requireAuth`; não há `Authorization: Bearer`
-- **Dados:** **Drizzle ORM** (`DATABASE_URL`) como único caminho — a role do Drizzle ignora a RLS, com isolamento por `enterprise_id` na aplicação. O Supabase permanece apenas como **provedor do Postgres**
+- **Auth:** **Better Auth** (único provedor), com e-mail e senha e Google — sessão em cookie httpOnly, validada por `getAuth().api.getSession()` em `requireAuth`; não há `Authorization: Bearer`
+- **Dados:** **Drizzle ORM** (`DATABASE_URL`) como único caminho — o app entra com o papel `feedback_app`, que só lê e escreve dados ([banco com o mínimo de privilégio](./banco-menor-privilegio.md)); a RLS deixa esse papel ver todas as linhas, então o isolamento por `enterprise_id` fica na aplicação. O Supabase permanece apenas como **provedor do Postgres**
+- **E-mail:** nodemailer via SMTP (Mailpit no local, Brevo em produção)
+- **Contratos:** `@feedback/lib-shared` (tag `v1.8.0`)
 - **Deploy:** Vercel (serverless)
 
 ## Veja Também
 
 - [Arquitetura e Estrutura](./arquitetura-estrutura.md)
 - [Referência de Endpoints](./endpoints.md)
+- [Todos os documentos](./README.md)
 - [Regras de Negócio](https://github.com/TCC-Feedback-Analytics/feedback-analytics/blob/main/docs/produto/regras-negocio.md)
