@@ -2,8 +2,9 @@
  * Provider de e-mail transacional (nodemailer via SMTP), escolhido por env:
  *  - DEV/local: Mailpit (`SMTP_HOST=127.0.0.1`, `SMTP_PORT=1025`, sem auth/TLS) —
  *    captura o e-mail para inspeção em http://localhost:8025, sem envio real.
- *  - PROD: SMTP do Resend (`smtp.resend.com`, `SMTP_USER=resend`, `SMTP_PASS=<API key>`,
- *    `SMTP_SECURE=true`) ou qualquer SMTP corporativo. Mesmo caminho de código.
+ *  - PROD: SMTP da Brevo (`smtp-relay.brevo.com`, `SMTP_PORT=587`, `SMTP_SECURE=false`,
+ *    `SMTP_USER=<login SMTP>`, `SMTP_PASS=<chave SMTP, não a API key>`) ou qualquer
+ *    outro SMTP. Mesmo caminho de código.
  *
  * Na Vercel, os disparos são registrados com `waitUntil` para que a Function
  * continue viva até o SMTP concluir, sem bloquear a resposta HTTP. Localmente,
