@@ -1,5 +1,11 @@
 # Plano de execução — Fase 2 do ADR-0001 (re-baseline para fonte única)
 
+> **Situação em 2026-11-03:** executado em 2026-07-08, no mesmo dia em que foi escrito (sem esperar os gatilhos abaixo), e por um caminho diferente do plano em alguns passos. Este runbook fica como registro do plano; o que valeu está no "Estado da implementação" do [ADR-0001](0001-fonte-unica-de-schema.md).
+> - **Feito no repositório (Passos 2, 3, 4, 6, 7 e 9):** tabelas Better Auth no Drizzle (hoje `drizzle/schema/auth.ts`), baseline novo `drizzle/0000_great_talisman.sql` + `0001_functions_triggers_rls.sql`, `db:reset` = DROP → `drizzle-kit migrate` → seed, `db/schema/` e guard-rail golden removidos, `schema-drift.yml` trocado por `schema-migrations.yml`, ADR marcado como `Aceito`.
+> - **Desvios do plano:** as policies RLS foram removidas, não mantidas saneadas (3.2). Em 2026-11-02 a migration `0013` voltou a usar RLS, com outro objetivo: a policy `feedback_app_all` para o papel do app. As 4 funções legadas foram dropadas, não portadas (7.2). O `tracked_devices.blocked_by` ficou como `uuid` sem FK, em vez de apontar para `public.user` (7.1). O shim foi removido, não preservado (6.1–6.2). O `db/cutover/*` não virou migration (Passo 5): ficou como histórico, e a reconciliação de produção virou o script manual `db/cutover/fase2-prod-reconcile.sql`.
+> - **Passo 8:** baseline reescrito (8.1), e o `deploy-api.yml` roda `npm run db:migrate` desde 2026-09-10 (8.2). O repositório não mostra se o reconcile e a marcação do baseline foram rodados em produção, se houve deploy de teste (Gate 8), nem se o 7.4 (dropar `auth.users` de prod) foi feito.
+> - **Passos 0 e 1 (backup, tag, foto de prod):** não verificáveis pelo repositório; a tag `pre-fase2-rebaseline` não existe neste clone.
+
 > Companheiro do [ADR-0001](0001-fonte-unica-de-schema.md). O ADR **decide** consolidar
 > o schema em `drizzle/schema.ts` + migrations; este documento é o **runbook** passo a
 > passo do re-baseline. Não executar antes dos gatilhos da Fase 2 (pós-entrega/defesa do

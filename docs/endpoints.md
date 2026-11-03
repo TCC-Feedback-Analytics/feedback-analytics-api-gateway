@@ -42,14 +42,16 @@ Retorna o usuário autenticado, extraído da sessão (injetado por `requireAuth`
 
 ### `PATCH /api/protected/user/email`
 
-Inicia a troca de e-mail. O Better Auth envia um link de confirmação para o novo endereço; a mudança só é efetivada após o callback.
+Inicia a troca de e-mail pelo `changeEmail` do Better Auth, com retorno para `<web>/auth/success`. O link do e-mail passa pelo `/api/auth/verify-email` do Better Auth, não pelo `GET /public/auth/callback`.
+
+> **Hoje a troca não acontece:** `user.changeEmail.enabled` não está ligado em `src/auth/auth.ts`, então o Better Auth recusa o pedido e a rota responde `400 update_failed`.
 
 **Body**
 ```json
 { "email": "novo@empresa.com" }
 ```
 
-**Response 200**
+**Response 200** — devolve o e-mail pedido, antes da confirmação.
 ```json
 { "user": { "id": "uuid", "email": "novo@empresa.com" } }
 ```
@@ -60,7 +62,14 @@ Inicia a troca de e-mail. O Better Auth envia um link de confirmação para o no
 
 ### `PATCH /api/protected/user/metadados`
 
-Atualiza metadados do usuário (ex.: `full_name`).
+Atualiza metadados do usuário. Hoje só o `full_name`, que vai para `user.name`.
+
+**Body**
+```json
+{ "full_name": "Maria" }
+```
+
+`full_name` é obrigatório, de 2 a 120 caracteres.
 
 **Response 200**
 ```json
@@ -82,12 +91,13 @@ O Google dá o nome da pessoa e o e-mail, que já vem verificado. Ao criar a con
 { "fullName": "Padaria Bom Pão", "phone": "+5511987654321", "terms": true }
 ```
 
-- `fullName` é o nome do negócio e vai para `user.name`; `phone` vai para `user.phone`.
+- `fullName` é o nome do negócio (2 a 160 caracteres) e vai para `user.name`; `phone` (formato `+55DDXXXXXXXXX`) vai para `user.phone`; `terms` precisa ser `true`. Campos extras são recusados.
 - O aceite (`terms_version: v1` e a data) vai para a empresa. A empresa também é criada aqui, se ainda não existir.
 - **Respostas:**
   - `200 { ok: true }`;
   - `400 invalid_payload`;
-  - `409 phone_taken`: o telefone é de outra conta.
+  - `409 phone_taken`: o telefone é de outra conta;
+  - `500 internal_server_error`.
 - **Mesmo e-mail com senha e com Google = a mesma conta** (`accountLinking` com o Google como provedor confiável).
 - **Ligar e desligar:** o Google só funciona com `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` no ambiente.
 
@@ -131,12 +141,14 @@ Registra/atualiza o telefone do usuário. **Não há provedor de SMS**: o númer
 
 ### `PATCH /api/protected/user/password`
 
-Redefine a senha do usuário. Usado na etapa final do fluxo "Esqueci minha senha", com a sessão temporária estabelecida pelo callback de recuperação.
+Redefine a senha do usuário. Usado na etapa final do fluxo "Esqueci minha senha". Não usa a sessão: o token de redefinição vem do cookie HttpOnly `ba_reset`, que o `GET /public/auth/callback` grava (vale 1 h e só é enviado para esta rota). Sem o cookie, mesmo com sessão aberta, a resposta é `401 reset_password_invalid_token`. Com sucesso, o cookie é apagado.
 
 **Body**
 ```json
-{ "password": "novaSenha123", "confirmPassword": "novaSenha123" }
+{ "password": "sol azul de manha", "confirmPassword": "sol azul de manha" }
 ```
+
+A senha segue a regra do cadastro: pelo menos 10 caracteres, `confirmPassword` igual e nota 4 no zxcvbn.
 
 **Response 200**
 ```json
@@ -184,6 +196,43 @@ Com `password`, o Better Auth confere a senha (a Web sempre pede a senha a quem 
 
 ---
 
+## Onboarding (guia do sistema)
+
+O guia é do **usuário**, não da empresa: a leitura e a gravação usam o id da sessão. As respostas usam `Cache-Control: no-store`.
+
+### `GET /api/protected/user/onboarding/system-guide`
+
+Diz se o usuário já terminou ou pulou o guia do sistema.
+
+**Response 200**
+```json
+{ "tourKey": "system-guide", "version": 1, "status": "pending", "finishedAt": null }
+```
+
+> `status` ∈ `pending` (nunca terminou nem pulou) · `completed` · `skipped`. `finishedAt` é o ISO de quando terminou ou pulou (`null` em `pending`).
+
+**Response 500** `internal_error`.
+
+---
+
+### `PUT /api/protected/user/onboarding/system-guide`
+
+Grava o fim do guia.
+
+**Body** — só estes campos; campos extras são recusados.
+```json
+{ "version": 1, "status": "completed" }
+```
+
+- `version` precisa ser a versão atual do guia (`1`); `status` ∈ `completed` · `skipped`.
+- `completed` sempre prevalece: depois de concluir, um `skipped` não volta atrás. Repetir o mesmo status mantém o `finishedAt`; só a passagem de `skipped` para `completed` renova a data.
+
+**Response 200** — mesmo formato do `GET`.
+
+**Response 400** `invalid_payload` · **500** `internal_error`.
+
+---
+
 ## Enterprise
 
 ### `GET /api/protected/user/enterprise`
@@ -211,13 +260,15 @@ Retorna os dados cadastrais da empresa associada ao usuário autenticado, inclui
 
 > Do usuário, este endpoint retorna apenas `id`, `email` e `phone` — **não** inclui `full_name`. O `full_name` é exposto via `user_metadata.full_name` por outros endpoints (`GET /user/auth_user`, `PATCH /user/metadados`).
 
+**Response 404** `enterprise_not_found` — usuário sem empresa.
+
 ---
 
 ### `PATCH /api/protected/user/enterprise`
 
 Atualiza dados cadastrais parciais da empresa (versão e aceite dos termos).
 
-**Body (todos os campos são opcionais)**
+**Body (os dois são opcionais, mas pelo menos um precisa vir)**
 ```json
 {
   "terms_version": "v2",
@@ -225,9 +276,13 @@ Atualiza dados cadastrais parciais da empresa (versão e aceite dos termos).
 }
 ```
 
+`terms_version` tem de 1 a 32 caracteres; `terms_accepted_at` é data e hora ISO 8601.
+
 > O CPF/CNPJ não é mais pedido nem guardado (migration `0009`): o sistema não usa esse dado (LGPD, necessidade).
 
 **Response 200** — mesmo formato de `GET /enterprise`.
+
+**Response 400** `invalid_payload` (body vazio ou fora do schema) · **401** `enterprise_not_found` (usuário sem empresa; o código vem com `401`, não `404`).
 
 ---
 
@@ -258,15 +313,31 @@ Retorna as configurações de coleta da empresa — tipos ativos, catálogo e pe
 }
 ```
 
+- `catalog_*` traz só os itens `ACTIVE`, ordenados por `sort_order`; `company_feedback_questions` são as perguntas COMPANY, cada uma com as `subquestions`.
+- Como esta leitura é feita em toda página protegida, ela também aciona o worker se a empresa tiver job de IA parado na fila.
+
+**Response 404** `collecting_data_not_found` — falha ao ler os dados de coleta.
+
 ---
 
 ### `PATCH /api/protected/user/collecting_data`
 
-Atualiza parcialmente as configurações de coleta. **Response 200** — mesmo formato de `GET` (objeto `collecting`).
+Atualiza parcialmente as configurações de coleta: só os campos enviados mudam.
+
+**Body** — os campos do `GET` (`company_objective`, `analytics_goal`, `business_summary`, `main_products_or_services`, `uses_company_*`), mais:
+
+- `catalog_products` / `catalog_services` / `catalog_departments`: a lista do tipo, com itens `{ id?, name, description?, sort_order?, status? }`. Item sem `name` é ignorado. `uses_company_<tipo>: false` desativa todos os itens do tipo.
+- `company_feedback_questions`: as 3 perguntas COMPANY (`question_order` 1 a 3), cada uma com 20 a 150 caracteres e até 3 subperguntas no mesmo limite.
+
+**Response 200** — mesmo formato de `GET` (objeto `collecting`).
+
+**Erros:** `400 empty_payload` (nenhum campo conhecido), `400 upsert_failed` (perguntas inválidas ou falha de integridade ao gravar), `404 enterprise_not_found`.
 
 ### `PUT /api/protected/user/collecting_data`
 
-Upsert completo (cria se não existir, substitui se existir). **Response 200** — mesmo formato de `GET` (objeto `collecting`).
+Upsert completo (cria se não existir, substitui se existir). Campo ausente vira `null`/`false`, os três catálogos são sincronizados e as 3 perguntas COMPANY também; sem `company_feedback_questions`, entram as perguntas padrão. **Response 200** — mesmo formato de `GET` (objeto `collecting`). Erros: `400 upsert_failed` e `404 enterprise_not_found`.
+
+> **Perguntas automáticas da empresa.** O `PUT` e o `PATCH` que mexe nos campos da empresa (não só no catálogo ou nas perguntas) tentam gerar as 3 perguntas COMPANY com a IA (`autoGenerateCompanyQuestions`). Só sai pedido quando a empresa tem os três campos de contexto, a IA configurada e as perguntas ainda são as padrão. O resultado não volta nesta resposta: a Web acompanha por `GET /ia-analyze/jobs/company-questions/latest`.
 
 ---
 
@@ -297,17 +368,30 @@ Lista todos os feedbacks da empresa com paginação e filtros. Inclui os do "Tes
       "rating": 5,
       "channel": "QR | LINK | NFC | TEST | null",
       "created_at": "2026-05-12T12:00:00Z",
+      "updated_at": "2026-05-12T12:00:00Z",
       "collection_points": {
         "id": "uuid",
         "name": "Caixa Principal",
         "type": "QR_CODE",
         "identifier": "uuid | null",
         "catalog_item_id": "uuid | null",
-        "catalog_item_name": null,
-        "catalog_item_kind": null,
-        "catalog_items": null
+        "catalog_item_name": "Produto X | null",
+        "catalog_item_kind": "PRODUCT | SERVICE | DEPARTMENT | null",
+        "catalog_items": { "name": "Produto X", "kind": "PRODUCT" }
       },
-      "feedback_question_answers": []
+      "tracked_devices": {
+        "id": "uuid",
+        "device_fingerprint": "md5",
+        "user_agent": "Mozilla/5.0 ...",
+        "ip_address": "203.0.113.10",
+        "feedback_count": 1,
+        "is_blocked": false,
+        "customer_id": "uuid | null",
+        "customer": { "id": "uuid", "name": "Maria", "email": "maria@exemplo.com", "gender": "Feminino" }
+      },
+      "feedback_question_answers": [
+        { "question_id": "uuid", "question_text_snapshot": "Como você avalia o atendimento?", "answer_value": "OTIMA", "answer_score": 5 }
+      ]
     }
   ],
   "pagination": {
@@ -320,6 +404,11 @@ Lista todos os feedbacks da empresa com paginação e filtros. Inclui os do "Tes
   }
 }
 ```
+
+- Ordem: mais recentes primeiro. `search` busca no texto do comentário (`ILIKE`, sem diferença de maiúsculas).
+- `catalog_items` é `null` no QR da empresa; `tracked_devices` é `null` sem aparelho, e `customer` é `null` sem cliente vinculado.
+
+**Erros:** `404 enterprise_not_found` · `500 internal_server_error`.
 
 ---
 
@@ -376,11 +465,11 @@ O endpoint expõe **duas lentes** complementares, ambas segmentadas pelo escopo 
 - **Lente SATISFAÇÃO (estrelas):** `starMean` (média de notas 1–5) com `starMeanCI` (IC t, em unidade de nota), `netSatisfaction` (%(4–5) − %(1–2), em [-100,100]), `csat` (Top-2-Box: % de notas 4–5 + IC de Wilson em %) e `confidenceTier` pela quantidade de feedbacks no escopo.
 - **Lente SENTIMENTO (IA/texto):** `aiSentiment` agrega o sentimento classificado pela IA sobre o **subconjunto já analisado**, com `netSentimentScore` (NSS = (pos−neg)/analisados × 100) e `confidenceTier` por quantidade analisada. **Só está presente quando `totalAnalyzed > 0`** (omitido caso contrário).
 
-`channelBreakdown` diz por onde chegaram as avaliações no recorte: `[{ channel: "QR" | "LINK" | "NFC" | null, count, mean, ci }]`, na ordem QR, link, NFC e sem marca (`null`, os feedbacks de antes da etapa 06 e QR Codes antigos). O `TEST` não entra, como em todas as métricas.
+`channelBreakdown` diz por onde chegaram as avaliações no recorte: `[{ channel: "QR" | "LINK" | "NFC" | null, count, mean, ci }]`, na ordem QR, link, NFC e sem marca (`null`, os feedbacks de antes da etapa 06 e QR Codes antigos). Canal sem avaliação no recorte não aparece. O `TEST` não entra, como em todas as métricas.
 
-`commentParticipation` diz quantos escreveram comentário (`withComment`, `pct`) e quantos desses comentários são curtos, com menos de 20 caracteres (`shortComments`). `commentField` diz como está o campo de comentário nos pontos de coleta do recorte: `hidden` ∈ `all` · `some` · `none` e `prompt` (a pergunta própria, quando o recorte é um ponto só). A Web usa os dois para sugerir mudar o campo, pela mesma regra que vai ao diagnóstico da IA.
+`commentParticipation` diz quantos escreveram comentário: `total`, `withComment`, `pct` com o IC em `ci`, `confidenceTier`, a média das estrelas de quem comentou e de quem não comentou (`withCommentRating` / `withoutCommentRating`, `{ n, mean, ci }` ou `null`) e quantos desses comentários são curtos, com menos de 20 caracteres (`shortComments`). `commentField` diz como está o campo de comentário nos pontos de coleta do recorte: `hidden` ∈ `all` · `some` · `none` e `prompt` (a pergunta própria, quando o recorte é um ponto só). A Web usa os dois para sugerir mudar o campo, pela mesma regra que vai ao diagnóstico da IA.
 
-`totalAnalyzed`/`pendingCount` indicam quantos feedbacks do escopo já têm análise da IA e quantos faltam (`totalFeedbacks − totalAnalyzed`); `latestAnalysisAt` é o timestamp ISO da análise mais recente (ou `null`).
+`totalAnalyzed`/`pendingCount` indicam quantos feedbacks do escopo já têm análise da IA e quantos faltam. Como o comentário é opcional, só quem escreveu espera pela IA: `pendingCount = max(0, commentParticipation.withComment − totalAnalyzed)`. `latestAnalysisAt` é o timestamp ISO da análise mais recente (ou `null`).
 
 > `sentimentBreakdown` é derivado **por estrela** (positive = notas 4–5, neutral = 3, negative = 1–2) e mantido por **compatibilidade**. O sentimento real do texto vem da IA em `aiSentiment` — as duas leituras podem divergir.
 >
@@ -478,7 +567,7 @@ Dias e horários de pico: quantas avaliações chegaram e a média das notas em 
 
 Clientes que voltam: quantas avaliações vieram de quem já tinha avaliado a empresa e se a nota de quem volta é maior ou menor que a de quem avalia pela primeira vez, no escopo e no período escolhidos.
 
-- **Quem é o cliente:** o aparelho identificado pelo anti-spam (`tracked_device_id`). Por isso o número é aproximado, e a resposta não traz nenhum dado pessoal.
+- **Quem é o cliente:** o aparelho identificado pelo anti-spam (`tracked_device_id`). Por isso o número é aproximado, e a resposta não traz nenhum dado pessoal. O fingerprint do aparelho inclui o dia (`MD5(userAgent | IP | dia)`, ver `POST /public/qrcode/feedback`), então o mesmo aparelho ganha outro registro a cada dia.
 - **Quando a avaliação é "de quem volta":** quando o mesmo aparelho já tinha avaliado a **empresa** antes, em qualquer escopo. A numeração usa `row_number()` por aparelho, com o filtro de empresa dentro da subconsulta; escopo e período recortam depois.
 - **Sem aparelho:** essas avaliações ficam de fora dos percentuais e são contadas em `unidentified`.
 
@@ -510,7 +599,7 @@ Clientes que voltam: quantas avaliações vieram de quem já tinha avaliado a em
 | Campo | O que é |
 |---|---|
 | `identified` | avaliações com aparelho identificado |
-| `returningPct` | % de `returningCount` sobre `identified`, com o IC de Wilson em `returningPctCI` |
+| `returningPct` | % de `returningCount` sobre `identified`, com o IC de Wilson em `returningPctCI`; os dois são `null` com `identified = 0` |
 | `customers` | aparelhos distintos no escopo e no período |
 | `returningCustomers` | desses aparelhos, os que avaliaram de novo no escopo e no período |
 | `firstTime` / `returning` | média das estrelas de cada grupo, com o IC t; `null` sem avaliações |
@@ -617,7 +706,7 @@ Retorna o relatório de insights armazenado no banco (leitura — não dispara n
 }
 ```
 
-> Quando não há relatório gerado ainda, retorna `summary: null` e `recommendations: []`.
+> Quando não há relatório gerado ainda, retorna `summary: null`, `recommendations: []` e `updatedAt: null`, com o `scopeType`/`catalogItemId` pedidos.
 
 ---
 
@@ -710,6 +799,8 @@ Retorna se o QR Code da empresa (escopo `COMPANY`) está ativo.
 { "active": true, "id": "uuid | null" }
 ```
 
+**Erros:** `404 enterprise_not_found` e `500 collection_point_error`, os dois com `active: false` no corpo.
+
 ---
 
 ### `POST /api/protected/user/collection-points/qr/enable`
@@ -721,6 +812,8 @@ Ativa (ou cria) o ponto de coleta de QR Code da empresa.
 { "id": "uuid", "active": true }
 ```
 
+**Erros:** `404 enterprise_not_found` · `500 unable_to_create_qr_cp` ou `unable_to_activate_qr`.
+
 ---
 
 ### `POST /api/protected/user/collection-points/qr/disable`
@@ -731,6 +824,8 @@ Desativa o ponto de coleta de QR Code da empresa.
 ```json
 { "active": false }
 ```
+
+**Erros:** `404 enterprise_not_found` · `500 unable_to_disable_qr`.
 
 ---
 
@@ -749,13 +844,13 @@ Lista os itens de catálogo de um tipo, com o status do QR Code e o snapshot de 
 { "items": [ { "catalog_item_id": "uuid", "name": "Produto X", "description": "...", "kind": "PRODUCT", "active": true, "collection_point_id": "uuid | null", "questions": [] } ] }
 ```
 
-**Response 400** `collection_point_error` — `kind` inválido ou ausente.
+**Response 400** `collection_point_error` — `kind` inválido ou ausente. **404** `enterprise_not_found` · **500** `collection_point_error`.
 
 ---
 
 ### `POST /api/protected/user/collection-points/qr/catalog/questions/upsert`
 
-Cria/atualiza as perguntas dinâmicas de um item de catálogo. O array `questions` deve conter **sempre os 3 slots** (`question_order` 1, 2 e 3); desses, **1 a 3 podem ter texto** (20–150 caracteres cada) e os demais ficam vazios. Cada slot aceita até 3 subperguntas. Esvaziar um slot faz **soft-delete** (`is_active = false`), preservando o histórico de respostas; o editor lê apenas registros `is_active = true`.
+Cria/atualiza as perguntas dinâmicas de um item de catálogo. O array `questions` deve conter **sempre os 3 slots** (`question_order` 1, 2 e 3); desses, **até 3 podem ter texto** (20–150 caracteres cada) e os demais ficam vazios. O controller não exige um mínimo: os 3 vazios desativam todas as perguntas do item. Cada slot aceita até 3 subperguntas (`subquestion_order`, `subquestion_text`, `is_active`), no mesmo limite de 20–150 caracteres. Slot com texto é gravado como ativo; esvaziar um slot faz **soft-delete** (`is_active = false`), preservando o histórico de respostas; o editor lê apenas registros `is_active = true`.
 
 **Body**
 ```json
@@ -774,7 +869,18 @@ Cria/atualiza as perguntas dinâmicas de um item de catálogo. O array `question
 { "catalog_item_id": "uuid", "questions": [] }
 ```
 
-**Response 400** `invalid_payload` — o array `questions` não tem os 3 slots (`questions_must_have_3_slots`) ou o texto está fora de 20–150 caracteres.
+**Response 400** `invalid_payload`, com o motivo em `reason`:
+
+| `reason` | Quando |
+|---|---|
+| `catalog_item_id_missing` | Sem `catalog_item_id` |
+| `questions_must_have_3_slots` | `questions` não é um array de 3 itens |
+| `question_length_invalid` / `subquestion_length_invalid` | Texto fora de 20–150 caracteres (vem com `question_order` e, na subpergunta, `subquestion_order`) |
+| `active_question_without_text` / `active_subquestion_without_text` | `is_active: true` com o texto vazio |
+| `duplicate_question_order` / `duplicate_subquestion_order` | Ordem repetida |
+| `question_not_object` / `subquestion_not_object` | Item que não é objeto |
+
+**Response 404** `collection_point_error` (item inexistente, de outra empresa ou inativo) ou `enterprise_not_found`. **500** `update_failed` — falha ao gravar (nada é salvo).
 
 ---
 
@@ -792,6 +898,8 @@ Ativa (ou cria) o QR Code de um item de catálogo específico.
 { "catalog_item_id": "uuid", "collection_point_id": "uuid", "active": true }
 ```
 
+**Erros:** `400 collection_point_error` (sem `catalog_item_id`) · `404 collection_point_error` (item inexistente, de outra empresa ou inativo) · `404 enterprise_not_found` · `500 unable_to_create_qr_cp` ou `unable_to_activate_qr`.
+
 ---
 
 ### `POST /api/protected/user/collection-points/qr/catalog/disable`
@@ -807,6 +915,8 @@ Desativa o QR Code de um item de catálogo específico.
 ```json
 { "catalog_item_id": "uuid", "active": false }
 ```
+
+**Erros:** `400 collection_point_error` (sem `catalog_item_id`) · `404 enterprise_not_found` · `500 unable_to_disable_qr`.
 
 ---
 
@@ -957,9 +1067,11 @@ o id e acompanhá-lo por `GET /jobs/:id`.
 
 Retorna o objeto de status acima, incluindo jobs terminados.
 
-- `phase`: analyzing, generating, generating_questions ou diagnosing (diagnóstico do escopo).
+- `phase`: analyzing, generating, synthesizing (a síntese final do relatório, um passo
+  por relatório), generating_questions ou diagnosing (diagnóstico do escopo).
 - `diagnosisId`: no job do diagnóstico do escopo concluído, o id do resultado; `null` nos demais.
-- `done/total`: feedbacks na fase analyzing; lotes na fase generating.
+- `done/total`: feedbacks na fase analyzing; nas fases generating e synthesizing,
+  passos, com `total` = lotes + uma síntese por relatório.
   Os contadores passam a representar a nova fase quando o job unificado avança.
 - `status`: queued, running, waiting_budget, completed ou failed.
 - `waiting_budget`: espera automática pela próxima janela de cota.
@@ -1001,7 +1113,7 @@ no polling deve reconectar, não declarar falha do job. Operação local e de pr
 | Status | Corpo | Quando |
 |---|---|---|
 | `202` | `{ "jobId", "status", "deduped", "cached": false, "diagnosisId": null }` | Foi para a fila. Acompanhe por `GET /jobs/:id` até `completed` e leia o `diagnosisId` |
-| `200` | `{ "jobId": null, "status": "completed", "cached": true, "diagnosisId" }` | Já existe diagnóstico do mesmo escopo com exatamente os mesmos dados (mesmo hash): não paga IA de novo |
+| `200` | `{ "jobId": null, "status": "completed", "deduped": false, "cached": true, "diagnosisId" }` | Já existe diagnóstico do mesmo escopo com exatamente os mesmos dados (mesmo hash): não paga IA de novo |
 
 O job é um só por escopo e item. Pedir de novo enquanto um está ativo devolve o mesmo job (`deduped: true`), mesmo com outro período.
 
@@ -1046,7 +1158,7 @@ Query: `scope_type` e `catalog_item_id`. Devolve o diagnóstico mais recente do 
 
 - `newFeedbacksSince`: avaliações que chegaram no período do diagnóstico depois que ele foi gerado. A Web usa esse número para mostrar quando o diagnóstico ficou velho.
 - `job`: o mesmo objeto de `GET /jobs/:id`.
-- Os tipos estão em `@feedback/lib-shared` `v1.2.0` (`scope-diagnosis.contract.ts`).
+- Os tipos estão em `@feedback/lib-shared` desde a `v1.2.0` (`scope-diagnosis.contract.ts`); o gateway usa a `v1.8.0`.
 
 ### `GET /api/protected/ia-analyze/scope-diagnosis`
 
@@ -1071,6 +1183,8 @@ Todas as rotas desta seção exigem sessão (`credentials: 'include'`) e resolve
 { "hasKey": true, "provider": "openrouter", "model": "openrouter/auto", "keyHint": "xyz9" }
 ```
 > Sem config: `{ "hasKey": false, "provider": null, "model": null, "keyHint": null }`. `keyHint` = últimos 4 caracteres (a chave em si nunca é retornada).
+>
+> Erros: `404 enterprise_not_found` · `500 internal_server_error`.
 
 ### `PUT /api/protected/user/ia-config`
 
@@ -1088,6 +1202,8 @@ Salva/atualiza a chave. **Valida a chave e o modelo antes de gravar**, consultan
 | `apiKey` | `string` | Sim | — |
 
 **Response 200** — `{ "hasKey": true, "provider": "openrouter", "model": "openrouter/auto", "keyHint": "1234" }`
+
+Depois de gravar, tenta gerar as perguntas personalizadas da empresa (`autoGenerateCompanyQuestions`), como o `connect`. O resultado não volta na resposta.
 
 **Erros Possíveis**
 
@@ -1218,11 +1334,13 @@ Referências: [catálogo público OpenRouter](https://openrouter.ai/docs/api/api
 
 ### `POST /api/internal/worker/tick`
 
-Drena a fila de análise (etapa 03): processa um lote de jobs e volta. **Não** usa sessão — protegido pelo `WORKER_TICK_TOKEN` (header `x-worker-token`), chamado por um **cron externo** (~1 min). Ver [operação do worker](./etapa-03-operacao-worker.md).
+Drena a fila de análise (etapa 03): processa um lote de jobs e volta. **Não** usa sessão — protegido pelo `WORKER_TICK_TOKEN` (header `x-worker-token`), chamado pelo workflow `ia-worker.yml` do GitHub Actions a cada 5 minutos (reserva; a fila também anda pelo `kickWorker` quando um job é criado). Ver [operação do worker](./etapa-03-operacao-worker.md).
 
 **Response 200** — `{ "processed": 2, "results": [ ... ] }`
 
-**Response 401** `unauthorized_worker_request` — token ausente/incorreto (quando `WORKER_TICK_TOKEN` está setado).
+**Response 401** `unauthorized_worker_request` — header `x-worker-token` ausente ou diferente do `WORKER_TICK_TOKEN`. Sem `WORKER_TICK_TOKEN` no ambiente, a rota só fica liberada fora de produção e fora da Vercel; com `NODE_ENV=production` ou `VERCEL=1`, sem token, responde sempre `401`.
+
+**Response 500** `internal_server_error` — falha ao drenar a fila.
 
 ---
 
@@ -1302,10 +1420,11 @@ Cria uma nova conta. Por segurança (RNE-014), e-mail já cadastrado **não** é
 | `400` | `signup_failed` | Falha de cadastro (e-mail/senha inválidos, captcha ou erro genérico) |
 | `429` | `signup_failed` | Muitas tentativas (rate limit) |
 | `503` | `signup_failed` | Cadastro temporariamente indisponível — Better Auth respondeu 5xx (inclui falha ao enviar o e-mail de confirmação) |
+| `500` | `internal_error` | Exceção não tratada |
 
 > O e-mail duplicado **não** gera erro — retorna `200 confirmation_required` (anti-enumeração).
 
-**Ordem de escrita no cadastro.** As pré-checagens (telefone, documento, e-mail) são apenas leitura. Em caso de sucesso, as tabelas são preenchidas nesta ordem:
+**Ordem de escrita no cadastro.** A força da senha é conferida primeiro; as pré-checagens (telefone, e-mail) são apenas leitura. Em caso de sucesso, as tabelas são preenchidas nesta ordem:
 
 1. `public.user` — o usuário (Better Auth)
 2. `public.account` — credencial + hash de senha (provider `credential`)
@@ -1337,7 +1456,9 @@ Solicita o e-mail de redefinição de senha. A resposta é sempre genérica (nã
 
 ### `POST /api/public/auth/resend-confirmation`
 
-Reenvia o e-mail de confirmação de cadastro.
+Reenvia o e-mail de confirmação de cadastro. A resposta é sempre a mesma, exista ou não uma conta pendente para o e-mail (anti-enumeração): falhas do envio são só registradas no log. As respostas usam `Cache-Control: no-store`.
+
+O mesmo controller atende `POST /api/auth/send-verification-email`, montado antes do handler do Better Auth, para que a rota nativa também passe pelo limite de reenvio.
 
 **Body**
 ```json
@@ -1346,36 +1467,44 @@ Reenvia o e-mail de confirmação de cadastro.
 
 **Response 200**
 ```json
-{ "ok": true, "message": "E-mail de confirmação reenviado com sucesso." }
+{ "ok": true, "message": "Se existir uma conta pendente para este e-mail, enviaremos uma nova confirmação.", "retryAfterSeconds": 60 }
 ```
+
+`retryAfterSeconds` é o intervalo até o próximo reenvio permitido para o e-mail.
+
+**Limite de reenvio** (contadores na tabela `auth_rate_limit`, com IP e e-mail guardados como HMAC):
+
+| Limite | Padrão | Variável |
+|---|---|---|
+| Intervalo entre reenvios do mesmo e-mail | 60 s | `RESEND_EMAIL_COOLDOWN_SECONDS` |
+| Por e-mail | 5 por hora | `RESEND_EMAIL_MAX` / `RESEND_EMAIL_WINDOW_SECONDS` |
+| Por IP | 20 a cada 15 min | `RESEND_IP_MAX` / `RESEND_IP_WINDOW_SECONDS` |
 
 **Erros Possíveis**
 
 | Status | Código | Descrição |
 |---|---|---|
 | `400` | `invalid_payload` | E-mail ausente ou inválido no body |
-| `400` | `resend_failed` | Falha ao reenviar o e-mail de confirmação |
-| `429` | `rate_limited` | Muitas solicitações de reenvio |
-| `503` | `service_unavailable` | Serviço de e-mail temporariamente indisponível |
-| `500` | `internal_error` | Exceção não tratada |
+| `429` | `rate_limited` | Limite de reenvio atingido; vem com `retryAfterSeconds` no corpo e o header `Retry-After` |
+| `503` | `service_unavailable` | Controle de reenvio indisponível (banco, IP do cliente ou segredo do HMAC) |
 
 ---
 
 ### `GET /api/public/auth/callback`
 
-Processa o link clicado no e-mail (confirmação de cadastro, troca de e-mail ou recuperação de senha) e **redireciona** o navegador. Não retorna JSON.
+Processa o link de recuperação de senha e **redireciona** o navegador. Não retorna JSON. É o `redirectTo` que o `POST /public/auth/forgot-password` passa ao Better Auth (`?type=recovery&next=/auth/reset-password`). A confirmação de cadastro e a troca de e-mail **não** passam por aqui: o link desses e-mails vai direto ao `/api/auth/verify-email` do Better Auth, que redireciona para a Web.
 
 **Query Params**
 
 | Parâmetro | Descrição |
 |---|---|
-| `type` | `recovery` / `email_change` / (vazio = signup) |
+| `type` | `recovery`; qualquer outro valor cai no redirecionamento genérico |
 | `token_hash` / `token` | Token do link |
-| `next` | Caminho de destino após sucesso (padrão `/user/dashboard`) |
+| `next` | Caminho de destino após sucesso (padrão `/user/dashboard`; valor que não começa com `/` vira o padrão) |
 
 **Redirecionamentos**
-- Recuperação de senha (`type=recovery` com token) → vai **direto** para `<web>/<next>` (ex.: `/auth/reset-password`), **sem** passar por `/auth/success`.
-- Demais casos (signup / `email_change`) → `<web>/auth/success?next=<destino>`.
+- Recuperação de senha (`type=recovery` com token) → grava o token no cookie HttpOnly `ba_reset` (1 h, `path=/api/protected/user/password`) e vai **direto** para `<web><next>` (ex.: `/auth/reset-password`), **sem** passar por `/auth/success`.
+- Demais casos → `<web>/auth/success?next=<destino>`.
 
 > O gateway **não** tem um redirect próprio para link inválido/expirado (não existe `/auth/link-expired`). A validação do token acontece na etapa seguinte — ex.: no `PATCH /user/password`, que retorna `reset_password_invalid_token` quando o link de recuperação está expirado/ inválido.
 
@@ -1462,7 +1591,7 @@ Submete um feedback via formulário público. Não requer autenticação. O `dev
 | `answers` | `array` | Sim | contagem variável (0 a 3), igual ao número de perguntas ativas do escopo; `answer_value` ∈ `PESSIMO\|RUIM\|MEDIANA\|BOA\|OTIMA` |
 | `subanswers` | `array` | Não | deve cobrir **todas** as subperguntas ativas (máx. 9) |
 | `collection_point_id` / `catalog_item_id` | `string (UUID)` | Não | resolvem o escopo |
-| `customer_*` | vários | Não | dados opcionais de quem respondeu |
+| `customer_*` | vários | Não | dados opcionais de quem respondeu. O schema aceita `customer_name`, `customer_email`, `customer_phone`, `customer_birth_date`, `customer_gender`, `customer_city`, `customer_state` e `customer_country`, mas só nome, e-mail e gênero são gravados (no cadastro do cliente, deduplicado por e-mail) |
 
 **Response 200**
 ```json
@@ -1471,11 +1600,13 @@ Submete um feedback via formulário público. Não requer autenticação. O `dev
 
 **Response 400** `invalid_payload` — payload fora do schema, contagem de respostas incorreta ou `answer_score = 0`.
 
-**Response 404** `enterprise_not_found` / `collection_point_not_found`.
+**Response 404** `enterprise_not_found` / `collection_point_not_found` (sem ponto de coleta QR **ativo** para o escopo).
 
 **Response 409** `DEVICE_ALREADY_SUBMITTED` — dispositivo já enviou feedback para este ponto de coleta hoje (anti-spam diário).
 
-**Response 403** `DEVICE_BLOCKED` — dispositivo permanentemente bloqueado (`is_blocked = true`).
+**Response 403** `DEVICE_BLOCKED` — o registro do aparelho na empresa está com `is_blocked = true`. Como o fingerprint inclui o dia, o bloqueio vale para o registro daquele dia.
+
+**Response 500** `collection_point_error` · `device_check_failed` · `device_creation_failed` · `feedback_insert_failed` — falha de banco; nada é gravado.
 
 ---
 
@@ -1484,10 +1615,10 @@ Submete um feedback via formulário público. Não requer autenticação. O `dev
 | Sintoma | Causa Provável | O Que Verificar |
 |---|---|---|
 | `401` em qualquer endpoint protegido | Sessão expirada ou ausente | Refaça o login; garanta que as requisições vão com `credentials: 'include'` (a sessão é cookie HttpOnly — **não** há header `Authorization`) |
-| `422 collecting_data_required` | Empresa sem dados de contexto | Preencha os três campos obrigatórios (`company_objective`, `analytics_goal` e `business_summary`) em Configurações da empresa |
-| `422 insufficient_feedbacks_for_analysis` | Base de feedbacks pequena | Colete pelo menos 10 feedbacks antes de analisar |
-| `502` nos endpoints de IA | Serviço `ia-analyze` offline ou provedor LLM com erro | Verifique se o `ia-analyze` está rodando e se `IA_ANALYZE_REMOTE_URL`/`IA_ANALYZE_REMOTE_TOKEN` estão configurados. A chave do LLM é a **da empresa** (se configurada em `/user/ia-config`) ou a global do `ia-analyze` (`GEMINI_API_KEY`/`OPENROUTER_API_KEY`) |
+| `collecting_data_required_for_analysis` (`422` no diagnóstico do escopo; no `errorCode` do job nas análises) | Empresa sem dados de contexto | Preencha os três campos obrigatórios (`company_objective`, `analytics_goal` e `business_summary`) em Configurações da empresa |
+| `insufficient_feedbacks_for_analysis` (`422` ou no job) | Base de feedbacks pequena | Colete pelo menos 10 feedbacks antes de analisar |
+| Job de IA `failed` com `failed_remote_ia_analyze_request` ou `ia_provider_*` | Serviço `ia-analyze` offline ou provedor LLM com erro. Os POSTs de IA só enfileiram e não devolvem `502` | Verifique se o `ia-analyze` está rodando e se `IA_ANALYZE_REMOTE_URL`/`IA_ANALYZE_REMOTE_TOKEN` estão configurados. A chave do LLM é a **da empresa** (`/user/ia-config`); sem ela, o job falha com `ia_config_required`. A chave global do `ia-analyze` só entra com `REQUIRE_USER_IA_KEY=false` |
 | `400 ia_config_invalid_key` no `PUT /user/ia-config` | Chave OpenRouter inválida | Confira/gere a chave em https://openrouter.ai/keys |
 | Job assíncrono fica `failed` | Erro capturado no worker | Veja `errorCode` no `GET /ia-analyze/jobs/:id` (ex.: `ia_config_required`, `insufficient_feedbacks_for_analysis`) e confirme que o cron está batendo em `/internal/worker/tick` |
 | `409` no POST público | Fingerprint já registrado hoje neste ponto de coleta | Aguarde até o próximo dia ou use outro ponto de coleta |
-| `403` no POST público | Dispositivo permanentemente bloqueado | Dispositivo marcado como `is_blocked` — requer intervenção manual |
+| `403` no POST público | Registro do aparelho bloqueado | Registro em `tracked_devices` marcado como `is_blocked` — requer intervenção manual |

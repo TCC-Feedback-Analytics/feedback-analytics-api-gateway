@@ -1,5 +1,11 @@
 # Cutover Supabase Auth → Better Auth (runbook)
 
+> **Mudança concluída no código.** O Supabase Auth/SDK saiu do gateway em 05/07/2026
+> (commit `044c78c`), a reconciliação da Fase 2 foi escrita em 08/07/2026 (`1302cfa`)
+> e, desde 10/09/2026 (`b75dc05`), o deploy aplica as migrations pendentes antes de
+> publicar. Este runbook fica como **histórico**; os trechos que mudaram depois estão
+> marcados. O repositório não registra quando cada SQL abaixo rodou em produção.
+
 Este gateway usa **Better Auth** (sessão via cookie httpOnly) sobre o **Postgres**
 (o mesmo Postgres do projeto Supabase, acessado direto por connection string —
 `DATABASE_URL`). O Supabase **Auth/SDK** foi removido; o Supabase segue apenas
@@ -11,12 +17,12 @@ Variáveis de ambiente **obrigatórias** (Settings → Environment Variables →
 
 | Var | O que é |
 |---|---|
-| `DATABASE_URL` | connection string do Postgres (Supabase → Settings → Database → **pooler**, porta 6543, transação). Todo o app (dados + auth) usa isto. |
+| `DATABASE_URL` | connection string do Postgres (Supabase → Settings → Database → **pooler**, porta 6543, transação). Todo o app (dados + auth) usa isto. Hoje o app pode entrar com o papel `feedback_app` em vez do `postgres` ([banco com o mínimo de privilégio](../../docs/banco-menor-privilegio.md)). |
 | `BETTER_AUTH_SECRET` | segredo aleatório forte: `openssl rand -base64 32`. **Sem ele o `getAuth()` quebra no boot e TODA requisição trava** ("carregando pra sempre"). |
-| `BETTER_AUTH_URL` | URL pública do **gateway** em prod (ex.: `https://…api….vercel.app`). |
+| `BETTER_AUTH_URL` | No cutover, a URL pública do **gateway**. Hoje, em prod, é a URL da **Web**, que repassa `/api/*` ao gateway (ver `.env.example`). |
 | `PUBLIC_SITE_URL` | URL pública do **web** (usada em callbacks/redirects). |
 | `CORS_ALLOWED_ORIGINS` | origens do web permitidas (CSV). |
-| `COOKIE_CROSS_SITE` | `true` se web e api estão em domínios diferentes (cookie `SameSite=None; Secure`). |
+| `COOKIE_CROSS_SITE` | `true` se web e api estão em domínios diferentes (cookie `SameSite=None; Secure`). Hoje fica `false` em prod: com a Web repassando `/api/*`, o cookie é do próprio site (ver `.env.example`). |
 | `SMTP_HOST` | `smtp-relay.brevo.com` (Brevo). |
 | `SMTP_PORT` | `587` (`SMTP_SECURE=false`) — ou `465` (`SMTP_SECURE=true`) se a 587 travar. |
 | `SMTP_SECURE` | `false` p/ 587, `true` p/ 465. |
@@ -35,20 +41,20 @@ db/cutover/betterauth-enable.sql
 Ele cria as tabelas do Better Auth (`user`/`session`/`account`/`verification`),
 remove a FK `enterprise.auth_user_id → auth.users` (usuários do Better Auth
 vivem em `public.user`) e dropa as policies RLS `auth.uid()` redundantes (o
-acesso a dados é 100% via Drizzle, que ignora a RLS). É idempotente.
+acesso a dados é 100% via Drizzle, que na época entrava como `postgres`, dono das
+tabelas, e por isso ignorava a RLS). É idempotente.
 
-> ⚠️ O deploy (`deploy-api.yml`) **não** roda migration — este SQL é manual.
+> ⚠️ Este SQL é manual. Na época do cutover o deploy (`deploy-api.yml`) não rodava
+> migration; desde 10/09/2026 ele roda `npm run db:migrate`, mas isso não aplica os
+> SQLs desta pasta.
 
 ## Governança das tabelas do Better Auth (`user`/`session`/`account`/`verification`)
 
-**Como chegam em produção:** *só* pelo `betterauth-enable.sql` acima, rodado à mão uma vez. O `deploy-api.yml` **não roda migration** e não existe `@better-auth/cli` nas dependências, então nada aplica automaticamente essas tabelas em prod. Em runtime o `drizzleAdapter` do Better Auth **consome** as tabelas, mas **não as cria**.
+**Como chegaram em produção:** pelo `betterauth-enable.sql` acima, rodado à mão uma vez. Não existe `@better-auth/cli` nas dependências, e em runtime o `drizzleAdapter` do Better Auth **consome** as tabelas, mas **não as cria**.
 
-**As mesmas 4 tabelas têm duas definições** — mantenha-as em sincronia:
+**Hoje:** a definição é uma só, `drizzle/schema/auth.ts` (re-exportada pelo barrel `drizzle/schema.ts`). É a descrição Drizzle que o `drizzleAdapter` usa em **runtime** (as 4 tabelas com `mode:'date'` nos timestamps) e que o `drizzle-kit` usa para gerar as migrations em `drizzle/` e montar o banco **local** (`db:reset` → `drizzle-kit migrate`). Com o baseline marcado (Fase 2, passo 3) e o deploy rodando `npm run db:migrate`, uma mudança nessas tabelas segue o fluxo normal: edite `drizzle/schema/auth.ts`, gere a migration com `npm run db:generate` e ela chega a produção no próximo deploy ([convenção de migrations](../../docs/migrations-drizzle.md)). É o caso da `0013`, que liga a RLS nelas.
 
-1. `drizzle/schema/auth.ts` (re-exportada pelo barrel `drizzle/schema.ts`) — **fonte única**. É a descrição Drizzle que o `drizzleAdapter` usa em **runtime** (as 4 tabelas com `mode:'date'` nos timestamps) e que o `drizzle-kit` usa para gerar as migrations em `drizzle/` e montar o banco **local** (`db:reset` → `drizzle-kit migrate`).
-2. `db/cutover/betterauth-enable.sql` — cria em **produção** (Supabase, manual).
-
-As duas **coincidem** (id `uuid`/`gen_random_uuid()`, `user.phone` UNIQUE, FKs `ON DELETE CASCADE`). Não há guard-rail automático verificando que (1) e (2) batem entre si: o `betterauth-enable.sql` é mantido à mão. Ao mudar uma dessas tabelas, edite primeiro `drizzle/schema/auth.ts` (gere a migration com `npm run db:generate`), **espelhe** a alteração no `betterauth-enable.sql` e rode-o de novo em prod.
+**Antes disso** as 4 tabelas tinham duas definições mantidas à mão em sincronia — `drizzle/schema/auth.ts` e o `betterauth-enable.sql` (id `uuid`/`gen_random_uuid()`, `user.phone` UNIQUE, FKs `ON DELETE CASCADE`) — e cada alteração precisava ser espelhada no SQL e rodada de novo em prod. O `betterauth-enable.sql` não acompanha as migrations posteriores à `0001`.
 
 > ⚠️ `CREATE TABLE IF NOT EXISTS` **não altera** uma tabela que já existe — para adicionar/alterar coluna numa dessas tabelas em produção é preciso escrever o `ALTER TABLE` correspondente (não basta editar o `CREATE`). A consolidação numa fonte única (Drizzle) está no [ADR-0001](../../docs/adr/0001-fonte-unica-de-schema.md).
 
@@ -98,6 +104,8 @@ INSERT INTO drizzle."__drizzle_migrations" (hash, created_at) VALUES
 > ⚠️ Os hashes são o **sha256** de `drizzle/0000_great_talisman.sql` e `drizzle/0001_functions_triggers_rls.sql` **deste commit**. Se as migrations forem regeneradas, recompute (`sha256sum drizzle/0000_*.sql drizzle/0001_*.sql`) e use o `when` de `drizzle/meta/_journal.json`.
 
 **4. (Decisão) `deploy-api.yml` passa a rodar `drizzle-kit migrate`?** Com o baseline marcado, mudanças futuras de schema viram `0002+` e podem ser aplicadas por `drizzle-kit migrate` no deploy (fim do SQL manual). Se adotar, adicione um passo `npm run db:migrate` no `deploy-api.yml` (com a `DATABASE_URL` de prod) após o bundle. Até lá, migrations novas são aplicadas à mão.
+
+> **Decidido:** desde 10/09/2026 (`b75dc05`) o `deploy-api.yml` tem o passo **Aplicar migrations de produção**, que roda `npm run db:migrate` com o secret `DATABASE_URL` depois do bundle e antes do `vercel deploy`; secret ausente ou migration com erro interrompem o deploy ([CI / Deploy](../../.github/CI_SETUP.md)).
 
 **5. Validar:** login/signup, o formulário público (QR) resolve o nome via view, e um `drizzle-kit migrate` não acusa migrations pendentes inesperadas.
 

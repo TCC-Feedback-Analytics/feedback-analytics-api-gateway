@@ -1,5 +1,15 @@
 # Guia do sistema: integração do frontend
 
+> **Situação em 03/11/2026: integrado.** O contrato abaixo segue o mesmo no gateway
+> (`SYSTEM_GUIDE_VERSION = 1`). A Web consome os dois endpoints desde 22/09/2026
+> (`src/services/serviceSystemGuide.ts` no `feedback-analytics-web`). Uma regra da
+> seção "Comportamento esperado no frontend" mudou na Web em 17/10/2026: o guia **não
+> abre mais sozinho**. Com o status `pending`, o Dashboard **convida** a pessoa, no
+> primeiro feedback da conta ou numa próxima sessão do navegador. O controle desse convite
+> (adiamentos e sessão já convidada) fica no `localStorage` da Web; o status do guia
+> continua só no servidor. A frase "Nenhuma mudança no frontend acompanha esta entrega"
+> vale para a entrega de 10/09/2026.
+
 O estado pertence ao usuário autenticado (cookie Better Auth), independentemente
 de navegador/dispositivo. Não enviar userId ou enterpriseId. Nenhuma mudança no
 frontend acompanha esta entrega. Não há migração de localStorage.
@@ -41,6 +51,7 @@ Erros: 400 `{"error":"invalid_payload"}`, 401 `{"error":"unauthorized"}`,
 - Remover leitura/escrita do localStorage do onboarding.
 - Esperar o GET terminar com sucesso antes de decidir abrir automaticamente.
 - Abrir automaticamente apenas com `pending` e contexto de IA preenchido.
+  *Hoje (Web, desde 17/10/2026):* não abre sozinho; com `pending`, o Dashboard convida.
 - Manter a etapa atual em memória; separar ações de concluir e pular.
 - Reabrir manualmente sem apagar o estado persistido (não existe reset remoto).
 - Em falha de leitura, não tratar como pending nem bloquear o restante da aplicação.
@@ -67,6 +78,9 @@ Migration do onboarding: `drizzle/0004_user_onboarding.sql` (com snapshot e jour
 A tabela tem PK `(user_id, tour_key, version)`, FK com exclusão em cascata,
 validação de status e versão positiva. Ausência de linha significa pending.
 O acesso é exclusivo pela API, com filtro por usuário da sessão.
+*Hoje:* desde a migration `drizzle/0013_banco_menor_privilegio.sql` (02/11/2026) a
+tabela também tem RLS ligada, com a policy `feedback_app_all` para o papel do app
+(ver [banco-menor-privilegio.md](banco-menor-privilegio.md)).
 
 Publicar o backend com sucesso antes de disponibilizar o frontend que consome
 esses endpoints. O contrato de integração descrito acima permanece o mesmo.
