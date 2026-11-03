@@ -20,14 +20,18 @@ para habilitar a fila. Esta alteração não adiciona migration e não apaga an�
 ## Produção
 
 - Host persistente (Node/Express): o mesmo Gateway inicia seu worker.
-- Vercel: configure um cron externo para enviar POST a
-  `/api/internal/worker/tick`, com header `x-worker-token`.
-- `WORKER_TICK_TOKEN` deve ser definido no Gateway e no cron. Em produção/Vercel,
-  um token não configurado **recusa** o tick. Localmente ele pode ficar vazio.
+- Vercel: o workflow do próprio repositório `.github/workflows/ia-worker.yml`
+  envia POST a `https://feedback-analytics-api-gateway.vercel.app/api/internal/worker/tick`,
+  com header `x-worker-token`, a cada 5 minutos (`2-59/5 * * * *`) e também por
+  disparo manual (`workflow_dispatch`). Não há cron externo.
+- `WORKER_TICK_TOKEN` deve ser definido no projeto Vercel do Gateway e como secret
+  do GitHub (o `ia-worker.yml` o lê de `secrets.WORKER_TICK_TOKEN`), com o mesmo
+  valor. Em produção/Vercel (`NODE_ENV=production` ou `VERCEL=1`), um token não
+  configurado **recusa** o tick. Localmente ele pode ficar vazio.
 - Não há loop de background dentro da função serverless. O processamento é
   disparado pelas próprias ações do usuário (`libs/iaJob/kickWorker.ts`): ao
-  enfileirar um job, e ao consultar seu status ou carregar `collecting_data`
-  quando há job pronto na fila, o Gateway processa um passo em background com
+  enfileirar um job, e ao consultar seu status, listar os jobs ativos, carregar
+  `collecting_data` ou trocar o modelo de IA quando há job pronto na fila, o Gateway processa um passo em background com
   `waitUntil`, depois de responder. O polling da tela faz jobs de vários passos
   avançarem sem esperar o cron.
 - O cron (`ia-worker.yml`) fica como reserva para jobs sem ninguém olhando. O
@@ -65,7 +69,8 @@ para habilitar a fila. Esta alteração não adiciona migration e não apaga an�
   de 10 minutos. Heartbeat a cada 30 segundos renova a posse. Um running abandonado
   pode ser retomado após expirar; worker antigo não pode gravar checkpoint/status.
 - Falhas transitórias reconhecidas recebem até 3 tentativas por passo, com espera
-  e preservação do último checkpoint. Falhas definitivas ficam em `failed`.
+  e preservação do último checkpoint (a geração das perguntas da configuração
+  inicial, quando o provedor responde 429, recebe até 5). Falhas definitivas ficam em `failed`.
   Uma nova submissão após falha definitiva cria novo job; lotes de análise já
   salvos são pulados, mas a síntese pode precisar ser refeita.
 - O frontend recupera IDs por empresa no navegador e consulta

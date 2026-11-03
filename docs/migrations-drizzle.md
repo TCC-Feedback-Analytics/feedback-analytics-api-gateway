@@ -15,19 +15,29 @@ Antes da Fase 2 o schema vivia em **dois lugares** que precisavam ser espelhados
 
 **Guard-rail (CI):** [`.github/workflows/schema-migrations.yml`](../.github/workflows/schema-migrations.yml) (`Migrations smoke`) sobe um Postgres, roda `node scripts/db-local.mjs` (DROP → migrate → seed) e roda `drizzle-kit check`. Se as migrations não aplicam limpo, ou se `schema.ts` e os snapshots divergem, o CI quebra. Não há mais golden a regenerar.
 
-**As 4 tabelas Better Auth** (`public.user/session/account/verification`) vivem **só** em `drizzle/schema.ts` (fonte única; o `drizzleAdapter` as consome — `src/auth/schema.ts` foi deletado). Em produção elas são criadas manualmente por [`db/cutover/betterauth-enable.sql`](../db/cutover/betterauth-enable.sql).
+**As 4 tabelas Better Auth** (`public.user/session/account/verification`) vivem **só** em `drizzle/schema.ts` (fonte única; o `drizzleAdapter` as consome — `src/auth/schema.ts` foi deletado). Em produção elas foram criadas à mão no cutover, por [`db/cutover/betterauth-enable.sql`](../db/cutover/betterauth-enable.sql); mudanças novas nelas seguem o fluxo normal de migration.
 
 ## Estrutura da pasta `drizzle/`
 
 | Arquivo | Papel |
 |---|---|
 | `schema.ts` | **Barrel** — só re-exporta as tabelas de `schema/*.ts`. É o que o `drizzle-kit` e o app (`src/db/client.ts`) importam. |
-| `schema/*.ts` | **Fonte única** do schema, organizada por **domínio**: `auth`, `enterprise`, `questions`, `feedback`, `devices`, `views`, `iaJobs` (etapa 03 — fila de análise) e `iaConfig` (etapa 04 — config de IA por empresa). Mantida à mão; alimenta o `generate` e os tipos do runtime. |
+| `schema/*.ts` | **Fonte única** do schema, organizada por **domínio**: `auth`, `authRateLimit`, `enterprise`, `onboarding`, `questions`, `feedback`, `commentField`, `devices`, `views`, `iaJobs` (etapa 03 — fila de análise), `iaConfig` (etapa 04 — config de IA por empresa) e `scopeDiagnosis`. Mantida à mão; alimenta o `generate` e os tipos do runtime. |
 | `relations.ts` + `relations/*.ts` | Relações da query API do Drizzle (barrel + arquivos por domínio). **Opcional** — o app não carrega relations hoje. |
 | `0000_great_talisman.sql` | **Baseline (re-baseline da Fase 2)** — tabelas, FKs, índices e a view `enterprise_public`, refletindo o estado **pós-cutover** (inclui as tabelas Better Auth; sem dependência de `auth.users`). |
 | `0001_functions_triggers_rls.sql` | Migration **custom** — funções (plpgsql/sql), triggers e `ENABLE RLS` que o `drizzle-kit` não deriva. |
 | `0002_fat_chronomancer.sql` | **Etapa 03 (análise assíncrona):** tabelas `ia_analysis_job` (fila + status de progresso) e `ia_rate_budget` (token bucket do rate limiter); `unique(feedback_id)` em `feedback_analysis` (idempotência). Índice parcial único de dedup (`COALESCE` no `catalog_item_id`) e trigger `set_updated_at` entram como **SQL manual** no fim da migration. |
 | `0003_amusing_radioactive_man.sql` | **Etapa 04 (BYO-key):** tabela `enterprise_ia_config` (chave OpenRouter por empresa, **cifrada** — ciphertext/iv/authTag + `key_hint`) + trigger `set_updated_at` (SQL manual). |
+| `0004_user_onboarding.sql` | Tabela `user_onboarding` (tours concluídos ou pulados por usuário), FK para `public.user`. |
+| `0005_auth_resend_rate_limit.sql` | Tabela `auth_rate_limit` (limite de reenvio de e-mail de autenticação), com RLS. |
+| `0006_company_question_suggestions.sql` | Novo `job_type` `generate_company_questions` em `ia_analysis_job`. |
+| `0007_feedback_enterprise_created_at.sql` | Índice `idx_feedback_enterprise_created_at` em `feedback`. |
+| `0008_scope_diagnosis.sql` | Tabela `scope_diagnosis` e `job_type` `generate_scope_diagnosis`. |
+| `0009_remove_enterprise_document.sql` | Remove a coluna `enterprise.document` (CPF/CNPJ) e as funções legadas que a liam. |
+| `0010_comment_field.sql` | Tabela `feedback_comment_field` (campo de comentário do formulário por escopo), com RLS. |
+| `0011_feedback_comment_prompt.sql` | Coluna `feedback.comment_prompt`. |
+| `0012_feedback_channel.sql` | Coluna `feedback.channel` (`QR`, `LINK`, `NFC`, `TEST`). |
+| `0013_banco_menor_privilegio.sql` | Migration **custom** — RLS em todas as tabelas, papel `feedback_app` e policy `feedback_app_all` ([Banco com o mínimo de privilégio](banco-menor-privilegio.md)). |
 | `meta/_journal.json` + `meta/*_snapshot.json` | Histórico e snapshots usados pelo `generate` para fazer o diff. |
 
 ## Scripts (`package.json` da raiz)
@@ -39,6 +49,8 @@ Antes da Fase 2 o schema vivia em **dois lugares** que precisavam ser espelhados
 | `npm run db:migrate` | Aplica as migrations pendentes no banco | sim |
 | `npm run db:check` | Valida consistência das migrations | não |
 | `npm run db:reset` | Recria o banco **local** do zero: DROP → `drizzle-kit migrate` → `db/local/seed.sql` → `db:seed:e2e` | sim (local) |
+| `npm run db:seed:e2e` | Cria/reconcilia o usuário de teste do Better Auth (`scripts/seed-e2e-user.ts`) | sim |
+| `npm run db:local:up` / `db:local:down` | Sobe/derruba o Postgres e o Mailpit do `docker-compose.yml` ([banco local](../db/local/README.md)) | — |
 | `npm run db:studio` | Abre o Drizzle Studio | sim |
 | `npm run verify:stats` | Confere as agregações de estatística servidas via Drizzle | sim (leitura) |
 
@@ -49,7 +61,7 @@ Antes da Fase 2 o schema vivia em **dois lugares** que precisavam ser espelhados
 1. Edite o arquivo de **domínio** em `drizzle/schema/` (ex.: `enterprise.ts`, `feedback.ts`) — o `schema.ts` é só barrel, não precisa tocar (a não ser que adicione um domínio novo).
 2. `npm run db:generate` → cria `drizzle/000N_*.sql` (**revise o SQL!**).
    - **Tabela nova:** acrescente na mesma migration `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` e a policy `feedback_app_all`; sem ela, o app (papel `feedback_app`) não enxerga a tabela. Ver [Banco com o mínimo de privilégio](banco-menor-privilegio.md).
-3. `npm run db:migrate` (produção) ou `npm run db:reset` (recria o local) → aplica.
+3. `npm run db:reset` (recria o local) ou `npm run db:migrate` (banco existente) → aplica. Em produção quem aplica é o workflow **Deploy Api Gateway (Vercel)** (`deploy-api.yml`), que roda `npm run db:migrate` com o secret `DATABASE_URL` antes de publicar ([CI / Deploy](../.github/CI_SETUP.md)).
 4. Commit do `schema.ts` + da migration + do snapshot juntos.
 
 > O `db:generate` é **offline** e seguro de rodar a qualquer momento. **Sempre revise** o SQL gerado antes de aplicar. Não há mais nada a espelhar em `db/schema` nem golden a atualizar.
@@ -60,7 +72,7 @@ Originalmente o Drizzle foi adotado sobre um banco **já populado** (Supabase), 
 
 - **`0000_great_talisman.sql`** cria tabelas, FKs, índices e a view — incluindo as 4 tabelas Better Auth. A view `enterprise_public` lê **só** `public.user`; o schema **não depende mais de `auth.users`**, e as funções legadas do Supabase foram removidas.
 - **`0001_functions_triggers_rls.sql`** é uma migration custom com as funções (corpos plpgsql/sql), triggers e `ENABLE RLS`.
-- Como o banco local agora **nasce das migrations** (`db:reset`), **não há passo manual de baseline**: as duas migrations são aplicadas do zero em cada recriação. Em produção, o histórico de cutover fica documentado em [`db/cutover/README.md`](../db/cutover/README.md).
+- Como o banco local agora **nasce das migrations** (`db:reset`), **não há passo manual de baseline**: todas as migrations são aplicadas do zero em cada recriação. Em produção, o histórico de cutover (incluindo o registro de `0000`/`0001` como já aplicados) fica documentado em [`db/cutover/README.md`](../db/cutover/README.md).
 
 ## Decisões e ressalvas (honestas)
 
