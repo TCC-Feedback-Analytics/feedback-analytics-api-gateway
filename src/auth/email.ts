@@ -82,6 +82,18 @@ export function sendVerificationEmail(to: string, url: string): void {
   );
 }
 
+/** E-mail de confirmação do endereço novo, na troca de e-mail do Perfil (link do Better Auth). */
+export function sendChangeEmailVerification(to: string, url: string): void {
+  send(
+    to,
+    'Confirme seu novo e-mail',
+    `Confirme a troca do e-mail da sua conta acessando: ${url}`,
+    `<p>Recebemos um pedido para usar este endereço na sua conta.</p>
+     <p><a href="${url}">Confirmar meu novo e-mail</a></p>
+     <p>Se não foi você, ignore este e-mail — sua conta continua com o e-mail de antes.</p>`,
+  );
+}
+
 /** E-mail de redefinição de senha (link do Better Auth). */
 export function sendResetPasswordEmail(to: string, url: string): void {
   send(

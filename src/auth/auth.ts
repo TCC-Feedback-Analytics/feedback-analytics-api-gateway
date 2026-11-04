@@ -20,7 +20,7 @@ import bcrypt from 'bcryptjs';
 import { getDb } from '../db/client.js';
 // Tabelas do Better Auth vêm da FONTE ÚNICA (drizzle/schema.ts) — ADR-0001 Fase 2.
 import { user, session, account, verification } from '../../drizzle/schema.js';
-import { sendResetPasswordEmail, sendVerificationEmail } from './email.js';
+import { sendChangeEmailVerification, sendResetPasswordEmail, sendVerificationEmail } from './email.js';
 import { provisionEnterpriseForUser } from './enterpriseOnSignup.js';
 import { deleteEnterpriseOfUser } from './enterpriseOnDelete.js';
 
@@ -107,7 +107,13 @@ function createAuth() {
     emailVerification: {
       sendOnSignUp: true,
       autoSignInAfterVerification: true,
+      // Conta já verificada só recebe este e-mail na troca de endereço: o reenvio da
+      // confirmação do cadastro não sai para quem já confirmou.
       sendVerificationEmail: async ({ user, url }) => {
+        if (user.emailVerified) {
+          sendChangeEmailVerification(user.email, url);
+          return;
+        }
         sendVerificationEmail(user.email, url);
       },
     },
@@ -116,6 +122,9 @@ function createAuth() {
         // Telefone do gestor (UNIQUE em `user.phone`); enviado no signUpEmail.
         phone: { type: 'string', required: false, input: true },
       },
+      // Troca de e-mail (PATCH /api/protected/user/email): o link vai para o endereço
+      // novo pelo sendVerificationEmail, e a troca só vale depois do clique.
+      changeEmail: { enabled: true },
       // "Excluir minha conta" (POST /api/auth/delete-user): pede a senha de quem tem
       // uma, ou uma sessão recente (entrada nas últimas 24 h) de quem só entra pelo
       // Google. Antes de apagar o usuário, apaga a empresa e tudo dela.
