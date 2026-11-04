@@ -45,7 +45,11 @@ export async function patchUserEmailController(req: Request, res: Response) {
       body: { newEmail: parsed.data.email, callbackURL: `${webBase}/auth/success` },
       headers: fromNodeHeaders(req.headers),
     });
-    return res.json({ user: { id: req.user!.id, email: parsed.data.email } });
+    // A conta só muda depois do clique no link: até lá, `email` segue o atual.
+    return res.json({
+      user: { id: req.user!.id, email: req.user!.email ?? null },
+      pending_email: parsed.data.email,
+    });
   } catch {
     return sendTypedError(res, 400, API_ERROR_UPDATE_FAILED);
   }
