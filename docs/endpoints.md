@@ -42,18 +42,18 @@ Retorna o usuário autenticado, extraído da sessão (injetado por `requireAuth`
 
 ### `PATCH /api/protected/user/email`
 
-Inicia a troca de e-mail pelo `changeEmail` do Better Auth, com retorno para `<web>/auth/success`. O link do e-mail passa pelo `/api/auth/verify-email` do Better Auth, não pelo `GET /public/auth/callback`.
+Inicia a troca de e-mail pelo `changeEmail` do Better Auth (`user.changeEmail.enabled` em `src/auth/auth.ts`), com retorno para `<web>/auth/success`. O e-mail "Confirme seu novo e-mail" vai para o endereço novo, e a conta só muda depois do clique. O link passa pelo `/api/auth/verify-email` do Better Auth, não pelo `GET /public/auth/callback`.
 
-> **Hoje a troca não acontece:** `user.changeEmail.enabled` não está ligado em `src/auth/auth.ts`, então o Better Auth recusa o pedido e a rota responde `400 update_failed`.
+Se o endereço novo já for de outra conta, a rota responde `200` do mesmo jeito, mas nenhum e-mail sai e a conta não muda: o Better Auth não revela que o endereço existe.
 
 **Body**
 ```json
 { "email": "novo@empresa.com" }
 ```
 
-**Response 200** — devolve o e-mail pedido, antes da confirmação.
+**Response 200** — `user.email` é o e-mail atual da conta; o pedido fica em `pending_email` até a confirmação.
 ```json
-{ "user": { "id": "uuid", "email": "novo@empresa.com" } }
+{ "user": { "id": "uuid", "email": "atual@empresa.com" }, "pending_email": "novo@empresa.com" }
 ```
 
 **Response 400** `invalid_payload` / `update_failed`.
