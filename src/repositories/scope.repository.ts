@@ -19,7 +19,7 @@ export type ScopeCollectionPointResolution =
 /**
  * Resolve o escopo selecionado (header) para a lista de `collection_point` ids
  * que as métricas/análises devem considerar. Via Drizzle (tenant-scoped): SEMPRE
- * filtra por `enterprise_id` — a role do Drizzle ignora a RLS, então esse filtro
+ * filtra por `enterprise_id` — a RLS não separa empresas, então esse filtro
  * é a única barreira cross-tenant.
  *
  * COMPANY (Geral) => apenas o ponto de coleta da empresa (`catalog_item_id IS NULL`).

@@ -25,6 +25,7 @@ import {
   feedbackSubquestionAnswers,
 } from '../../drizzle/schema.js';
 import { scopedByEnterprise, scopedFeedbackWhere } from '../db/tenantScope.js';
+import { describeError } from '../utils/describeError.js';
 
 type AnswerValueKey = 'PESSIMO' | 'RUIM' | 'MEDIANA' | 'BOA' | 'OTIMA';
 
@@ -49,7 +50,7 @@ async function fetchSubanswersForFeedbacks(feedbackIds: string[]) {
  * fetchAlreadyAnalyzedFeedbacks (só os com análise). Monta os IaAnalyzeFeedbackInput
  * (feedback + ponto de coleta + item de catálogo + respostas/subrespostas),
  * SEMPRE tenant-scoped. O catálogo por id ganha `eq(enterprise_id)` explícito
- * (o Drizzle ignora a RLS — antes confiava nela).
+ * (a RLS não separa empresas).
  */
 async function buildFeedbackInputs(params: {
   enterpriseId: string;
@@ -375,7 +376,7 @@ export async function upsertFeedbackInsightsReports(params: {
         });
       persisted.push(context);
     } catch (error) {
-      console.error('Falha ao salvar feedback_insights_report', error);
+      console.error('Falha ao salvar feedback_insights_report', describeError(error));
       continue;
     }
   }

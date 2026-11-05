@@ -3,6 +3,7 @@ import z from 'zod';
 import { sendTypedError } from '../../utils/sendTypedError.js';
 import { API_ERROR_INVALID_PAYLOAD } from '../../config/errors.js';
 import { getAuth } from '../../auth/auth.js';
+import { describeError } from '../../utils/describeError.js';
 
 const forgotPasswordSchema = z.object({
   email: z.email({ error: 'E-mail inválido' }),
@@ -29,7 +30,7 @@ export async function forgotPasswordController(req: Request, res: Response) {
     });
   } catch (err) {
     // Anti-enumeração: nunca revela se o e-mail existe; apenas registra.
-    console.warn('[forgot-password]', (err as { message?: string })?.message ?? err);
+    console.warn('[forgot-password]', describeError(err));
   }
 
   return res.json({

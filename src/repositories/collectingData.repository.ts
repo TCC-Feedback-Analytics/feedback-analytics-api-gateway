@@ -10,7 +10,7 @@ import {
 import type { CatalogKind } from './collectionPointsQr.repository.js';
 import { DEFAULT_COMPANY_QUESTION_TEXTS } from '../config/defaultCompanyQuestions.js';
 
-// Drizzle ignora a RLS → toda query filtra enterprise_id explicitamente (invariante nº1).
+// A RLS não separa empresas → toda query filtra enterprise_id explicitamente (invariante nº1).
 
 type Database = ReturnType<typeof getDb>;
 type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];

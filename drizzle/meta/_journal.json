@@ -99,6 +99,13 @@
       "when": 1793656675596,
       "tag": "0013_banco_menor_privilegio",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1793885910625,
+      "tag": "0014_insights_report_nulls_not_distinct",
+      "breakpoints": true
     }
   ]
 }

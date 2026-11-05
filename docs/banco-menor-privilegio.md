@@ -21,7 +21,7 @@ Com o gateway local rodando como `feedback_app`:
 
 | Teste | Resultado |
 |---|---|
-| Ler as 25 tabelas | ✅ |
+| Ler as 24 tabelas | ✅ |
 | Cadastro, login, ativar o QR, feedback público, métricas, lista, linha do tempo, pico, clientes que voltam, perguntas, configuração de IA e excluir a conta | ✅ todos com resposta 200, e nada sobrou no banco depois de excluir |
 | Criar, alterar, apagar ou esvaziar (`TRUNCATE`) uma tabela | ✅ recusado (`42501`) |
 | Desligar a RLS ou criar outro papel | ✅ recusado (`42501`) |

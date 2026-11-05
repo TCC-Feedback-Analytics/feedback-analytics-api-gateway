@@ -21,7 +21,8 @@ para habilitar a fila. Esta alteração não adiciona migration e não apaga an�
 
 - Host persistente (Node/Express): o mesmo Gateway inicia seu worker.
 - Vercel: o workflow do próprio repositório `.github/workflows/ia-worker.yml`
-  envia POST a `https://feedback-analytics-api-gateway.vercel.app/api/internal/worker/tick`,
+  envia POST a `<API_GATEWAY_URL>/api/internal/worker/tick` (variável do repositório;
+  sem ela, `https://feedback-analytics-api-gateway.vercel.app`),
   com header `x-worker-token`, a cada 5 minutos (`2-59/5 * * * *`) e também por
   disparo manual (`workflow_dispatch`). Não há cron externo.
 - `WORKER_TICK_TOKEN` deve ser definido no projeto Vercel do Gateway e como secret

@@ -1,7 +1,7 @@
 /**
  * Por onde chegaram as avaliações (etapa 06): QR Code, link compartilhado,
- * etiqueta NFC e as sem marca de canal. O "Testar o formulário" (TEST) conta
- * como feedback nas outras métricas, mas não é um canal de coleta.
+ * etiqueta NFC e as sem marca de canal. O "Testar o formulário" (TEST) não é um
+ * canal de coleta e fica fora de todas as métricas (`notTestFeedback`).
  */
 import type {
   ChannelRatingSummary,

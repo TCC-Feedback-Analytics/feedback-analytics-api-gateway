@@ -11,13 +11,14 @@
 import { waitUntil } from '@vercel/functions';
 import { drainJobs } from './drainJobs.js';
 import { hasClaimableIaJob } from '../../repositories/iaJob.repository.js';
+import { describeError } from '../../utils/describeError.js';
 
 function runInBackground(task: () => Promise<void>): void {
   // Testes não sobem banco nem fila real.
   if (process.env.NODE_ENV === 'test') return;
 
   const run = task().catch(error => {
-    console.error('[ia-worker:kick] erro ao drenar jobs:', error);
+    console.error('[ia-worker:kick] erro ao drenar jobs:', describeError(error));
   });
 
   if (process.env.VERCEL === '1') {

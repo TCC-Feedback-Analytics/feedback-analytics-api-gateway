@@ -41,7 +41,7 @@ export type ScopeMetricsParams = {
 export async function computeScopedStats(params: ScopeMetricsParams) {
   // Agregações servidas via DRIZZLE, com a contagem feita NO BANCO (GROUP BY),
   // e SEMPRE com filtro explícito por enterprise_id (isolamento multi-tenant na
-  // aplicação — o Drizzle acessa com role que ignora a RLS). Ver
+  // aplicação — a RLS não separa empresas). Ver
   // src/db/tenantScope.ts e src/repositories/feedbackStats.repository.ts.
   const ratingAgg = await fetchScopedRatingAggregates(params);
   const analysisAgg = await fetchScopedAnalysisAggregates(params);

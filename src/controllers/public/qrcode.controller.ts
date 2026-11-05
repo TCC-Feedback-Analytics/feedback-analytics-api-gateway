@@ -32,6 +32,7 @@ import {
   type NewQuestionAnswer,
   type NewSubquestionAnswer,
 } from '../../repositories/qrFeedback.repository.js';
+import { describeError } from '../../utils/describeError.js';
 
 function mapAnswerScore(answerValue: string): number {
   switch (answerValue) {
@@ -42,6 +43,16 @@ function mapAnswerScore(answerValue: string): number {
     case 'OTIMA': return 5;
     default: return 0;
   }
+}
+
+/**
+ * Meia-noite de hoje em Brasília, onde está o público do produto. O servidor da
+ * Vercel roda em UTC, e o dia virava às 21h. Brasília está em UTC-3 o ano todo
+ * desde o fim do horário de verão (2019).
+ */
+export function startOfTodayInBrasilia(now: Date = new Date()): Date {
+  const brasiliaDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(now);
+  return new Date(`${brasiliaDate}T00:00:00-03:00`);
 }
 
 function mapGenderForDb(gender?: string | null): string | null {
@@ -69,16 +80,12 @@ export async function submitQrCodeFeedbackController(req: Request, res: Response
     return sendTypedError(res, 404, API_ERROR_ENTERPRISE_NOT_FOUND);
   }
 
-  // 2. Fingerprint do dispositivo — corte do "dia" em horário LOCAL (decisão
-  // deliberada: preserva o comportamento em produção; em prod o servidor é UTC).
+  // 2. Fingerprint do dispositivo: navegador + IP, sem o dia, para "Clientes que
+  // voltam" e o bloqueio valerem entre dias. O limite diário fica no passo 8.
   const userAgent = req.get('user-agent') || '';
   const clientIP = req.ip || req.socket?.remoteAddress || '127.0.0.1';
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const dayEpoch = Math.floor(today.getTime() / 1000);
-
-  const fingerprintData = `${userAgent}|${clientIP}|${dayEpoch}`;
+  const fingerprintData = `${userAgent}|${clientIP}`;
   const deviceFingerprint = crypto.createHash('md5').update(fingerprintData).digest('hex');
 
   // 3. Ponto de coleta QR ATIVO do escopo (por id / catalog_item / "geral").
@@ -90,7 +97,7 @@ export async function submitQrCodeFeedbackController(req: Request, res: Response
       catalogItemId: payload.catalog_item_id ?? null,
     });
   } catch (err) {
-    console.error('Erro ao buscar collection_point:', err);
+    console.error('Erro ao buscar collection_point:', describeError(err));
     return sendTypedError(res, 500, API_ERROR_COLLECTION_POINT_ERROR);
   }
 
@@ -114,7 +121,7 @@ export async function submitQrCodeFeedbackController(req: Request, res: Response
     });
 
   if (currentQuestionsError) {
-    console.error('Erro ao carregar perguntas do contexto do feedback:', currentQuestionsError);
+    console.error('Erro ao carregar perguntas do contexto do feedback:', describeError(currentQuestionsError));
     return sendTypedError(res, 400, API_ERROR_INVALID_PAYLOAD);
   }
 
@@ -194,7 +201,7 @@ export async function submitQrCodeFeedbackController(req: Request, res: Response
       deviceFingerprint,
     });
   } catch (err) {
-    console.error('Erro ao verificar dispositivo:', err);
+    console.error('Erro ao verificar dispositivo:', describeError(err));
     return sendTypedError(res, 500, API_ERROR_DEVICE_CHECK_FAILED);
   }
 
@@ -209,13 +216,13 @@ export async function submitQrCodeFeedbackController(req: Request, res: Response
         enterpriseId: payload.enterprise_id,
         trackedDeviceId: trackedDevice.id,
         collectionPointId: collectionPoint.id,
-        sinceIso: today.toISOString(),
+        sinceIso: startOfTodayInBrasilia().toISOString(),
       });
       if (alreadySubmitted) {
         return sendTypedError(res, 409, API_ERROR_DEVICE_ALREADY_SUBMITTED);
       }
     } catch (err) {
-      console.error('Erro ao verificar feedback duplicado por QR:', err);
+      console.error('Erro ao verificar feedback duplicado por QR:', describeError(err));
       return sendTypedError(res, 500, API_ERROR_DEVICE_CHECK_FAILED);
     }
   }
@@ -241,7 +248,7 @@ export async function submitQrCodeFeedbackController(req: Request, res: Response
         });
         customerId = newCustomer?.id ?? null;
       } catch (err) {
-        console.error('Erro ao criar cliente:', err);
+        console.error('Erro ao criar cliente:', describeError(err));
       }
     }
   }
@@ -259,7 +266,7 @@ export async function submitQrCodeFeedbackController(req: Request, res: Response
     // Guarda a pergunta que o cliente viu: a IA lê o comentário como resposta a ela.
     if (commentField.mode === 'CUSTOM' && message.trim()) commentPrompt = commentField.prompt;
   } catch (err) {
-    console.error('Erro ao ler o campo de comentário do escopo:', err);
+    console.error('Erro ao ler o campo de comentário do escopo:', describeError(err));
   }
 
   // 10. Escrita atômica: device + feedback + respostas numa transação.
@@ -285,10 +292,10 @@ export async function submitQrCodeFeedbackController(req: Request, res: Response
     });
   } catch (err) {
     if (err instanceof QrFeedbackWriteError && err.failure === 'device_creation') {
-      console.error('Erro ao criar dispositivo:', err);
+      console.error('Erro ao criar dispositivo:', describeError(err));
       return sendTypedError(res, 500, API_ERROR_DEVICE_CREATION_FAILED);
     }
-    console.error('Erro ao inserir feedback:', err);
+    console.error('Erro ao inserir feedback:', describeError(err));
     return sendTypedError(res, 500, API_ERROR_FEEDBACK_INSERT_FAILED);
   }
 
@@ -298,7 +305,7 @@ export async function submitQrCodeFeedbackController(req: Request, res: Response
     try {
       await linkTrackedDeviceCustomer({ id: persisted.trackedDeviceId, customerId });
     } catch (err) {
-      console.error('Erro ao vincular cliente ao dispositivo:', err);
+      console.error('Erro ao vincular cliente ao dispositivo:', describeError(err));
     }
   }
 
@@ -311,7 +318,7 @@ export async function submitQrCodeFeedbackController(req: Request, res: Response
       clientIP,
     });
   } catch (err) {
-    console.error('Erro ao atualizar dispositivo:', err);
+    console.error('Erro ao atualizar dispositivo:', describeError(err));
   }
 
   return res.json({ ok: true });

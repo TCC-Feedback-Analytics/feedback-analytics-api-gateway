@@ -5,8 +5,8 @@
  * durável (tabela `ia_rate_budget`), então sobrevive a reinícios e é
  * consistente entre ticks/instâncias concorrentes.
  *
- * Escopo `global` hoje (chave de IA compartilhada). A etapa 04 (BYO-key) passa a
- * usar o `enterprise_id` como escopo, sem tocar no schema.
+ * Escopo por empresa: desde a etapa 04 (BYO-key) cada empresa usa a própria chave,
+ * e o `drainJobs` reserva com o `enterprise_id`.
  */
 import { sql } from 'drizzle-orm';
 import { getDb } from '../../db/client.js';

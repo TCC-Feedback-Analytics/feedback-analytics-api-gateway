@@ -1,5 +1,5 @@
 // Schema Drizzle — Feedbacks, respostas, análise e relatórios de insights.
-import { pgTable, uniqueIndex, foreignKey, index, uuid, text, integer, timestamp, jsonb, numeric, unique, check } from "drizzle-orm/pg-core";
+import { pgTable, foreignKey, index, uuid, text, integer, timestamp, jsonb, numeric, unique, check } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { catalogItems, enterprise } from "./enterprise.js";
 import { feedbackQuestionSubquestions, questionsOfFeedbacks } from "./questions.js";
@@ -114,7 +114,9 @@ export const feedbackInsightsReport = pgTable("feedback_insights_report", {
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow(),
 }, (table) => [
 	index("idx_feedback_insights_report_enterprise_updated").using("btree", table.enterpriseId.asc().nullsLast(), table.updatedAt.desc().nullsFirst()),
-	uniqueIndex("uq_feedback_insights_context").using("btree", table.enterpriseId.asc().nullsLast(), table.scopeType.asc().nullsLast(), table.catalogItemId.asc().nullsLast()),
+	// NULLS NOT DISTINCT: o escopo da empresa tem catalog_item_id nulo e precisa casar
+	// no upsert; sem isso, cada geração gravava uma linha nova (migration 0014).
+	unique("uq_feedback_insights_context").on(table.enterpriseId, table.scopeType, table.catalogItemId).nullsNotDistinct(),
 	foreignKey({
 			columns: [table.enterpriseId],
 			foreignColumns: [enterprise.id],

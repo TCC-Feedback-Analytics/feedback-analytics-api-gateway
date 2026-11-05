@@ -6,7 +6,8 @@ import { defineConfig } from 'drizzle-kit';
  *
  * `schemaFilter: ['public']` é CRÍTICO: garante que a introspecção (`db:pull`) e
  * as migrations (`db:generate`/`db:migrate`) atuem APENAS no schema `public` que
- * o projeto possui — nunca no schema `auth`, gerenciado pelo Supabase.
+ * o projeto possui — nunca em outro schema do Postgres (as tabelas do Better Auth
+ * também ficam no `public`).
  *
  * Requer a variável de ambiente DATABASE_URL apontando para o Postgres do
  * Supabase. Recomendado usar o pooler em modo SESSION (porta 5432) para o

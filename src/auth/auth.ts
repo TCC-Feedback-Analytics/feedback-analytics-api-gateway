@@ -7,7 +7,7 @@
  * - `advanced.database.generateId:false`: o id do usuário é gerado pelo Postgres
  *   (`gen_random_uuid()`), permitindo preservar os UUIDs migrados e o vínculo com
  *   `enterprise.auth_user_id`.
- * - E-mail (verificação/reset) via provider próprio (Mailpit local / Resend prod).
+ * - E-mail (verificação/reset) via provider próprio (Mailpit local / Brevo por SMTP em produção).
  * - `autoSignIn:false` + `requireEmailVerification:true`: anti-enumeração no signup
  *   e login só após confirmação (paridade com RNE-014).
  *

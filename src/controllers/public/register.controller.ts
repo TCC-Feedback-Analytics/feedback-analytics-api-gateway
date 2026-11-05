@@ -17,6 +17,7 @@ import { getAuth } from '../../auth/auth.js';
 import { getDb } from '../../db/client.js';
 import { mapRegisterError } from '../../auth/errorMap.js';
 import { provisionEnterpriseForUser } from '../../auth/enterpriseOnSignup.js';
+import { describeError } from '../../utils/describeError.js';
 
 type RegisterData = {
   email: string;
@@ -54,7 +55,7 @@ export async function registerUserController(req: Request, res: Response) {
 
     return await registerBetter(res, parsed.data as RegisterData);
   } catch (err) {
-    console.error('Register endpoint error:', err);
+    console.error('Register endpoint error:', describeError(err));
     return sendTypedError(res, 500, API_ERROR_INTERNAL_ERROR);
   }
 }

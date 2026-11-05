@@ -29,6 +29,7 @@ import {
   computeScopedTimeline,
 } from '../../services/scopeMetrics.service.js';
 import { computeScopedQuestionMetrics } from '../../services/questionMetrics.service.js';
+import { describeError } from '../../utils/describeError.js';
 
 type FeedbackCollectionPoint = {
   id?: string;
@@ -219,7 +220,7 @@ export async function getFeedbacksController(req: Request, res: Response) {
       },
     });
   } catch (error) {
-    console.error('Erro ao buscar feedbacks:', error);
+    console.error('Erro ao buscar feedbacks:', describeError(error));
     return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
   }
 }
@@ -258,7 +259,7 @@ export async function getFeedbacksStatsController(req: Request, res: Response) {
       period,
     }));
   } catch (error) {
-    console.error('Erro ao buscar estatísticas:', error);
+    console.error('Erro ao buscar estatísticas:', describeError(error));
     return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
   }
 }
@@ -290,7 +291,7 @@ export async function getFeedbacksInsightsReportController(req: Request, res: Re
       catalogItemId: report.catalogItemId ?? catalogItemId,
     });
   } catch (error) {
-    console.error('Erro ao buscar relatório de insights (IA):', error);
+    console.error('Erro ao buscar relatório de insights (IA):', describeError(error));
     return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
   }
 }
@@ -328,7 +329,7 @@ export async function getFeedbacksAnalysisController(req: Request, res: Response
       period,
     }));
   } catch (error) {
-    console.error('Erro ao buscar análises de feedbacks (IA):', error);
+    console.error('Erro ao buscar análises de feedbacks (IA):', describeError(error));
     return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
   }
 }
@@ -370,7 +371,7 @@ export async function getFeedbacksQuestionsController(req: Request, res: Respons
 
     return res.json({ questions });
   } catch (error) {
-    console.error('Erro ao buscar métricas por pergunta:', error);
+    console.error('Erro ao buscar métricas por pergunta:', describeError(error));
     return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
   }
 }
@@ -419,7 +420,7 @@ export async function getFeedbacksTimelineController(req: Request, res: Response
       points,
     });
   } catch (error) {
-    console.error('Erro ao buscar o movimento das avaliações:', error);
+    console.error('Erro ao buscar o movimento das avaliações:', describeError(error));
     return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
   }
 }
@@ -459,7 +460,7 @@ export async function getFeedbacksHeatmapController(req: Request, res: Response)
       cells,
     });
   } catch (error) {
-    console.error('Erro ao buscar os dias e horários de pico:', error);
+    console.error('Erro ao buscar os dias e horários de pico:', describeError(error));
     return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
   }
 }
@@ -496,7 +497,7 @@ export async function getFeedbacksCustomersController(req: Request, res: Respons
       period,
     }));
   } catch (error) {
-    console.error('Erro ao buscar os clientes que voltam:', error);
+    console.error('Erro ao buscar os clientes que voltam:', describeError(error));
     return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
   }
 }

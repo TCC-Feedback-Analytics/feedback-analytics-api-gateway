@@ -11,8 +11,8 @@ export function notTestFeedback(): SQL {
 /**
  * Garante que nenhuma query tenant-scoped seja construída sem um enterprise_id.
  *
- * Como o Drizzle acessa o banco com uma role que IGNORA a RLS, esquecer o filtro
- * de empresa vazaria dados entre tenants. Aqui falhamos rápido e alto — é a
+ * A RLS não separa empresas (a policy do `feedback_app` libera todas as linhas),
+ * então esquecer o filtro de empresa vazaria dados entre tenants. Aqui falhamos rápido e alto — é a
  * primeira linha de defesa do isolamento multi-tenant na aplicação.
  */
 export function assertEnterpriseId(enterpriseId: string): void {
@@ -65,7 +65,7 @@ export function scopedFeedbackWhere(
 /**
  * WHERE para `collection_points` SEMPRE filtrado por `enterprise_id`, cobrindo os
  * padrões repetidos do fluxo QR (tipo/status/ponto específico/escopo COMPANY ou
- * por item de catálogo). Como a role do Drizzle IGNORA a RLS, o `eq(enterprise_id)`
+ * por item de catálogo). Como a RLS não separa empresas, o `eq(enterprise_id)`
  * é a ÚNICA barreira cross-tenant — por isso é sempre incluído.
  *
  * Convenção de `catalogItemId`:

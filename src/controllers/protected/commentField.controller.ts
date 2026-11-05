@@ -10,6 +10,7 @@ import { parseScopeType } from '../../libs/iaAnalyze/parse.js';
 import { resolveEnterpriseIdByUser } from '../../repositories/enterprise.repository.js';
 import { fetchCatalogItemsByIds } from '../../repositories/feedbackList.repository.js';
 import { fetchCommentField, upsertCommentField } from '../../repositories/commentField.repository.js';
+import { describeError } from '../../utils/describeError.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const API_ERROR_CATALOG_ITEM_NOT_FOUND = 'catalog_item_not_found' as const;
@@ -44,7 +45,7 @@ export async function getCommentFieldController(req: Request, res: Response) {
     }
     return res.json(await fetchCommentField({ enterpriseId, scopeType, catalogItemId }));
   } catch (error) {
-    console.error('[comment-field] leitura:', error);
+    console.error('[comment-field] leitura:', describeError(error));
     return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
   }
 }
@@ -64,7 +65,7 @@ export async function putCommentFieldController(req: Request, res: Response) {
     }
     return res.json(await upsertCommentField(enterpriseId, payload));
   } catch (error) {
-    console.error('[comment-field] salvar:', error);
+    console.error('[comment-field] salvar:', describeError(error));
     return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
   }
 }
