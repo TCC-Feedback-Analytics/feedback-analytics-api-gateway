@@ -103,6 +103,7 @@ export async function countScopedFeedbacks(
 /**
  * Página de feedbacks com o ponto de coleta (inner) e o dispositivo/cliente (left),
  * remontada no shape aninhado que o dashboard consome. SEMPRE tenant-scoped.
+ * IP, navegador e fingerprint do aparelho não saem daqui (LGPD, minimização).
  */
 export async function fetchScopedFeedbackPage(params: {
   enterpriseId: string;
@@ -116,6 +117,7 @@ export async function fetchScopedFeedbackPage(params: {
     .select({
       id: feedback.id,
       message: feedback.message,
+      commentPrompt: feedback.commentPrompt,
       rating: feedback.rating,
       channel: feedback.channel,
       createdAt: feedback.createdAt,
@@ -126,12 +128,8 @@ export async function fetchScopedFeedbackPage(params: {
       cpIdentifier: collectionPoints.identifier,
       cpCatalogItemId: collectionPoints.catalogItemId,
       tdId: trackedDevices.id,
-      tdFingerprint: trackedDevices.deviceFingerprint,
-      tdUserAgent: trackedDevices.userAgent,
-      tdIpAddress: trackedDevices.ipAddress,
       tdFeedbackCount: trackedDevices.feedbackCount,
       tdIsBlocked: trackedDevices.isBlocked,
-      tdCustomerId: trackedDevices.customerId,
       custId: customer.id,
       custName: customer.name,
       custEmail: customer.email,
@@ -149,6 +147,7 @@ export async function fetchScopedFeedbackPage(params: {
   return rows.map((r) => ({
     id: r.id,
     message: r.message,
+    comment_prompt: r.commentPrompt,
     rating: r.rating,
     channel: r.channel,
     created_at: r.createdAt,
@@ -163,12 +162,8 @@ export async function fetchScopedFeedbackPage(params: {
     tracked_devices: r.tdId
       ? {
           id: r.tdId,
-          device_fingerprint: r.tdFingerprint,
-          user_agent: r.tdUserAgent,
-          ip_address: r.tdIpAddress,
           feedback_count: r.tdFeedbackCount,
           is_blocked: r.tdIsBlocked,
-          customer_id: r.tdCustomerId,
           customer: r.custId
             ? { id: r.custId, name: r.custName, email: r.custEmail, gender: r.custGender }
             : null,

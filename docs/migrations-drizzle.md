@@ -23,7 +23,6 @@ Antes da Fase 2 o schema vivia em **dois lugares** que precisavam ser espelhados
 |---|---|
 | `schema.ts` | **Barrel** — só re-exporta as tabelas de `schema/*.ts`. É o que o `drizzle-kit` e o app (`src/db/client.ts`) importam. |
 | `schema/*.ts` | **Fonte única** do schema, organizada por **domínio**: `auth`, `authRateLimit`, `enterprise`, `onboarding`, `questions`, `feedback`, `commentField`, `devices`, `views`, `iaJobs` (etapa 03 — fila de análise), `iaConfig` (etapa 04 — config de IA por empresa) e `scopeDiagnosis`. Mantida à mão; alimenta o `generate` e os tipos do runtime. |
-| `relations.ts` + `relations/*.ts` | Relações da query API do Drizzle (barrel + arquivos por domínio). **Opcional** — o app não carrega relations hoje. |
 | `0000_great_talisman.sql` | **Baseline (re-baseline da Fase 2)** — tabelas, FKs, índices e a view `enterprise_public`, refletindo o estado **pós-cutover** (inclui as tabelas Better Auth; sem dependência de `auth.users`). |
 | `0001_functions_triggers_rls.sql` | Migration **custom** — funções (plpgsql/sql), triggers e `ENABLE RLS` que o `drizzle-kit` não deriva. |
 | `0002_fat_chronomancer.sql` | **Etapa 03 (análise assíncrona):** tabelas `ia_analysis_job` (fila + status de progresso) e `ia_rate_budget` (token bucket do rate limiter); `unique(feedback_id)` em `feedback_analysis` (idempotência). Índice parcial único de dedup (`COALESCE` no `catalog_item_id`) e trigger `set_updated_at` entram como **SQL manual** no fim da migration. |
@@ -38,6 +37,7 @@ Antes da Fase 2 o schema vivia em **dois lugares** que precisavam ser espelhados
 | `0011_feedback_comment_prompt.sql` | Coluna `feedback.comment_prompt`. |
 | `0012_feedback_channel.sql` | Coluna `feedback.channel` (`QR`, `LINK`, `NFC`, `TEST`). |
 | `0013_banco_menor_privilegio.sql` | Migration **custom** — RLS em todas as tabelas, papel `feedback_app` e policy `feedback_app_all` ([Banco com o mínimo de privilégio](banco-menor-privilegio.md)). |
+| `0014_insights_report_nulls_not_distinct.sql` | Gerada e completada à mão — apaga os relatórios de insights duplicados, troca o índice único por uma constraint `NULLS NOT DISTINCT` (o escopo da empresa, com `catalog_item_id` nulo, voltava a gravar uma linha por geração) e cria o trigger `set_updated_at` do `feedback_comment_field`. |
 | `meta/_journal.json` + `meta/*_snapshot.json` | Histórico e snapshots usados pelo `generate` para fazer o diff. |
 
 ## Scripts (`package.json` da raiz)

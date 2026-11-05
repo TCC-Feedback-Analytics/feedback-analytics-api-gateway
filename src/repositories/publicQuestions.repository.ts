@@ -29,7 +29,7 @@ export interface PublicQuestionRow {
  * - PRODUCT/SERVICE/DEPARTMENT: perguntas do `catalog_item_id` informado
  *   (ou `catalog_item_id IS NULL` como degradação quando não há item de contexto).
  *
- * Via Drizzle: SEMPRE filtra por `enterprise_id` (a role do Drizzle ignora a RLS)
+ * Via Drizzle: SEMPRE filtra por `enterprise_id` (a RLS não separa empresas)
  * — é a fonte de verdade do formulário público e do anti-tampering do submit.
  * As subperguntas vêm todas (com `is_active`); quem chama filtra as ativas.
  *

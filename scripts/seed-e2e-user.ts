@@ -10,6 +10,7 @@
  *   npm run db:seed:e2e
  */
 import 'dotenv/config';
+import { createHash } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { getAuth, hashBetterAuthPassword } from '../src/auth/auth.js';
 import { getDb, closeDb } from '../src/db/client.js';
@@ -45,10 +46,21 @@ function assertSeedTarget(): void {
   }
 }
 
+/**
+ * Telefone padrão derivado do e-mail: `user.phone` é UNIQUE, e um segundo usuário
+ * de teste (ex.: o gestor B do roteiro do gateway) não pode repetir o do primeiro.
+ */
+function defaultPhoneFor(email: string): string {
+  const digits = createHash('sha256').update(email.trim().toLowerCase()).digest().readUInt32BE(0) % 100_000_000;
+  return `+55119${String(digits).padStart(8, '0')}`;
+}
+
 const USER = {
   email: process.env.E2E_TEST_EMAIL?.trim() ?? '',
   password: process.env.E2E_TEST_PASSWORD ?? '',
   name: 'Gestor E2E',
+  // Sem telefone, o login cai em "Complete seu cadastro" (é o sinal de conta do Google).
+  phone: process.env.E2E_TEST_PHONE?.trim() || defaultPhoneFor(process.env.E2E_TEST_EMAIL ?? ''),
   enterpriseId: process.env.E2E_TEST_ENTERPRISE_ID?.trim() ?? '',
 };
 
@@ -96,7 +108,7 @@ async function ensureEnterpriseLink(userId: string): Promise<void> {
 
   if (rows.length === 0) {
     throw new Error(
-      'E2E_TEST_ENTERPRISE_ID não existe no banco developer. Crie a fixture antes de executar o seed.',
+      'E2E_TEST_ENTERPRISE_ID não existe no banco. Crie a fixture antes de executar o seed.',
     );
   }
 
@@ -196,7 +208,7 @@ async function main(): Promise<void> {
   await ensureCredentialAccount(userId);
   await db.execute(sql`
     UPDATE public."user"
-    SET email_verified = true, name = ${USER.name}, updated_at = NOW()
+    SET email_verified = true, name = ${USER.name}, phone = COALESCE(phone, ${USER.phone}), updated_at = NOW()
     WHERE id = ${userId}
   `);
   await db.execute(sql`DELETE FROM public.session WHERE user_id = ${userId}`);

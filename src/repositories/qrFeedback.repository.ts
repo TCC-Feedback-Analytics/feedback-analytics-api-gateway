@@ -30,7 +30,7 @@ export interface TrackedDeviceRow {
 
 /**
  * Dispositivo rastreado da empresa por fingerprint. SEMPRE tenant-scoped por
- * `enterprise_id` (a role do Drizzle ignora a RLS — invariante nº1).
+ * `enterprise_id` (a RLS não separa empresas — invariante nº1).
  */
 export async function findTrackedDevice(params: {
   enterpriseId: string;

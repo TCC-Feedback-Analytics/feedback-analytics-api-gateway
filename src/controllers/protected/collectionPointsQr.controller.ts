@@ -29,6 +29,7 @@ import {
   type SubquestionOrder,
 } from '../../repositories/collectionPointsQr.repository.js';
 import type { CatalogQuestionInput } from '../../types/catalogQuestion.types.js';
+import { describeError } from '../../utils/describeError.js';
 
 const TOTAL_ITEM_QUESTIONS = 3;
 const TOTAL_SUBQUESTIONS_PER_QUESTION = 3;
@@ -64,8 +65,8 @@ function hasValidQuestionLength(value: string) {
 
 /**
  * Empresa do usuário: `req.enterpriseId` (resolvido no requireAuth) ou, como
- * fallback, resolve por auth_user_id. A role do Drizzle ignora a RLS → o escopo
- * por empresa é feito aqui.
+ * fallback, resolve por auth_user_id. A RLS não separa empresas → o escopo por
+ * empresa é feito aqui.
  */
 async function resolveEnterpriseId(req: Request): Promise<string | null> {
   if (req.enterpriseId) return req.enterpriseId;
@@ -81,7 +82,7 @@ export async function getQrStatusController(req: Request, res: Response) {
     const cp = await findActiveCompanyQrPoint(enterpriseId);
     return res.json({ active: !!cp, id: cp?.id ?? null });
   } catch (err) {
-    console.error('Erro ao buscar status do QR:', err);
+    console.error('Erro ao buscar status do QR:', describeError(err));
     return sendTypedError(res, 500, API_ERROR_COLLECTION_POINT_ERROR, { active: false });
   }
 }
@@ -113,7 +114,7 @@ export async function disableQrController(req: Request, res: Response) {
     await deactivateCompanyQr(enterpriseId);
     return res.json({ active: false });
   } catch (err) {
-    console.error('Erro ao desativar QR:', err);
+    console.error('Erro ao desativar QR:', describeError(err));
     return sendTypedError(res, 500, API_ERROR_UNABLE_TO_DISABLE_QR);
   }
 }
@@ -155,7 +156,7 @@ export async function getQrCatalogController(req: Request, res: Response) {
 
     return res.json({ items: responseItems });
   } catch (err) {
-    console.error('Erro ao buscar catálogo QR:', err);
+    console.error('Erro ao buscar catálogo QR:', describeError(err));
     return sendTypedError(res, 500, API_ERROR_COLLECTION_POINT_ERROR);
   }
 }
@@ -284,7 +285,7 @@ export async function upsertCatalogQuestionsController(req: Request, res: Respon
       questions: snapshot.get(catalogItem.id) ?? [],
     });
   } catch (err) {
-    console.error('Erro ao salvar perguntas do item de catálogo:', err);
+    console.error('Erro ao salvar perguntas do item de catálogo:', describeError(err));
     return sendTypedError(res, 500, API_ERROR_UPDATE_FAILED);
   }
 }
@@ -327,7 +328,7 @@ export async function disableCatalogQrController(req: Request, res: Response) {
     await deactivateCatalogQr(enterpriseId, catalogItemId);
     return res.json({ catalog_item_id: catalogItemId, active: false });
   } catch (err) {
-    console.error('Erro ao desativar QR do item de catálogo:', err);
+    console.error('Erro ao desativar QR do item de catálogo:', describeError(err));
     return sendTypedError(res, 500, API_ERROR_UNABLE_TO_DISABLE_QR);
   }
 }

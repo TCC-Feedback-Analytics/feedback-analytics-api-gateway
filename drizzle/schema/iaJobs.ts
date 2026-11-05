@@ -1,8 +1,9 @@
 // Schema Drizzle — Fila de análise assíncrona (etapa 03).
 //   - ia_analysis_job: é ao mesmo tempo a FILA e o STATUS de progresso.
 //     O worker puxa jobs com SELECT ... FOR UPDATE SKIP LOCKED (ver repo).
-//     Isolamento multi-tenant: app-level por enterprise_id (a RLS foi removida
-//     no cutover; ver ADR-0001) — toda query deve escopar por enterprise_id.
+//     Isolamento multi-tenant: app-level por enterprise_id (a RLS está ligada, mas
+//     a policy do `feedback_app` libera todas as linhas) — toda query deve escopar
+//     por enterprise_id.
 //   - ia_rate_budget: token bucket durável (janela de minuto/dia) para o
 //     back-pressure contra a cota da IA.
 //

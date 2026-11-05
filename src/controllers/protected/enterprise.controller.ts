@@ -28,6 +28,7 @@ import {
 import { DEFAULT_COMPANY_QUESTION_TEXTS } from '../../config/defaultCompanyQuestions.js';
 import { kickWorkerIfPending } from '../../libs/iaJob/kickWorker.js';
 import { autoGenerateCompanyQuestions } from '../../services/companyQuestionsAutoGenerate.service.js';
+import { describeError } from '../../utils/describeError.js';
 
 type CatalogItemInput = {
   id?: string;
@@ -173,7 +174,7 @@ export async function patchEnterpriseController(req: Request, res: Response) {
   const user = req.user!;
 
   const enterprise = await updateEnterpriseByUser(user.id, parsed.data);
-  if (!enterprise) return sendTypedError(res, 401, API_ERROR_ENTERPRISE_NOT_FOUND);
+  if (!enterprise) return sendTypedError(res, 404, API_ERROR_ENTERPRISE_NOT_FOUND);
 
   return res.json({ enterprise, user: { id: user.id, email: user.email ?? null, phone: user.phone ?? null } });
 }
@@ -186,7 +187,7 @@ export async function getCollectingDataController(req: Request, res: Response) {
   try {
     collecting = await getCollectingDataByEnterprise(enterpriseId);
   } catch (err) {
-    console.error('Erro ao buscar dados de coleta:', err);
+    console.error('Erro ao buscar dados de coleta:', describeError(err));
     return sendTypedError(res, 404, API_ERROR_COLLECTING_DATA_NOT_FOUND);
   }
 

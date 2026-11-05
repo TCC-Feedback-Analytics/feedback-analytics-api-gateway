@@ -20,6 +20,8 @@ jobs:
       - name: Processar próximo lote
         env:
           WORKER_TICK_TOKEN: ${{ secrets.WORKER_TICK_TOKEN }}
+          # Endereço do gateway na variável API_GATEWAY_URL do repositório; sem ela, o de produção.
+          API_GATEWAY_URL: ${{ vars.API_GATEWAY_URL || 'https://feedback-analytics-api-gateway.vercel.app' }}
         run: |
           curl \
             --silent \
@@ -29,4 +31,4 @@ jobs:
             --header "Content-Type: application/json" \
             --header "x-worker-token: ${WORKER_TICK_TOKEN}" \
             --data '{}' \
-            https://feedback-analytics-api-gateway.vercel.app/api/internal/worker/tick
+            "${API_GATEWAY_URL}/api/internal/worker/tick"

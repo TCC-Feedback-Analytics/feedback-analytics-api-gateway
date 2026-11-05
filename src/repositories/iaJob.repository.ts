@@ -2,8 +2,8 @@
  * Repositório da FILA de análise assíncrona (etapa 03). A tabela `ia_analysis_job`
  * é ao mesmo tempo a fila e o status de progresso.
  *
- * Isolamento multi-tenant: SEMPRE via `scopedByEnterprise` (a role do Drizzle
- * IGNORA a RLS — ver tenantScope). Dedup de duplo-clique: o índice PARCIAL ÚNICO
+ * Isolamento multi-tenant: SEMPRE via `scopedByEnterprise` (a RLS não separa
+ * empresas — ver tenantScope). Dedup de duplo-clique: o índice PARCIAL ÚNICO
  * `uq_ia_analysis_job_active` garante no máximo 1 job ATIVO por
  * (enterprise, job_type, scope_type, catalog_item_id); aqui fazemos o
  * "select-antes-de-inserir" e usamos a violação de unique (23505) como backstop

@@ -1,7 +1,7 @@
 /**
  * Diagnósticos do escopo guardados (histórico por empresa, escopo e item).
- * Isolamento multi-tenant: SEMPRE via `scopedByEnterprise` (a role do Drizzle
- * ignora a RLS — ver tenantScope).
+ * Isolamento multi-tenant: SEMPRE via `scopedByEnterprise` (a RLS não separa
+ * empresas — ver tenantScope).
  */
 import { desc, eq, isNull, type SQL } from 'drizzle-orm';
 import type { ScopeDiagnosisResult } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/scope-diagnosis.contract';

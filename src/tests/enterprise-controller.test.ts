@@ -138,11 +138,11 @@ describe('patchEnterpriseController', () => {
     expect((res.body as { enterprise: { terms_version: string } }).enterprise.terms_version).toBe('v2');
   });
 
-  it('401 quando o update não encontra a empresa', async () => {
+  it('404 quando o update não encontra a empresa', async () => {
     mockUpdateEnterpriseByUser.mockResolvedValueOnce(null);
     const res = mockRes();
     await patchEnterpriseController(mockReq({ body: { terms_version: 'v2' } }), res);
-    expect(res.statusCode).toBe(401);
+    expect(res.statusCode).toBe(404);
     expect((res.body as { error: string }).error).toBe('enterprise_not_found');
   });
 });

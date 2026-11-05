@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, or, sql } from 'drizzle-orm';
 import { getDb } from '../db/client.js';
 import { catalogItems, collectionPoints } from '../../drizzle/schema.js';
 import { scopedCollectionPointWhere } from '../db/tenantScope.js';
@@ -30,8 +30,10 @@ export interface QrCollectionPoint {
 
 /**
  * Resolve o ponto de coleta QR **ATIVO** do escopo — por id, por item de catálogo,
- * ou o "geral" (`catalog_item_id IS NULL`). SEMPRE tenant-scoped por `enterprise_id`
- * (a role do Drizzle ignora a RLS). Faz `leftJoin` no catálogo p/ o nome/kind.
+ * ou o "geral" (`catalog_item_id IS NULL`). SEMPRE tenant-scoped por `enterprise_id`.
+ * Faz `leftJoin` no catálogo p/ o nome/kind e exige o item ATIVO: tirar o item do
+ * catálogo ou desativar o tipo (que inativa os itens) não pausa o ponto de coleta,
+ * e o QR do item não pode continuar recebendo respostas.
  */
 export async function resolveQrCollectionPoint(params: {
   enterpriseId: string;
@@ -58,7 +60,12 @@ export async function resolveQrCollectionPoint(params: {
     })
     .from(collectionPoints)
     .leftJoin(catalogItems, eq(catalogItems.id, collectionPoints.catalogItemId))
-    .where(scopedCollectionPointWhere(enterpriseId, opts))
+    .where(
+      and(
+        scopedCollectionPointWhere(enterpriseId, opts),
+        or(isNull(collectionPoints.catalogItemId), eq(catalogItems.status, 'ACTIVE')),
+      ),
+    )
     .limit(1);
 
   return rows[0] ?? null;

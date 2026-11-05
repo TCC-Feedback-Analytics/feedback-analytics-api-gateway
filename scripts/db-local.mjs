@@ -37,14 +37,14 @@ try {
   console.log('Recriando schema local (via migrations Drizzle)...');
 
   // Zera public + auth + o histórico de migrations (schema `drizzle`). Sem dropar
-  // o `drizzle`, o migrate acha que 0000/0001 já foram aplicados e NÃO recria nada.
+  // o `drizzle`, o migrate acha que as migrations já foram aplicadas e NÃO recria nada.
   await apply(
     'reset schemas',
     'DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS auth CASCADE; DROP SCHEMA IF EXISTS drizzle CASCADE;',
   );
 
-  // Aplica as migrations versionadas: 0000 (tabelas/FKs/índices/view) + 0001
-  // (funções/triggers/RLS). MESMA sequência que a produção usaria.
+  // Aplica todas as migrations versionadas, da 0000 (tabelas/FKs/índices/view) em
+  // diante. MESMA sequência que a produção usa.
   console.log('  >>> drizzle-kit migrate ...');
   execSync('npx drizzle-kit migrate', { cwd: ROOT, stdio: 'inherit', env: process.env });
 

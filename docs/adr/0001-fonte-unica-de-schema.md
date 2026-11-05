@@ -132,7 +132,7 @@ Nota de severidade: o drift de RLS é de baixo risco funcional (runtime ignora R
 - **Dependências residuais de `auth`:** destino de `tracked_devices.blocked_by → auth.users` (FK nunca tocada) e do fallback `LEFT JOIN auth.users` na view; decidir se `auth.users` legado permanece em prod ou é dropado após migrar `blocked_by`, funções e view. Enquanto não migrada, `usersInAuth` **precisa** continuar em `schema.ts` — remoção prematura quebra a FK.
 - **Governança das tabelas Better Auth:** **verificado** — hoje são criadas *só* pelo `db/cutover/betterauth-enable.sql` manual (não há `@better-auth/cli` nas deps, ficam fora do `drizzle-kit`, e o `deploy-api.yml` não roda migration), com **3 definições mantidas à mão**. Decidir na Fase 2 se passam a ser geridas via `drizzle.config` (recomendado) ou pelo Better Auth CLI com o Drizzle só as descrevendo — evitar dois donos da mesma DDL. *2026-11-03: decidido pelo Drizzle — as 4 tabelas estão em `drizzle/schema/auth.ts` e nascem pela `0000`; `src/auth/schema.ts` não existe mais.*
 - **Baseline e CI:** se `drizzle/0000_bumpy_the_order.sql` for reescrito, reavaliar a marcação manual do baseline para prod não reaplicá-lo; decidir se `deploy-api.yml` passa a rodar `drizzle-kit migrate`, encerrando a aplicação manual fora do CI. *2026-11-03: o baseline foi reescrito como `0000_great_talisman.sql`, e o `deploy-api.yml` roda `npm run db:migrate` desde 2026-09-10.*
-- **`drizzle/relations.ts`** não é importado por nada em `src/` — avaliar remoção. *2026-11-03: segue sem consumidor em `src/`; desde 2026-07-09 está dividido em `drizzle/relations/`.*
+- **`drizzle/relations.ts`** não era importado por nada em `src/`. *2026-11-05: removido, junto com `drizzle/relations/`.*
 
 ## Itens de ação
 

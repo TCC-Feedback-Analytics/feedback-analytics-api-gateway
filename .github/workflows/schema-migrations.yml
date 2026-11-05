@@ -1,9 +1,9 @@
 name: Migrations smoke (ADR-0001)
 
-# Fase 2 do ADR-0001: o banco local nasce das migrations Drizzle (0000 + 0001).
+# Fase 2 do ADR-0001: o banco local nasce das migrations Drizzle (da 0000 em diante).
 # Este job garante que as migrations aplicam limpo e que schema.ts <-> migrations
 # batem: sobe o Postgres do docker-compose, roda `node scripts/db-local.mjs`
-# (shim + auth.users + drizzle-kit migrate + seed) e `drizzle-kit check`.
+# (drizzle-kit migrate + seed) e `drizzle-kit check`.
 
 on:
   push:
@@ -63,7 +63,7 @@ jobs:
           done
           echo "timeout aguardando postgres"; docker logs feedback-api-db; exit 1
 
-      - name: Construir schema pelas migrations (shim + auth.users + drizzle-kit migrate + seed)
+      - name: Construir schema pelas migrations (drizzle-kit migrate + seed)
         run: node scripts/db-local.mjs
 
       - name: Consistência schema.ts <-> migrations (drizzle-kit check)

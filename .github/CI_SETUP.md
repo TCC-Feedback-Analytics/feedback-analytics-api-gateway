@@ -16,7 +16,7 @@ git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
 | `ci.yml` | push e PR em `main` e `developer` | Jobs `lint-typecheck` (`npm run lint` + `tsc -p tsconfig.ci.json --noEmit`) e `unit-tests` (`npm test`) |
 | `schema-migrations.yml` | push e PR em `main` e `developer` que mexem em `db/**`, `drizzle/**`, `scripts/db-local.mjs`, `docker-compose.yml`, `package*.json` ou no próprio workflow | Sobe o Postgres do `docker-compose.yml`, roda `node scripts/db-local.mjs` e `npm run db:check` |
 | `deploy-api.yml` | `workflow_dispatch` | Deploy de produção (seção **Deploy** abaixo) |
-| `ia-worker.yml` | `schedule` (`2-59/5 * * * *`, a cada 5 minutos) e `workflow_dispatch` | `POST https://feedback-analytics-api-gateway.vercel.app/api/internal/worker/tick` com o header `x-worker-token`: processa a fila da IA ([operação do worker](../docs/etapa-03-operacao-worker.md)) |
+| `ia-worker.yml` | `schedule` (`2-59/5 * * * *`, a cada 5 minutos) e `workflow_dispatch` | `POST <API_GATEWAY_URL>/api/internal/worker/tick` (variável do repositório; sem ela, `https://feedback-analytics-api-gateway.vercel.app`) com o header `x-worker-token`: processa a fila da IA ([operação do worker](../docs/etapa-03-operacao-worker.md)) |
 
 ## Secrets (deploy e worker)
 
