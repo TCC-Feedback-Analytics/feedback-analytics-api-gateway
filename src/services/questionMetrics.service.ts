@@ -189,7 +189,7 @@ export async function computeScopedQuestionMetrics(params: {
 
   // Config ATUAL das perguntas (texto + is_active) por id — base da classificação
   // "atual" (ativa + texto igual ao configurado) vs "antiga" (editada/removida).
-  // eq(enterprise_id) OBRIGATÓRIO no repo (o Drizzle ignora a RLS).
+  // eq(enterprise_id) OBRIGATÓRIO no repo (a RLS não separa empresas).
   const currentQ = new Map<string, { text: string; isActive: boolean }>();
   const questionIds = [...new Set([...questionAgg.values()].map((a) => a.id))];
   for (const def of await fetchQuestionDefsScoped(enterpriseId, questionIds)) {

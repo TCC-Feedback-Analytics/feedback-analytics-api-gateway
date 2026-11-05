@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { emailUpdateSchema } from '@feedback/lib-shared/schemas/user/emailUpdateSchema';
 import { metadadosUpdateSchema } from '@feedback/lib-shared/schemas/user/metadadosUpdateSchema';
 import { resetPasswordSchema } from '@feedback/lib-shared/schemas/user/resetPasswordSchema';
+import { phoneStartSchema } from '@feedback/lib-shared/schemas/user/phoneSchema';
 import {
   API_ERROR_INVALID_PAYLOAD,
   API_ERROR_RESET_PASSWORD_INVALID_TOKEN,
@@ -71,8 +72,9 @@ export async function patchUserMetadadosController(req: Request, res: Response) 
 }
 
 export async function startUserPhoneVerificationController(req: Request, res: Response) {
-  const phone = String(req.body?.phone ?? '');
-  if (!phone) return sendTypedError(res, 400, API_ERROR_INVALID_PAYLOAD);
+  const parsed = phoneStartSchema.safeParse(req.body);
+  if (!parsed.success) return sendTypedError(res, 400, API_ERROR_INVALID_PAYLOAD);
+  const { phone } = parsed.data;
 
   // Sem provedor de SMS, o telefone é atualizado direto aqui (a verificação por
   // OTP em /phone/verify vira no-op). Contrato preservado (200 { ok:true }).

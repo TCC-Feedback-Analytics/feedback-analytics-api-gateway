@@ -37,7 +37,7 @@ import { assertCompleteAnalyses } from '../libs/iaAnalyze/validateCompletion.js'
 export async function resolveIaCredsOrThrow(enterpriseId: string): Promise<IaCreds | undefined> {
   const creds = await resolveIaCredsForEnterprise(enterpriseId);
   if (!creds && requireUserIaKey()) {
-    throw new IaAnalyzeServiceError('ia_config_required', 400, 'ia_config_required');
+    throw new IaAnalyzeServiceError('ia_config_required', 409, 'ia_config_required');
   }
   return creds ?? undefined;
 }

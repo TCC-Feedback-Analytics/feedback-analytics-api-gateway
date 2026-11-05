@@ -13,7 +13,7 @@ export interface ScopedInsightsReport {
 
 /**
  * Relatório de insights (IA) do escopo, SEMPRE filtrado por `enterprise_id`
- * (isolamento na aplicação — o Drizzle ignora a RLS). Filtra por `scope_type` e,
+ * (isolamento na aplicação — a RLS não separa empresas). Filtra por `scope_type` e,
  * dentro dele, pelo `catalog_item_id` (igual quando informado; `IS NULL` no escopo
  * COMPANY). Retorna o mais recente (`updated_at DESC`) ou `null`.
  */

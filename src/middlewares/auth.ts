@@ -18,7 +18,7 @@ declare module 'express-serve-static-core' {
   interface Request {
     user?: RequestUser;
     // Empresa do usuário autenticado — base do isolamento por tenant na camada
-    // de aplicação (a role do Drizzle ignora a RLS).
+    // de aplicação (a RLS não separa empresas).
     enterpriseId?: string;
     // Token de redefinição de senha (fluxo de recuperação), lido do cookie ba_reset
     // apenas na rota /password. Consumido pelo resetPasswordController.

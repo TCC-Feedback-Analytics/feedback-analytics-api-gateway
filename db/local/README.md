@@ -21,7 +21,7 @@ A **fonte única** do schema é o `drizzle/schema.ts` + as migrations versionada
 
 - `drizzle/0000_*.sql` — tabelas, FKs, índices e a view.
 - `drizzle/0001_functions_triggers_rls.sql` — o que o `drizzle-kit` não deriva do schema: funções/triggers `plpgsql`/`sql` (fingerprint, anti-spam, `updated_at`, validações) e o `ENABLE ROW LEVEL SECURITY`.
-- `drizzle/0002_*.sql` a `drizzle/0013_*.sql` — as mudanças seguintes (fila da IA, BYO-key, onboarding, campo de comentário, papel `feedback_app` etc.). A lista com o papel de cada uma está em [`docs/migrations-drizzle.md`](../../docs/migrations-drizzle.md).
+- `drizzle/0002_*.sql` a `drizzle/0014_*.sql` — as mudanças seguintes (fila da IA, BYO-key, onboarding, campo de comentário, papel `feedback_app`, relatório de insights único por escopo etc.). A lista com o papel de cada uma está em [`docs/migrations-drizzle.md`](../../docs/migrations-drizzle.md).
 
 O `scripts/db-local.mjs` (o que o `db:reset` roda) **não** aplica mais `db/schema/` nem o shim (`00-shim.sql`) — ambos foram removidos. O banco local é construído pela **mesma** sequência de migrations que a produção usaria, via `drizzle-kit migrate`. O schema não depende mais do Supabase: não há schema `auth`, `auth.uid()` nem roles `anon`/`authenticated`; a view lê apenas `public.user`.
 
@@ -32,9 +32,9 @@ O `scripts/db-local.mjs` (o que o `db:reset` roda) **não** aplica mais `db/sche
 `db:reset` = `node scripts/db-local.mjs && npm run db:seed:e2e`, nesta ordem:
 
 1. **DROP dos schemas** — `DROP SCHEMA public CASCADE; CREATE SCHEMA public;` + `DROP SCHEMA auth CASCADE;` + `DROP SCHEMA drizzle CASCADE`. Dropar o schema `drizzle` (histórico de migrations) é essencial: sem isso o `migrate` acha que 0000/0001 já rodaram e não recria nada.
-2. **`drizzle-kit migrate`** — aplica `0000` (tabelas/FKs/índices/view) + `0001` (funções/triggers/RLS) e as seguintes, até a `0013`.
+2. **`drizzle-kit migrate`** — aplica `0000` (tabelas/FKs/índices/view) + `0001` (funções/triggers/RLS) e as seguintes, até a `0014`.
 3. **`db/local/seed.sql`** — seed determinístico com IDs fixos: duas empresas (A `aaaaaaaa-0000-0000-0000-000000000001` e B `bbbbbbbb-0000-0000-0000-000000000001`) para exercitar o isolamento multi-tenant, dados de coleta, pontos de coleta, perguntas, feedbacks, análises e um relatório de insights por empresa. Insere os gestores em `public.user` (`gestor.a@teste.local` e `gestor.b@teste.local`).
-4. **`npm run db:seed:e2e`** (`scripts/seed-e2e-user.ts`) — cria o usuário de teste do jeito que o Better Auth exige (`user` + `account` com senha bcrypt), marca o e-mail como verificado, apaga as sessões dele, **vincula-o à empresa já existente** de `E2E_TEST_ENTERPRISE_ID` (troca o `auth_user_id` dela) e confere o login. Idempotente. Exige `DATABASE_URL`, `BETTER_AUTH_SECRET`, `E2E_TEST_EMAIL`, `E2E_TEST_PASSWORD` e `E2E_TEST_ENTERPRISE_ID`; sem elas, o `db:reset` falha neste passo (o schema e o seed SQL já foram aplicados). O seed SQL do passo 3 só insere linhas em `public.user`, mas não cria a conta/senha (account) que o login exige.
+4. **`npm run db:seed:e2e`** (`scripts/seed-e2e-user.ts`) — cria o usuário de teste do jeito que o Better Auth exige (`user` + `account` com senha bcrypt), marca o e-mail como verificado, apaga as sessões dele, **vincula-o à empresa já existente** de `E2E_TEST_ENTERPRISE_ID` (troca o `auth_user_id` dela) e confere o login. Idempotente. Grava também o telefone (`E2E_TEST_PHONE`; vazio, gera um a partir do e-mail, para dois usuários de teste não repetirem o mesmo): sem ele, o login cai em "Complete seu cadastro". Exige `DATABASE_URL`, `BETTER_AUTH_SECRET`, `E2E_TEST_EMAIL`, `E2E_TEST_PASSWORD` e `E2E_TEST_ENTERPRISE_ID`; sem elas, o `db:reset` falha neste passo (o schema e o seed SQL já foram aplicados). O seed SQL do passo 3 só insere linhas em `public.user`, mas não cria a conta/senha (account) que o login exige.
 
 ## Segurança
 
@@ -63,6 +63,7 @@ BETTER_AUTH_URL=http://localhost:3000
 E2E_TEST_EMAIL=<e-mail do usuário de teste>
 E2E_TEST_PASSWORD=<senha do usuário de teste>
 E2E_TEST_ENTERPRISE_ID=aaaaaaaa-0000-0000-0000-000000000001
+E2E_TEST_PHONE=   # opcional; vazio gera um a partir do e-mail
 ```
 
 As demais variáveis do app (IA, worker, CORS, Google etc.) estão no `.env.example`.

@@ -82,7 +82,7 @@ Atualiza metadados do usuário. Hoje só o `full_name`, que vai para `user.name`
 
 ### `POST /api/protected/user/complete-signup`
 
-**Primeira entrada com o Google.** A entrada passa pelo handler nativo do Better Auth: `POST /api/auth/sign-in/social` com `{ provider: "google", callbackURL, errorCallbackURL }` e, na volta, `/api/auth/callback/google`.
+**Primeira entrada com o Google.** A entrada passa pelo handler nativo do Better Auth: `POST /api/auth/sign-in/social` com `{ provider: "google", callbackURL, newUserCallbackURL, errorCallbackURL }` e, na volta, `/api/auth/callback/google`. A Web manda o `newUserCallbackURL` para `/auth/complete-signup`, e quem entra pela primeira vez cai direto nessa tela.
 
 O Google dá o nome da pessoa e o e-mail, que já vem verificado. Ao criar a conta, a empresa já é criada (hook `account.create.after`), sem os termos. Esta rota completa o que falta.
 
@@ -112,12 +112,14 @@ Registra/atualiza o telefone do usuário. **Não há provedor de SMS**: o númer
 { "phone": "+5511999990000" }
 ```
 
+O telefone é validado pelo `phoneStartSchema` do `@feedback/lib-shared`: formato `+55DDXXXXXXXXX` (10 ou 11 dígitos depois do `+55`).
+
 **Response 200**
 ```json
 { "ok": true }
 ```
 
-**Response 400** `invalid_payload` / `update_failed`.
+**Response 400** `invalid_payload` (telefone vazio ou fora do formato) / `update_failed`.
 
 ---
 
@@ -282,7 +284,7 @@ Atualiza dados cadastrais parciais da empresa (versão e aceite dos termos).
 
 **Response 200** — mesmo formato de `GET /enterprise`.
 
-**Response 400** `invalid_payload` (body vazio ou fora do schema) · **401** `enterprise_not_found` (usuário sem empresa; o código vem com `401`, não `404`).
+**Response 400** `invalid_payload` (body vazio ou fora do schema) · **404** `enterprise_not_found` (usuário sem empresa).
 
 ---
 
@@ -364,7 +366,8 @@ Lista todos os feedbacks da empresa com paginação e filtros. Inclui os do "Tes
   "feedbacks": [
     {
       "id": "uuid",
-      "message": "Ótimo atendimento!",
+      "message": "Guardanapo.",
+      "comment_prompt": "O que faltou no atendimento? | null",
       "rating": 5,
       "channel": "QR | LINK | NFC | TEST | null",
       "created_at": "2026-05-12T12:00:00Z",
@@ -381,12 +384,8 @@ Lista todos os feedbacks da empresa com paginação e filtros. Inclui os do "Tes
       },
       "tracked_devices": {
         "id": "uuid",
-        "device_fingerprint": "md5",
-        "user_agent": "Mozilla/5.0 ...",
-        "ip_address": "203.0.113.10",
         "feedback_count": 1,
         "is_blocked": false,
-        "customer_id": "uuid | null",
         "customer": { "id": "uuid", "name": "Maria", "email": "maria@exemplo.com", "gender": "Feminino" }
       },
       "feedback_question_answers": [
@@ -567,7 +566,7 @@ Dias e horários de pico: quantas avaliações chegaram e a média das notas em 
 
 Clientes que voltam: quantas avaliações vieram de quem já tinha avaliado a empresa e se a nota de quem volta é maior ou menor que a de quem avalia pela primeira vez, no escopo e no período escolhidos.
 
-- **Quem é o cliente:** o aparelho identificado pelo anti-spam (`tracked_device_id`). Por isso o número é aproximado, e a resposta não traz nenhum dado pessoal. O fingerprint do aparelho inclui o dia (`MD5(userAgent | IP | dia)`, ver `POST /public/qrcode/feedback`), então o mesmo aparelho ganha outro registro a cada dia.
+- **Quem é o cliente:** o aparelho identificado pelo anti-spam (`tracked_device_id`). Por isso o número é aproximado, e a resposta não traz nenhum dado pessoal. O fingerprint do aparelho é `MD5(userAgent | IP)` (ver `POST /public/qrcode/feedback`): o mesmo navegador na mesma rede é o mesmo aparelho em qualquer dia, e trocar de rede ou de navegador conta como outro.
 - **Quando a avaliação é "de quem volta":** quando o mesmo aparelho já tinha avaliado a **empresa** antes, em qualquer escopo. A numeração usa `row_number()` por aparelho, com o filtro de empresa dentro da subconsulta; escopo e período recortam depois.
 - **Sem aparelho:** essas avaliações ficam de fora dos percentuais e são contadas em `unidentified`.
 
@@ -1324,7 +1323,7 @@ O UPDATE exige a mesma empresa, ID da configuração, chave cifrada/IV/tag e mod
 
 Remove a config. As análises ficam bloqueadas com `ia_config_required` até uma nova chave ser configurada. **Response 200** — `{ "hasKey": false, "provider": null, "model": null, "keyHint": null }`.
 
-**Integração do frontend (próxima etapa):** carregar `ia-models` para preencher o select; usar PUT no cadastro inicial e PATCH para trocar modelo com chave já salva. Preservar a seleção atual ausente do catálogo com aviso, informar `stale` e tratar catálogo vazio/erro. Não oferecer um modelo removido como nova escolha nem enviar token no PATCH. Nenhuma migration ou variável de ambiente nova é necessária nesta etapa.
+**Na Web:** a tela de IA carrega o `ia-models` para preencher o select, usa o PUT no cadastro inicial e o PATCH para trocar de modelo com a chave já salva. Mantém a seleção atual que saiu do catálogo, com aviso, e trata `stale`, catálogo vazio e erro.
 
 Referências: [catálogo público OpenRouter](https://openrouter.ai/docs/api/api-reference/models/list-all-models-and-their-properties), [catálogo filtrado por conta](https://openrouter.ai/docs/api/api-reference/models/list-models-filtered-by-user-provider-preferences-privacy-settings-and-guardrails).
 
@@ -1558,7 +1557,7 @@ Retorna os dados públicos de uma empresa **e as perguntas do escopo** para mont
 
 ### `POST /api/public/qrcode/feedback`
 
-Submete um feedback via formulário público. Não requer autenticação. O `device_fingerprint` **não** é enviado pelo cliente — é calculado no backend como `MD5(userAgent | clientIP | dayEpoch)`.
+Submete um feedback via formulário público. Não requer autenticação. O `device_fingerprint` **não** é enviado pelo cliente — é calculado no backend como `MD5(userAgent | clientIP)`, sem o dia: assim "Clientes que voltam" e o bloqueio valem entre dias.
 
 **Body**
 ```json
@@ -1600,11 +1599,11 @@ Submete um feedback via formulário público. Não requer autenticação. O `dev
 
 **Response 400** `invalid_payload` — payload fora do schema, contagem de respostas incorreta ou `answer_score = 0`.
 
-**Response 404** `enterprise_not_found` / `collection_point_not_found` (sem ponto de coleta QR **ativo** para o escopo).
+**Response 404** `enterprise_not_found` / `collection_point_not_found` (sem ponto de coleta QR **ativo** para o escopo, ou o ponto é de um item do catálogo que foi tirado ou teve o tipo desativado).
 
-**Response 409** `DEVICE_ALREADY_SUBMITTED` — dispositivo já enviou feedback para este ponto de coleta hoje (anti-spam diário).
+**Response 409** `DEVICE_ALREADY_SUBMITTED` — dispositivo já enviou feedback para este ponto de coleta hoje (anti-spam diário). O dia vira à meia-noite de Brasília.
 
-**Response 403** `DEVICE_BLOCKED` — o registro do aparelho na empresa está com `is_blocked = true`. Como o fingerprint inclui o dia, o bloqueio vale para o registro daquele dia.
+**Response 403** `DEVICE_BLOCKED` — o registro do aparelho na empresa está com `is_blocked = true`. O bloqueio vale até ser desfeito, porque o fingerprint não muda de um dia para outro.
 
 **Response 500** `collection_point_error` · `device_check_failed` · `device_creation_failed` · `feedback_insert_failed` — falha de banco; nada é gravado.
 
@@ -1620,5 +1619,5 @@ Submete um feedback via formulário público. Não requer autenticação. O `dev
 | Job de IA `failed` com `failed_remote_ia_analyze_request` ou `ia_provider_*` | Serviço `ia-analyze` offline ou provedor LLM com erro. Os POSTs de IA só enfileiram e não devolvem `502` | Verifique se o `ia-analyze` está rodando e se `IA_ANALYZE_REMOTE_URL`/`IA_ANALYZE_REMOTE_TOKEN` estão configurados. A chave do LLM é a **da empresa** (`/user/ia-config`); sem ela, o job falha com `ia_config_required`. A chave global do `ia-analyze` só entra com `REQUIRE_USER_IA_KEY=false` |
 | `400 ia_config_invalid_key` no `PUT /user/ia-config` | Chave OpenRouter inválida | Confira/gere a chave em https://openrouter.ai/keys |
 | Job assíncrono fica `failed` | Erro capturado no worker | Veja `errorCode` no `GET /ia-analyze/jobs/:id` (ex.: `ia_config_required`, `insufficient_feedbacks_for_analysis`) e confirme que o cron está batendo em `/internal/worker/tick` |
-| `409` no POST público | Fingerprint já registrado hoje neste ponto de coleta | Aguarde até o próximo dia ou use outro ponto de coleta |
+| `409` no POST público | Fingerprint já registrado hoje neste ponto de coleta | Aguarde até a meia-noite de Brasília ou use outro ponto de coleta |
 | `403` no POST público | Registro do aparelho bloqueado | Registro em `tracked_devices` marcado como `is_blocked` — requer intervenção manual |

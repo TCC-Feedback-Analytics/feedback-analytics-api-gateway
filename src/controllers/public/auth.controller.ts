@@ -6,6 +6,7 @@ import { fromNodeHeaders } from 'better-auth/node';
 import { APIError } from 'better-auth/api';
 import { getAuth } from '../../auth/auth.js';
 import { mapLoginError } from '../../auth/errorMap.js';
+import { describeError } from '../../utils/describeError.js';
 
 export async function loginController(req: Request, res: Response) {
   try {
@@ -36,7 +37,7 @@ export async function loginController(req: Request, res: Response) {
       throw err; // erro inesperado → catch externo → 500
     }
   } catch (err) {
-    console.error('Login endpoint error:', err);
+    console.error('Login endpoint error:', describeError(err));
     return sendTypedError(res, 500, API_ERROR_INTERNAL_ERROR, {
       message: 'Falha temporária ao processar login. Tente novamente.',
     });

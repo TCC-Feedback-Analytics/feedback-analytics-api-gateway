@@ -1,6 +1,6 @@
 /**
  * Repositório da config de IA por empresa (etapa 04 — BYO-key). Sempre escopado
- * por `enterprise_id` (a role do Drizzle ignora a RLS — ver tenantScope). A chave
+ * por `enterprise_id` (a RLS não separa empresas — ver tenantScope). A chave
  * fica cifrada; a decifra é responsabilidade da camada de serviço, não daqui.
  */
 import { getDb } from '../db/client.js';

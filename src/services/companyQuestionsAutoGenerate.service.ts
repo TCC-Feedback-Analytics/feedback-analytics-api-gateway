@@ -15,6 +15,7 @@ import {
 } from '../repositories/companyQuestionSuggestions.repository.js';
 import { hasDefaultCompanyQuestions } from '../repositories/collectingData.repository.js';
 import { requestCompanyQuestionSuggestions } from './companyQuestionSuggestions.service.js';
+import { describeError } from '../utils/describeError.js';
 
 /**
  * O que aconteceu com o pedido de geração, para a Web dizer a verdade ao usuário
@@ -56,7 +57,7 @@ export async function autoGenerateCompanyQuestions(
     }
     // Contexto incompleto ou IA não configurada: segue sem gerar.
     if (error instanceof IaAnalyzeServiceError) return { status: 'unavailable', code: error.code };
-    console.error('[company-questions:auto] falha ao enfileirar geração:', error);
+    console.error('[company-questions:auto] falha ao enfileirar geração:', describeError(error));
     return { status: 'unavailable', code: 'internal_error' };
   }
 }

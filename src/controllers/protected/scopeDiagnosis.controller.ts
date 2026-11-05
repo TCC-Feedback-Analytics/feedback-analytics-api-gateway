@@ -21,6 +21,7 @@ import {
   listScopeDiagnoses,
 } from '../../repositories/scopeDiagnosis.repository.js';
 import { requestScopeDiagnosis, toScopeDiagnosis } from '../../services/scopeDiagnosis.service.js';
+import { describeError } from '../../utils/describeError.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -44,7 +45,7 @@ async function enterpriseOf(req: Request): Promise<string | null> {
 
 function sendFailure(res: Response, label: string, error: unknown) {
   if (error instanceof IaAnalyzeServiceError) return sendTypedError(res, error.statusCode, error.code);
-  console.error(`[scope-diagnosis] ${label}:`, error);
+  console.error(`[scope-diagnosis] ${label}:`, describeError(error));
   return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
 }
 

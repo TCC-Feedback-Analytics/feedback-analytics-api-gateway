@@ -5,10 +5,10 @@
  * no boot (health check e testes sobem — o primeiro uso real sem a var lança erro
  * claro em `getDb()`).
  *
- * IMPORTANTE (segurança): esta conexão usa a connection string do Postgres, que
- * roda com uma role que IGNORA a RLS. Portanto, TODA query por aqui DEVE filtrar
- * explicitamente por `enterprise_id` (use os helpers tenant-scoped). A RLS segue
- * ligada como defesa em profundidade.
+ * IMPORTANTE (segurança): o app entra como `feedback_app`. A RLS está ligada, mas a
+ * policy `feedback_app_all` (migration 0013) libera todas as linhas para esse papel:
+ * ela barra os outros papéis, não separa empresas. Portanto, TODA query por aqui
+ * DEVE filtrar explicitamente por `enterprise_id` (use os helpers tenant-scoped).
  */
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';

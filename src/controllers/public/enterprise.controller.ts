@@ -12,6 +12,7 @@ import {
   getPublicEnterpriseById,
   resolveQrCollectionPoint,
 } from '../../repositories/publicEnterprise.repository.js';
+import { describeError } from '../../utils/describeError.js';
 
 function normalizeItemKind(kind: string | null): 'PRODUCT' | 'SERVICE' | 'DEPARTMENT' | null {
   return kind === 'PRODUCT' || kind === 'SERVICE' || kind === 'DEPARTMENT' ? kind : null;
@@ -71,7 +72,7 @@ export async function getPublicEnterpriseController(req: Request, res: Response)
     });
 
     if (questionsError) {
-      console.error('Erro ao buscar perguntas públicas de feedback:', questionsError);
+      console.error('Erro ao buscar perguntas públicas de feedback:', describeError(questionsError));
     }
 
     // Sem conseguir ler, o formulário mostra o convite padrão (o campo segue opcional).
@@ -80,7 +81,7 @@ export async function getPublicEnterpriseController(req: Request, res: Response)
       scopeType: currentScope,
       catalogItemId: contextCatalogItemId,
     }).catch((err) => {
-      console.error('Erro ao buscar o campo de comentário público:', err);
+      console.error('Erro ao buscar o campo de comentário público:', describeError(err));
       return DEFAULT_COMMENT_FIELD;
     });
 
@@ -95,7 +96,7 @@ export async function getPublicEnterpriseController(req: Request, res: Response)
       comment,
     });
   } catch (err) {
-    console.error('Erro ao buscar empresa:', err);
+    console.error('Erro ao buscar empresa:', describeError(err));
     return sendTypedError(res, 500, API_ERROR_INTERNAL_SERVER_ERROR);
   }
 }
