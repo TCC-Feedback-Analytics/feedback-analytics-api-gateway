@@ -31,7 +31,7 @@ function logIaAnalyzeFailure(label: string, startedAt: number, error: unknown) {
   const code = error instanceof IaAnalyzeServiceError ? error.code : 'unexpected_error';
   const statusCode = error instanceof IaAnalyzeServiceError ? error.statusCode : 500;
 
-  let baseUrl = 'unresolved';
+  let baseUrl: string;
   try {
     baseUrl = resolvePrimaryBaseUrl();
   } catch {
