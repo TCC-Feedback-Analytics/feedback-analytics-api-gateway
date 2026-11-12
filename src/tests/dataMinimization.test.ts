@@ -2,23 +2,25 @@
  * Validação de Minimização de Dados (LGPD Art. 6º, III)
  *
  * Garante que:
- * 1. Tokens de sessão (Better Auth) são opacos e NÃO contêm dados pessoais
- *    sensíveis (CPF, documento, telefone) trafegando no navegador.
- * 2. O telefone do gestor reside estritamente no banco de dados (tabela user),
- *    nunca no payload do cookie de sessão.
+ * 1. O cookie de sessão (Better Auth) leva só o token da sessão, sem dados
+ *    pessoais: a sessão mora no banco e não há JWT nem cache da sessão no cookie.
+ * 2. O telefone do gestor fica na tabela `user`, nunca na tabela `session`.
  * 3. CPF/CNPJ foi eliminado do modelo de dados (tabela enterprise) e de schemas.
  * 4. Formulários de feedback público não coletam documento/CPF do cliente.
  */
 import { describe, it, expect } from 'vitest';
+import { getTableColumns } from 'drizzle-orm';
+import type { BetterAuthOptions } from 'better-auth';
 import { session, enterprise, user } from '../../drizzle/schema.js';
+import { getAuth } from '../auth/auth.js';
 import { publicFeedbackSchema } from '@feedback/lib-shared/schemas/public/feedbackSchema';
 import { registerSchema } from '@feedback/lib-shared/schemas/public/registerSchema';
 
 describe('[Segurança & LGPD] Minimização de Dados e Higienização de Sessão', () => {
-  describe('Sessão e Cookies (Better Auth vs. JWT tradicional)', () => {
+  describe('Sessão e Cookies (Better Auth)', () => {
     it('o schema da tabela session não armazena CPF, documento ou telefone', () => {
-      const sessionColumns = Object.keys(session);
-      
+      const sessionColumns = Object.keys(getTableColumns(session));
+
       expect(sessionColumns).not.toContain('cpf');
       expect(sessionColumns).not.toContain('cnpj');
       expect(sessionColumns).not.toContain('document');
@@ -31,57 +33,29 @@ describe('[Segurança & LGPD] Minimização de Dados e Higienização de Sessão
       expect(sessionColumns).toContain('expiresAt');
     });
 
-    it('tokens de sessão são strings opacas e não JWTs com claims de CPF/documento/telefone', () => {
-      // Simula tokens opacos gerados pelo Better Auth (ex: 32+ bytes aleatórios em base64url/hex)
-      const mockOpaqueSessionToken = 'ba_sess_9a8f7e6d5c4b3a210987654321fedcba';
-      
-      // Um token opaco não possui estrutura de 3 partes separadas por ponto de um JWT
-      const isJwt = mockOpaqueSessionToken.split('.').length === 3;
-      expect(isJwt).toBe(false);
+    it('o cookie de sessão leva só o token: sem cache da sessão no cookie nem plugin de JWT', () => {
+      // Tipada como as opções gerais: o que a config não define vem `undefined`.
+      const options: BetterAuthOptions = getAuth().options;
 
-      // Função que inspeciona qualquer payload de autenticação garantindo ausência de PII sensível
-      function inspectTokenPayload(payload: Record<string, unknown>) {
-        const forbiddenKeys = ['cpf', 'cnpj', 'document', 'phone', 'telephone', 'doc'];
-        const foundForbidden = Object.keys(payload).filter((k) =>
-          forbiddenKeys.includes(k.toLowerCase())
-        );
-        return foundForbidden;
-      }
+      // Com o cookieCache ligado, o Better Auth gravaria a sessão e o usuário
+      // (com o telefone) num cookie do navegador.
+      expect(options.session?.cookieCache?.enabled ?? false).toBe(false);
 
-      // Se um JWT simulado fosse inspecionado, chaves sensíveis devem estar ausentes
-      const safeClaims = {
-        sub: '123e4567-e89b-12d3-a456-426614174000',
-        email: 'gestor@empresa.com',
-        iat: 1731283200,
-        exp: 1731369600,
-      };
-
-      expect(inspectTokenPayload(safeClaims)).toEqual([]);
-
-      // Validação de que payload contendo CPF/documento/telefone é detectado e proibido
-      const contaminatedClaims = {
-        sub: '123e4567-e89b-12d3-a456-426614174000',
-        cpf: '123.456.789-00',
-        phone: '+5511999998888',
-        document: '12345678000199',
-      };
-      expect(inspectTokenPayload(contaminatedClaims)).toEqual(['cpf', 'phone', 'document']);
+      // O plugin de JWT emitiria tokens com os dados do usuário.
+      const pluginIds = (options.plugins ?? []).map((plugin) => plugin.id);
+      expect(pluginIds).not.toContain('jwt');
     });
 
-    it('telefone reside exclusivamente na entidade de usuário no banco, fora do token', () => {
-      const userColumns = Object.keys(user);
-      expect(userColumns).toContain('phone');
-
-      // Mas o token da sessão (cookie) só armazena a referência opaca
-      const sessionKeys = Object.keys(session);
-      expect(sessionKeys).not.toContain('phone');
+    it('telefone fica na tabela user, fora da tabela session', () => {
+      expect(Object.keys(getTableColumns(user))).toContain('phone');
+      expect(Object.keys(getTableColumns(session))).not.toContain('phone');
     });
   });
 
   describe('Remoção de CPF/CNPJ da Empresa (Migration 0009)', () => {
     it('a entidade enterprise não possui campos de documento ou tipo de conta', () => {
-      const enterpriseColumns = Object.keys(enterprise);
-      
+      const enterpriseColumns = Object.keys(getTableColumns(enterprise));
+
       // Conforme migration 0009_remove_enterprise_document.sql
       expect(enterpriseColumns).not.toContain('document');
       expect(enterpriseColumns).not.toContain('account_type');
