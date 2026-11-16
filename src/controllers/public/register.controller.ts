@@ -18,6 +18,10 @@ import { getDb } from '../../db/client.js';
 import { mapRegisterError } from '../../auth/errorMap.js';
 import { provisionEnterpriseForUser } from '../../auth/enterpriseOnSignup.js';
 import { describeError } from '../../utils/describeError.js';
+import { authClientIp, reserveAuthAttempt } from '../../libs/authRateLimit.js';
+import { sendRateLimited } from '../../utils/sendRateLimited.js';
+
+const REGISTER_LIMITED_MESSAGE = 'Muitas tentativas de cadastro em pouco tempo. Aguarde e tente novamente.';
 
 type RegisterData = {
   email: string;
@@ -51,6 +55,12 @@ export async function registerUserController(req: Request, res: Response) {
       return sendTypedError(res, 400, API_ERROR_INVALID_PAYLOAD, {
         issues: parsed.error.issues,
       });
+    }
+
+    // Cada cadastro manda um e-mail de confirmação; conta também e-mail já cadastrado.
+    const reservation = await reserveAuthAttempt('register', authClientIp(req), parsed.data.email);
+    if (!reservation.allowed) {
+      return sendRateLimited(res, reservation.retryAfterSeconds, REGISTER_LIMITED_MESSAGE);
     }
 
     return await registerBetter(res, parsed.data as RegisterData);
