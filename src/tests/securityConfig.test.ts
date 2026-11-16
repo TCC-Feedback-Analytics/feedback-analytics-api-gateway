@@ -1,11 +1,12 @@
 /**
  * Configuração de segurança do Gateway: sessões ao trocar a senha, origens
- * localhost só fora de produção (CORS e Better Auth) e o cabeçalho X-Powered-By.
+ * localhost só fora de produção (CORS e Better Auth), o cabeçalho X-Powered-By e as
+ * rotas nativas de e-mail e senha desligadas.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import request from 'supertest';
 import type { BetterAuthOptions } from 'better-auth';
-import { buildTrustedOrigins, getAuth } from '../auth/auth.js';
+import { buildTrustedOrigins, DISABLED_NATIVE_AUTH_PATHS, getAuth } from '../auth/auth.js';
 
 const LOCALHOST = ['http://localhost:5173', 'http://localhost:4173'];
 
@@ -71,5 +72,44 @@ describe('CORS e cabeçalhos do app', () => {
     const res = await request(app).get('/api/health');
     expect(res.status).toBe(200);
     expect(res.headers['x-powered-by']).toBeUndefined();
+  });
+});
+
+describe('rotas nativas de e-mail e senha do Better Auth', () => {
+  afterEach(() => {
+    vi.resetModules();
+  });
+
+  async function loadApp() {
+    vi.resetModules();
+    return (await import('../../index.js')).default;
+  }
+
+  it('respondem 404: o login, o cadastro e a recuperação só passam pelo gateway, com o limite no banco', async () => {
+    const app = await loadApp();
+    for (const path of DISABLED_NATIVE_AUTH_PATHS) {
+      const res = await request(app)
+        .post(`/api/auth${path}`)
+        .send({ email: 'gestor@bompao.com.br', password: 'Gato!Verde!Pulou', newPassword: 'Gato!Verde!Pulou', token: 'tok' });
+      expect(res.status, path).toBe(404);
+    }
+  });
+
+  it('as rotas nativas que a Web e os e-mails usam continuam abertas', async () => {
+    const usedByWebOrEmails = [
+      '/sign-in/social',
+      '/callback/google',
+      '/verify-email',
+      '/reset-password/:token',
+      '/list-accounts',
+      '/delete-user',
+      '/sign-out',
+      '/get-session',
+    ];
+    for (const path of usedByWebOrEmails) expect(DISABLED_NATIVE_AUTH_PATHS).not.toContain(path);
+
+    const app = await loadApp();
+    const res = await request(app).get('/api/auth/ok');
+    expect(res.status).toBe(200);
   });
 });

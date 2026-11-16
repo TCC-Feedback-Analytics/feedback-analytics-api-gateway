@@ -81,6 +81,24 @@ export async function discardOAuthTokens() {
   return { data: { accessToken: null, refreshToken: null, idToken: null } };
 }
 
+/**
+ * Rotas HTTP nativas de e-mail e senha que respondem 404. O login, o cadastro, o
+ * pedido de recuperação e a nova senha passam pelas rotas do gateway, que contam as
+ * tentativas no banco (libs/authRateLimit.ts) e chamam o Better Auth por dentro do
+ * servidor; a porta nativa deixaria contornar esse limite. A Web não chama nenhuma
+ * delas, nem a troca e a conferência de senha com sessão aberta.
+ * Continuam abertas as rotas que a Web e os e-mails usam: sign-in/social,
+ * callback/google, verify-email, reset-password/:token, list-accounts e delete-user.
+ */
+export const DISABLED_NATIVE_AUTH_PATHS = [
+  '/sign-in/email',
+  '/sign-up/email',
+  '/request-password-reset',
+  '/reset-password',
+  '/change-password',
+  '/verify-password',
+];
+
 function createAuth() {
   const isProd = process.env.NODE_ENV === 'production';
   const crossSite = String(process.env.COOKIE_CROSS_SITE ?? '').trim() === 'true';
@@ -91,6 +109,7 @@ function createAuth() {
     secret: process.env.BETTER_AUTH_SECRET,
     baseURL: process.env.BETTER_AUTH_URL ?? 'http://localhost:3000',
     basePath: '/api/auth',
+    disabledPaths: DISABLED_NATIVE_AUTH_PATHS,
     database: drizzleAdapter(getDb(), { provider: 'pg', schema: { user, session, account, verification } }),
     advanced: {
       // Deixa o Postgres gerar o id (uuid) → preserva os UUIDs migrados.
