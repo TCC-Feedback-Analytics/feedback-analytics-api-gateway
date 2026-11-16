@@ -21,7 +21,7 @@ declare module 'express-serve-static-core' {
     // de aplicação (a RLS não separa empresas).
     enterpriseId?: string;
     // Token de redefinição de senha (fluxo de recuperação), lido do cookie ba_reset
-    // apenas na rota /password. Consumido pelo resetPasswordController.
+    // apenas na rota /password, com ou sem sessão. Consumido pelo resetPasswordController.
     resetToken?: string;
   }
 }
@@ -39,9 +39,21 @@ function readCookie(req: Request, name: string): string | undefined {
   return undefined;
 }
 
+// Recuperação de senha: o callback grava o token no cookie ba_reset. Aceito SOMENTE
+// na rota de senha (o cookie já é path-scoped; aqui reforçamos no servidor). O token
+// é validado depois pelo Better Auth.
+function readResetTokenOnPasswordRoute(req: Request): string | undefined {
+  if (!req.path.endsWith('/password')) return undefined;
+  return readCookie(req, 'ba_reset');
+}
+
 // Valida a sessão via cookie (Better Auth) e resolve a empresa do usuário.
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   try {
+    // Lido antes da sessão: o gestor que abre o link de recuperação no navegador em
+    // que já está logado também precisa do token para trocar a senha.
+    req.resetToken = readResetTokenOnPasswordRoute(req);
+
     const result = await getAuth().api.getSession({
       headers: fromNodeHeaders(req.headers),
     });
@@ -69,16 +81,8 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       return next();
     }
 
-    // Recuperação de senha: sem sessão, mas com o cookie ba_reset setado pelo
-    // callback. Aceito SOMENTE na rota de senha (o cookie já é path-scoped; aqui
-    // reforçamos no servidor). O token é validado depois pelo Better Auth.
-    if (req.path.endsWith('/password')) {
-      const resetToken = readCookie(req, 'ba_reset');
-      if (resetToken) {
-        req.resetToken = resetToken;
-        return next();
-      }
-    }
+    // Sem sessão, a rota de senha passa só com o token de recuperação.
+    if (req.resetToken) return next();
 
     return res.status(401).json({ error: 'unauthorized' });
   } catch {
