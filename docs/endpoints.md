@@ -6,6 +6,8 @@ Todos os endpoints protegidos usam a sessão que trafega por **cookies HttpOnly*
 
 > **Nota:** todas as rotas são prefixadas com `/api` (ex.: `GET /api/health`).
 
+> **Origens e cabeçalhos:** as origens `http://localhost:5173` e `http://localhost:4173` só valem fora de produção, no CORS e no Better Auth. Em produção valem `PUBLIC_SITE_URL` e `CORS_ALLOWED_ORIGINS`. O CORS expõe o cabeçalho `Retry-After`, para a Web ler o tempo de espera do `429`. O Gateway não envia `X-Powered-By`.
+
 ---
 
 ## Health
@@ -100,6 +102,7 @@ O Google dá o nome da pessoa e o e-mail, que já vem verificado. Ao criar a con
   - `500 internal_server_error`.
 - **Mesmo e-mail com senha e com Google = a mesma conta** (`accountLinking` com o Google como provedor confiável).
 - **Ligar e desligar:** o Google só funciona com `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` no ambiente.
+- **Tokens do Google:** a conta não guarda o `access_token`, o `refresh_token` nem o `id_token`. Os hooks `account.create.before` e `account.update.before` apagam os três (`discardOAuthTokens`, em `src/auth/auth.ts`), e o sistema não chama o Google depois do login. A migration `0015_apagar_tokens_google.sql` limpou as contas antigas.
 
 ---
 
@@ -166,6 +169,7 @@ A nova senha encerra **todas as sessões** da pessoa (`revokeSessionsOnPasswordR
 | `400` | `invalid_payload` | Body fora do schema |
 | `400` | `reset_password_weak` | Senha muito fraca |
 | `401` | `reset_password_invalid_token` | Link/sessão de recuperação expirado ou inválido |
+| `401` | `unauthorized` | Sem sessão e sem o cookie `ba_reset` |
 | `400` | `reset_password_failed` | Falha genérica ao redefinir |
 | `503` | `service_unavailable` | Serviço de autenticação indisponível (Better Auth respondeu 5xx) |
 
@@ -880,6 +884,7 @@ Cria/atualiza as perguntas dinâmicas de um item de catálogo. O array `question
 | `active_question_without_text` / `active_subquestion_without_text` | `is_active: true` com o texto vazio |
 | `duplicate_question_order` / `duplicate_subquestion_order` | Ordem repetida |
 | `question_not_object` / `subquestion_not_object` | Item que não é objeto |
+| `invalid_catalog_kind` / `ordered_questions_not_3` | Item com tipo inválido no banco, ou slots que não fecham as ordens 1, 2 e 3 |
 
 **Response 404** `collection_point_error` (item inexistente, de outra empresa ou inativo) ou `enterprise_not_found`. **500** `update_failed` — falha ao gravar (nada é salvo).
 
@@ -930,7 +935,7 @@ Campo de comentário do formulário de um escopo: a empresa (`scope_type=COMPANY
 { "mode": "DEFAULT | CUSTOM | HIDDEN", "prompt": "O que faltou no atendimento? | null" }
 ```
 
-**Response 400** `invalid_payload` — escopo ou id inválido. **404** `catalog_item_not_found` — item de outra empresa ou de outro tipo.
+Query: `scope_type` (padrão `COMPANY`) e `catalog_item_id`. As respostas usam `Cache-Control: private, no-store`. **Response 400** `invalid_payload`: escopo ou id inválido. **404** `enterprise_not_found` ou `catalog_item_not_found`: item de outra empresa ou de outro tipo. **500** `internal_server_error`.
 
 ---
 
@@ -951,7 +956,7 @@ Salva o campo de comentário de um escopo (uma configuração por empresa ou por
 
 `prompt` só é guardado no modo `CUSTOM`. `catalog_item_id` é obrigatório fora de `COMPANY` e proibido nela.
 
-**Response 200** — a configuração salva, no formato do `GET`. **400** `invalid_payload` · **404** `catalog_item_not_found`.
+**Response 200** — a configuração salva, no formato do `GET`. **400** `invalid_payload` · **404** `catalog_item_not_found` · **404** `enterprise_not_found` · **500** `internal_server_error`.
 
 ---
 
@@ -1011,7 +1016,7 @@ relatório após o job concluir.
 Recupera jobs ativos da empresa autenticada, inclusive após reload/outro dispositivo:
 
 ```json
-{ "jobs": [{ "id": "uuid", "jobType": "regenerate_insights", "scopeType": "COMPANY", "catalogItemId": null, "phase": "generating", "status": "running", "total": 6, "done": 2, "errorCode": null, "updatedAt": "2026-09-04T12:00:00Z" }] }
+{ "jobs": [{ "id": "uuid", "jobType": "regenerate_insights", "scopeType": "COMPANY", "catalogItemId": null, "phase": "generating", "status": "running", "total": 6, "done": 2, "errorCode": null, "diagnosisId": null, "updatedAt": "2026-09-04T12:00:00Z" }] }
 ```
 
 ### `GET /api/protected/ia-analyze/jobs/company-questions/latest`
@@ -1080,6 +1085,7 @@ Retorna o objeto de status acima, incluindo jobs terminados.
   agendada. Só failed é falha terminal.
 - `404 ia_job_not_found`: ID inválido/inexistente ou de outra empresa.
 - Nunca retorna credenciais, textos do snapshot ou options/checkpoints.
+- Quando o job termina, com sucesso ou com falha definitiva, o checkpoint com os comentários sai das `options`. Fica só a fase, para o polling.
 
 O cliente deve aguardar completed; 202 não comprova conclusão. Perda de conexão
 no polling deve reconectar, não declarar falha do job. Operação local e de produção:
@@ -1383,7 +1389,7 @@ O limite por IP é largo porque, em produção, o login passa pelo repasse da Ve
 | `401` | `login_failed` | Falha genérica de login (fallback) |
 | `429` | `rate_limited` | Limite de tentativas atingido; vem com `retryAfterSeconds` no corpo e o header `Retry-After` |
 | `503` | `service_unavailable` | Serviço de login indisponível |
-| `500` | `internal_error` | Exceção não tratada |
+| `500` | `internal_error` | Exceção não tratada. Inclui a falha do controle de tentativas (banco, IP do cliente ou segredo do HMAC) |
 
 ---
 
@@ -1412,9 +1418,9 @@ Cria uma nova conta. Por segurança (RNE-014), e-mail já cadastrado **não** é
 ```
 
 - `fullName` é o **nome do negócio**, para pessoa física ou jurídica.
-- **Senha:** pelo menos 10 caracteres (`MIN_PASSWORD_LENGTH`) e nota 4 no zxcvbn, com dicionário em português (`MIN_PASSWORD_SCORE`). A mesma regra vale na Web e na redefinição de senha.
+- **Senha:** pelo menos 10 caracteres (`MIN_PASSWORD_LENGTH`) e nota 4 no zxcvbn, com dicionário em português (`MIN_PASSWORD_SCORE`). O tamanho e a nota valem também na Web e na redefinição de senha.
   - O zxcvbn reconhece palavras comuns, nomes, sequências e repetições. "Palavra123palavra" não passa; uma frase curta ("sol azul de manha") passa.
-  - O nome do negócio, o e-mail e o telefone dentro da senha derrubam a nota.
+  - No cadastro, o nome do negócio, o e-mail e o telefone dentro da senha derrubam a nota. Na redefinição, o Gateway não confere esses dados.
 
 **Response 200**
 ```json
@@ -1433,7 +1439,7 @@ Cria uma nova conta. Por segurança (RNE-014), e-mail já cadastrado **não** é
 | `429` | `rate_limited` | Limite de cadastros atingido (abaixo); vem com `retryAfterSeconds` no corpo e o header `Retry-After` |
 | `429` | `signup_failed` | O Better Auth respondeu 429 |
 | `503` | `signup_failed` | Cadastro temporariamente indisponível — Better Auth respondeu 5xx (inclui falha ao enviar o e-mail de confirmação) |
-| `500` | `internal_error` | Exceção não tratada |
+| `500` | `internal_error` | Exceção não tratada. Inclui a falha do controle de tentativas (banco, IP do cliente ou segredo do HMAC) |
 
 > O e-mail duplicado **não** gera erro — retorna `200 confirmation_required` (anti-enumeração).
 
@@ -1533,15 +1539,16 @@ Processa o link de recuperação de senha e **redireciona** o navegador. Não re
 
 | Parâmetro | Descrição |
 |---|---|
-| `type` | `recovery`; qualquer outro valor cai no redirecionamento genérico |
+| `type` | `recovery`. Outro valor cai no redirecionamento genérico, ou em `/auth/link-expired` se vier `error` |
+| `error` | Código de erro do Better Auth (ex.: `INVALID_TOKEN`), enviado quando o link venceu |
 | `token_hash` / `token` | Token do link |
 | `next` | Caminho de destino após sucesso (padrão `/user/dashboard`; valor que não começa com `/` vira o padrão) |
 
 **Redirecionamentos**
 - Recuperação de senha (`type=recovery` com token) → grava o token no cookie HttpOnly `ba_reset` (1 h, `path=/api/protected/user/password`) e vai **direto** para `<web><next>` (ex.: `/auth/reset-password`), **sem** passar por `/auth/success`.
-- Demais casos → `<web>/auth/success?next=<destino>`.
-
-> O gateway **não** tem um redirect próprio para link inválido/expirado (não existe `/auth/link-expired`). A validação do token acontece na etapa seguinte — ex.: no `PATCH /user/password`, que retorna `reset_password_invalid_token` quando o link de recuperação está expirado/ inválido.
+- Recuperação com `error` ou sem token: vai para `<web>/forgot-password?error=<código>` (padrão `INVALID_TOKEN`), sem gravar o cookie. A Web mostra "O link de redefinição expirou ou já foi usado. Peça um novo abaixo.".
+- Outro tipo com `error`: vai para `<web>/auth/link-expired`.
+- Demais casos: vai para `<web>/auth/success?next=<destino>`.
 
 ---
 
@@ -1587,7 +1594,7 @@ Retorna os dados públicos de uma empresa **e as perguntas do escopo** para mont
 >
 > Os campos `full_name` e `status` **não** são retornados por este endpoint. A leitura é feita da view `enterprise_public` (apenas `id` e `name`).
 
-**Response 404** `enterprise_not_found` — empresa inexistente.
+**Response 404** `enterprise_not_found`: empresa inexistente. **500** `internal_server_error`: falha ao ler a empresa.
 
 ---
 
@@ -1619,13 +1626,13 @@ Submete um feedback via formulário público. Não requer autenticação. O `dev
 
 | Campo | Tipo | Obrigatório | Observação |
 |---|---|---|---|
-| `enterprise_id` | `string (UUID)` | Sim | — |
+| `enterprise_id` | `string (UUID v4)` | Sim | Um UUID de outra versão volta `400 invalid_payload` |
 | `channel` | `string` | Não | Canal de coleta, vindo da marca `canal` da URL do formulário: `QR`, `LINK`, `NFC` ou `TEST` (o "Testar o formulário"). Valor ausente, desconhecido ou o antigo `QRCODE` grava `null` (não identificado), sem recusar a resposta |
 | `rating` | `number` | Sim | inteiro de 1 a 5 |
 | `message` | `string` | Não | Comentário opcional, até 5000 caracteres (vazio ou ausente = só as estrelas e as respostas). Sem comentário, o feedback não vai para a IA nem conta como "aguardando análise". Com o campo oculto no escopo, o texto é descartado. Com pergunta própria, a pergunta é guardada com o comentário (`feedback.comment_prompt`) e vai à IA na análise |
-| `answers` | `array` | Sim | contagem variável (0 a 3), igual ao número de perguntas ativas do escopo; `answer_value` ∈ `PESSIMO\|RUIM\|MEDIANA\|BOA\|OTIMA` |
+| `answers` | `array` | Sim | contagem variável (0 a 3), igual ao número de perguntas ativas do escopo; `answer_value` ∈ `PESSIMO\|RUIM\|MEDIANA\|BOA\|OTIMA`. O `question_id` precisa ser UUID v4, como o `subquestion_id` de `subanswers` |
 | `subanswers` | `array` | Não | deve cobrir **todas** as subperguntas ativas (máx. 9) |
-| `collection_point_id` / `catalog_item_id` | `string (UUID)` | Não | resolvem o escopo |
+| `collection_point_id` / `catalog_item_id` | `string (UUID v4)` | Não | resolvem o escopo |
 | `customer_*` | vários | Não | dados opcionais de quem respondeu. O schema aceita `customer_name`, `customer_email`, `customer_phone`, `customer_birth_date`, `customer_gender`, `customer_city`, `customer_state` e `customer_country`, mas só nome, e-mail e gênero são gravados (no cadastro do cliente, deduplicado por e-mail) |
 
 **Response 200**

@@ -6,16 +6,16 @@ e pode ser removida.
 
 ## Desenvolvimento local
 
-1. No Gateway: `npm run db:local:up` (PostgreSQL Docker).
+1. No Gateway: `npm run db:local:up` (Postgres e Mailpit no Docker). Na primeira vez, rode também `npm run db:reset`.
 2. No ia-analyze: `npm run dev`.
 3. No Gateway: `npm run dev`.
 4. No web: `npm run dev`.
 
 O Gateway fora da Vercel inicia o worker automaticamente e imprime
 `[ia-worker] Processamento assíncrono ativo.`. Não é preciso outro terminal
-com loop de curl, nem flag para ativar a fila. A migration 0002 precisa estar
-aplicada; em bancos existentes, use `npm run db:migrate`, nunca `db:reset`
-para habilitar a fila. Esta alteração não adiciona migration e não apaga análises.
+com loop de curl, nem flag para ativar a fila. O banco precisa estar com todas
+as migrations aplicadas. Num banco novo, rode `npm run db:reset`. Num banco com
+dados, rode `npm run db:migrate`; não rode `db:reset` nele, porque ele apaga tudo.
 
 ## Produção
 
@@ -32,12 +32,12 @@ para habilitar a fila. Esta alteração não adiciona migration e não apaga an�
 - Não há loop de background dentro da função serverless. O processamento é
   disparado pelas próprias ações do usuário (`libs/iaJob/kickWorker.ts`): ao
   enfileirar um job, e ao consultar seu status, listar os jobs ativos, carregar
-  `collecting_data` ou trocar o modelo de IA quando há job pronto na fila, o Gateway processa um passo em background com
+  `collecting_data`, abrir o diagnóstico do escopo, consultar o último pedido das perguntas da empresa ou trocar o modelo de IA quando há job pronto na fila, o Gateway processa um passo em background com
   `waitUntil`, depois de responder. O polling da tela faz jobs de vários passos
   avançarem sem esperar o cron.
 - O cron (`ia-worker.yml`) fica como reserva para jobs sem ninguém olhando. O
-  agendamento do GitHub Actions não é confiável: o intervalo configurado de 5
-  minutos virou execuções a cada 4–7 horas na prática.
+  agendamento do GitHub Actions não é confiável: o intervalo configurado é de 5
+  minutos, mas entre 14 e 16/11/2026 as execuções saíram com 3 a 10 horas de intervalo.
 
 ## Configurações operacionais (não selecionam modo síncrono/assíncrono)
 

@@ -13,8 +13,8 @@ git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
 
 | Workflow | Gatilho | O que faz |
 |---|---|---|
-| `ci.yml` | push e PR em `main` e `developer` | Jobs `lint-typecheck` (`npm run lint` + `tsc -p tsconfig.ci.json --noEmit`) e `unit-tests` (`npm test`) |
-| `schema-migrations.yml` | push e PR em `main` e `developer` que mexem em `db/**`, `drizzle/**`, `scripts/db-local.mjs`, `docker-compose.yml`, `package*.json` ou no próprio workflow | Sobe o Postgres do `docker-compose.yml`, roda `node scripts/db-local.mjs` e `npm run db:check` |
+| `ci.yml` | push e PR em `main` e `developer` | Jobs `lint-typecheck` (Node 20: `npm run lint` + `tsc -p tsconfig.ci.json --noEmit`) e `unit-tests` (Node 24: `npm test`). O Vitest 5 pede Node 22.12 ou mais novo |
+| `schema-migrations.yml` | push e PR em `main` e `developer` que mexem em `db/**`, `drizzle/**`, `scripts/db-local.mjs`, `docker-compose.yml`, `package*.json` ou no próprio workflow | Sobe o Postgres do `docker-compose.yml`, roda `node scripts/db-local.mjs` e `npm run db:check` (Node 20) |
 | `deploy-api.yml` | `workflow_dispatch` | Deploy de produção (seção **Deploy** abaixo) |
 | `ia-worker.yml` | `schedule` (`2-59/5 * * * *`, a cada 5 minutos) e `workflow_dispatch` | `POST <API_GATEWAY_URL>/api/internal/worker/tick` (variável do repositório; sem ela, `https://feedback-analytics-api-gateway.vercel.app`) com o header `x-worker-token`: processa a fila da IA ([operação do worker](../docs/etapa-03-operacao-worker.md)) |
 
@@ -35,7 +35,10 @@ O **CI** (lint/typecheck/unit) **não precisa de secret** — os testes unitári
 `DATABASE_URL` (Drizzle — dados **e** Better Auth), o segredo/URL do Better Auth
 (`BETTER_AUTH_SECRET`/`BETTER_AUTH_URL`), o SMTP transacional (`SMTP_*` + `MAIL_FROM`)
 a URL/token do serviço `ia-analyze` (`IA_ANALYZE_REMOTE_URL`/`IA_ANALYZE_REMOTE_TOKEN`),
-o `WORKER_TICK_TOKEN` e a `IA_CONFIG_ENCRYPTION_KEY` são variáveis de ambiente
+o `WORKER_TICK_TOKEN`, a `IA_CONFIG_ENCRYPTION_KEY`, o `PUBLIC_SITE_URL` e o
+`CORS_ALLOWED_ORIGINS` com a URL da Web (em produção as origens localhost não
+entram, então sem eles o CORS e o Better Auth recusam a Web) e, com o Google
+ligado, o `GOOGLE_CLIENT_ID` e o `GOOGLE_CLIENT_SECRET` são variáveis de ambiente
 configuradas nas **Settings do projeto Vercel** da API — não entram no CI de testes.
 A lista completa, com o ambiente de cada uma, está no [`.env.example`](../.env.example).
 `DATABASE_URL` também deve ser configurada como secret do GitHub para o workflow de

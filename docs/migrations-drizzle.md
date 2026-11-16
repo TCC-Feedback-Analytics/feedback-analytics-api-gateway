@@ -6,7 +6,7 @@ Relacionado: [ORM × RLS: nossa decisão](https://github.com/TCC-Feedback-Analyt
 
 ## Fonte da verdade: uma só representação
 
-> **Decisão:** [ADR-0001](adr/0001-fonte-unica-de-schema.md), consolidada na [Fase 2](adr/0001-plano-fase2-rebaseline.md) — `drizzle/schema.ts` + as migrations em `drizzle/*.sql` são a **fonte única** do schema. Não há mais duas representações mantidas à mão.
+> **Decisão:** [ADR-0001](adr/0001-fonte-unica-de-schema.md), consolidada na [Fase 2](runbooks/plano-fase2-rebaseline.md) — `drizzle/schema.ts` + as migrations em `drizzle/*.sql` são a **fonte única** do schema. Não há mais duas representações mantidas à mão.
 
 Antes da Fase 2 o schema vivia em **dois lugares** que precisavam ser espelhados a cada mudança (`drizzle/` para produção/tipos e `db/schema/*.sql` para o banco local), e um **guard-rail golden** (`db/schema/.drift-snapshot.sql` + `scripts/schema-drift.mjs` + workflow `schema-drift.yml` + scripts `db:drift:*`) mantinha as duas trilhas honestas. **Isso foi aposentado.** Hoje:
 
@@ -85,4 +85,4 @@ Originalmente o Drizzle foi adotado sobre um banco **já populado** (Supabase), 
 
 - **Migrations versionadas** com histórico e diff automático (declarativo), em vez de SQL escrito à mão.
 - **Fonte única de schema** — uma só representação (`schema.ts` + migrations), com o banco local montado pelas mesmas migrations que vão para produção.
-- **Adoção de ORM sobre banco existente** — o problema real de *baseline* e o re-baseline consciente na Fase 2 ([ADR-0001](adr/0001-fonte-unica-de-schema.md) · [plano da Fase 2](adr/0001-plano-fase2-rebaseline.md)).
+- **Adoção de ORM sobre banco existente** — o problema real de *baseline* e o re-baseline consciente na Fase 2 ([ADR-0001](adr/0001-fonte-unica-de-schema.md) · [plano da Fase 2](runbooks/plano-fase2-rebaseline.md)).
