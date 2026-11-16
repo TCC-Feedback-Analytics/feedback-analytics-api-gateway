@@ -16,8 +16,22 @@ export async function authCallbackController(req: Request, res: Response) {
   const isProd = process.env.NODE_ENV === 'production';
   const crossSite = String(process.env.COOKIE_CROSS_SITE ?? '').trim() === 'true';
   const sameSite: 'lax' | 'none' = isProd && crossSite ? 'none' : 'lax';
+  const errorCode = String(q.error ?? '');
 
-  if (type === 'recovery' && tokenHash) {
+  // Link de redefinição vencido ou inválido: o Better Auth chega aqui com
+  // ?error=INVALID_TOKEN e sem token. A tela /auth/link-expired da Web reenvia a
+  // confirmação de cadastro, que não ajuda quem esqueceu a senha; por isso o
+  // usuário vai para /forgot-password pedir um link novo.
+  if (type === 'recovery' && (errorCode || !tokenHash)) {
+    const code = encodeURIComponent(errorCode || 'INVALID_TOKEN');
+    return res.redirect(`${webBase}/forgot-password?error=${code}`);
+  }
+
+  if (errorCode) {
+    return res.redirect(`${webBase}/auth/link-expired`);
+  }
+
+  if (type === 'recovery') {
     res.cookie('ba_reset', tokenHash, {
       httpOnly: true,
       sameSite,
