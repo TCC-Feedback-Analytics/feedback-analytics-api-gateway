@@ -39,7 +39,7 @@ vi.mock('../repositories/feedbackQuestions.repository.js', () => ({
   fetchSubquestionDefsScoped: vi.fn(),
 }));
 
-const ENTERPRISE_ID = 'aaaaaaaa-0000-0000-0000-000000000001';
+const ENTERPRISE_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
 const ALL_TIME = { start: null, end: null };
 const SEPTEMBER = { start: '2026-09-01T03:00:00.000Z', end: '2026-10-01T03:00:00.000Z' };
 

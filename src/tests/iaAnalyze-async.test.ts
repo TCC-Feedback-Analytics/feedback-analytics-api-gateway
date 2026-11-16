@@ -6,7 +6,7 @@ import { enqueueIaJob, getIaJobByIdScoped, listActiveIaJobsScoped } from '../rep
 import { drainJobs } from '../libs/iaJob/drainJobs.js';
 import { autoGenerateCompanyQuestions } from '../services/companyQuestionsAutoGenerate.service.js';
 
-const TEST_USER_ID = '11111111-1111-1111-1111-111111111111';
+const TEST_USER_ID = '11111111-1111-4111-8111-111111111111';
 const ENT = 'ent-1';
 const JOB_ID = '22222222-2222-2222-2222-222222222222';
 
