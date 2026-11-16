@@ -73,7 +73,7 @@ describe('cadastro sem CPF/CNPJ e com senha forte', () => {
     vi.mocked(getAuth).mockReturnValue({ api: { signUpEmail, resetPassword } } as never);
     vi.mocked(getDb).mockReturnValue({ execute } as never);
     execute.mockResolvedValue([]);
-    signUpEmail.mockResolvedValue({ user: { id: '11111111-1111-1111-1111-111111111111' } });
+    signUpEmail.mockResolvedValue({ user: { id: '11111111-1111-4111-8111-111111111111' } });
   });
 
   it('senha fraca volta 400 password_too_weak sem criar o usuário', async () => {
@@ -97,7 +97,7 @@ describe('cadastro sem CPF/CNPJ e com senha forte', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({ ok: true, message: 'confirmation_required' });
     expect(signUpEmail).toHaveBeenCalledWith({ body: expect.objectContaining({ name: 'Padaria Bom Pão', password: STRONG }) });
-    expect(provisionEnterpriseForUser).toHaveBeenCalledWith('11111111-1111-1111-1111-111111111111', {
+    expect(provisionEnterpriseForUser).toHaveBeenCalledWith('11111111-1111-4111-8111-111111111111', {
       termsVersion: 'v1',
       termsAcceptedAt: expect.any(String),
     });

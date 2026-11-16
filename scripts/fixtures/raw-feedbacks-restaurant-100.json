@@ -2,8 +2,8 @@
   "batchId": "raw-feedbacks-restaurant-100-v1",
   "description": "100 comentários sintéticos para testar análise de feedbacks de um restaurante italiano. Sem rótulos ou resultados de IA. Notas de 1 a 5, com 20 exemplos de cada nota.",
   "accountEmail": "gestor.a@teste.local",
-  "enterpriseId": "aaaaaaaa-0000-0000-0000-000000000001",
-  "collectionPointId": "cccccccc-0000-0000-0000-0000000000aa",
+  "enterpriseId": "aaaaaaaa-0000-4000-8000-000000000001",
+  "collectionPointId": "cccccccc-0000-4000-8000-0000000000aa",
   "feedbacks": [
     { "rating": 1, "message": "Esperei quase uma hora pela massa e ela ainda chegou fria. Pedi ajuda duas vezes e ninguém resolveu." },
     { "rating": 1, "message": "Fiz reserva para comemorar nosso aniversário, mas quando chegamos disseram que não havia mesa. Faltou organização e respeito." },

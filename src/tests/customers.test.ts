@@ -4,8 +4,8 @@ import app from '../../index.js';
 import { fetchScopedCustomerVisits } from '../repositories/feedbackCustomers.repository.js';
 import { resolveEnterpriseIdByUser } from '../repositories/enterprise.repository.js';
 
-const TEST_USER_ID = '11111111-1111-1111-1111-111111111111';
-const TEST_ENTERPRISE_ID = 'aaaaaaaa-0000-0000-0000-000000000001';
+const TEST_USER_ID = '11111111-1111-4111-8111-111111111111';
+const TEST_ENTERPRISE_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
 
 const { authState } = vi.hoisted(() => ({
   authState: { user: null as { id: string } | null },

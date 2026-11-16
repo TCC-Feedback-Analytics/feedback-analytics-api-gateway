@@ -8,8 +8,8 @@ import { fetchCommentField, upsertCommentField } from '../repositories/commentFi
 import { toDiagnosisCommentField } from '../libs/scopeDiagnosis.js';
 import type { ScopedStats } from '../services/scopeMetrics.service.js';
 
-const TEST_USER_ID = '11111111-1111-1111-1111-111111111111';
-const ENTERPRISE_ID = 'aaaaaaaa-0000-0000-0000-000000000001';
+const TEST_USER_ID = '11111111-1111-4111-8111-111111111111';
+const ENTERPRISE_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
 const ITEM_ID = 'bbbbbbbb-0000-0000-0000-000000000002';
 const ROUTE = '/api/protected/user/collection-points/comment-field';
 
