@@ -24,16 +24,17 @@ import { user, session, account, verification } from '../../drizzle/schema.js';
 import { sendChangeEmailVerification, sendResetPasswordEmail, sendVerificationEmail } from './email.js';
 import { provisionEnterpriseForUser } from './enterpriseOnSignup.js';
 import { deleteEnterpriseOfUser } from './enterpriseOnDelete.js';
+import { localWebOrigins } from '../config/localWebOrigins.js';
 
 export function hashBetterAuthPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 10);
 }
 
-function buildTrustedOrigins(): string[] {
-  const origins = new Set<string>(['http://localhost:5173', 'http://localhost:4173']);
-  const siteUrl = process.env.PUBLIC_SITE_URL?.trim();
+export function buildTrustedOrigins(env: NodeJS.ProcessEnv = process.env): string[] {
+  const origins = new Set<string>(localWebOrigins(env));
+  const siteUrl = env.PUBLIC_SITE_URL?.trim();
   if (siteUrl) origins.add(siteUrl);
-  const csv = process.env.CORS_ALLOWED_ORIGINS?.trim();
+  const csv = env.CORS_ALLOWED_ORIGINS?.trim();
   if (csv) {
     for (const o of csv.split(',')) {
       const v = o.trim();
@@ -115,6 +116,8 @@ function createAuth() {
       sendResetPassword: async ({ user, url }) => {
         sendResetPasswordEmail(user.email, url);
       },
+      // Nova senha encerra todas as sessões: quem tinha a senha antiga não continua dentro.
+      revokeSessionsOnPasswordReset: true,
     },
     emailVerification: {
       sendOnSignUp: true,

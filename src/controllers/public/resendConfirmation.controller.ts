@@ -6,7 +6,9 @@ import { getAuth } from '../../auth/auth.js';
 import { APIError } from 'better-auth/api';
 import { fromNodeHeaders } from 'better-auth/node';
 import { mapResendError } from '../../auth/errorMap.js';
-import { reserveResend, resendClientIp, resendFingerprint } from '../../libs/resendRateLimit.js';
+import { reserveResend, resendFingerprint } from '../../libs/resendRateLimit.js';
+import { authClientIp } from '../../libs/authRateLimit.js';
+import { sendRateLimited } from '../../utils/sendRateLimited.js';
 
 const resendConfirmationSchema = z.object({
   email: z.string().trim().pipe(z.email({ error: 'E-mail inválido' })),
@@ -21,11 +23,7 @@ function sendAcceptedResponse(res: Response, retryAfterSeconds: number) {
 }
 
 function sendLimitedResponse(res: Response, retryAfterSeconds: number) {
-  res.setHeader('Retry-After', String(retryAfterSeconds));
-  return sendTypedError(res, 429, 'rate_limited', {
-    message: 'Aguarde antes de solicitar outra confirmação.',
-    retryAfterSeconds,
-  });
+  return sendRateLimited(res, retryAfterSeconds, 'Aguarde antes de solicitar outra confirmação.');
 }
 
 function getAnonymousAuthHeaders(req: Request) {
@@ -53,7 +51,7 @@ export async function resendConfirmationController(req: Request, res: Response) 
   let retryAfterSeconds: number;
   let emailHash: string;
   try {
-    const reservation = await reserveResend(resendClientIp(req), email);
+    const reservation = await reserveResend(authClientIp(req), email);
     if (!reservation.allowed) return sendLimitedResponse(res, reservation.retryAfterSeconds);
     retryAfterSeconds = reservation.retryAfterSeconds;
     emailHash = resendFingerprint('email', email);

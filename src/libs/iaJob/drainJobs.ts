@@ -243,6 +243,11 @@ async function processJob(job: ClaimedIaJob): Promise<DrainJobResult> {
     if (!retry && job.jobType === 'generate_scope_diagnosis') {
       confirmedOptions = { dataHash: confirmedOptions.dataHash, phase: 'diagnosing' };
     }
+    // O checkpoint guarda os lotes com os comentários; a fase fica para o polling final.
+    if (!retry && (job.jobType === 'analyze_raw' || job.jobType === 'regenerate_insights')) {
+      const { checkpoint: failedCheckpoint, ...rest } = confirmedOptions;
+      confirmedOptions = { ...rest, phase: (failedCheckpoint as IaJobCheckpoint | undefined)?.phase ?? rest.phase };
+    }
     const delaySeconds = questionsRateLimited
       ? Math.min(QUESTIONS_RATE_LIMIT_MAX_DELAY_SECONDS, QUESTIONS_RATE_LIMIT_BASE_DELAY_SECONDS * 2 ** failures)
       : Math.min(60, 5 * 2 ** failures);

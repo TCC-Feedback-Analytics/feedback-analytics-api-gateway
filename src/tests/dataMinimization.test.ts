@@ -9,6 +9,7 @@
  * 4. Formulários de feedback público não coletam documento/CPF do cliente.
  * 5. Entrar com Google não guarda os tokens do Google (access, refresh e id_token).
  */
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { getTableColumns } from 'drizzle-orm';
 import type { BetterAuthOptions } from 'better-auth';
@@ -80,6 +81,21 @@ describe('[Segurança & LGPD] Minimização de Dados e Higienização de Sessão
       const result = await before?.({ providerId: 'google', ...googleTokens }, null);
 
       expect(result).toEqual({ data: discardedTokens });
+    });
+
+    it('a migration 0015 apaga os tokens das contas Google antigas, e só delas', () => {
+      const migration = readFileSync(new URL('../../drizzle/0015_apagar_tokens_google.sql', import.meta.url), 'utf8');
+      const statements = migration.replace(/--.*$/gm, '').trim();
+
+      expect(statements).toMatch(
+        /^UPDATE public\.account\s+SET access_token = NULL, refresh_token = NULL, id_token = NULL\s+WHERE provider_id = 'google'/,
+      );
+      expect(statements).not.toMatch(/DELETE|DROP/i);
+
+      const journal = JSON.parse(readFileSync(new URL('../../drizzle/meta/_journal.json', import.meta.url), 'utf8')) as {
+        entries: { tag: string }[];
+      };
+      expect(journal.entries.map((entry) => entry.tag)).toContain('0015_apagar_tokens_google');
     });
   });
 
