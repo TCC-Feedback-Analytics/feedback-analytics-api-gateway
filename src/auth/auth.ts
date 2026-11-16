@@ -10,6 +10,7 @@
  * - E-mail (verificação/reset) via provider próprio (Mailpit local / Brevo por SMTP em produção).
  * - `autoSignIn:false` + `requireEmailVerification:true`: anti-enumeração no signup
  *   e login só após confirmação (paridade com RNE-014).
+ * - Entrar com Google não guarda os tokens do Google em `account` (discardOAuthTokens).
  *
  * Lazy (getAuth): só instancia no primeiro uso, pois exige DATABASE_URL/
  * BETTER_AUTH_SECRET.
@@ -66,6 +67,17 @@ export async function provisionEnterpriseForSocialAccount(account: { userId: str
     // Não derruba a entrada: a empresa é criada ao completar o cadastro.
     console.error('[auth] falha ao criar a empresa da conta social');
   }
+}
+
+/**
+ * Tokens do Google fora da tabela `account`: o Better Auth lê o perfil com eles antes
+ * de gravar a conta, e o sistema não chama o Google depois do login. Não guardar é
+ * melhor que cifrar: o `encryptOAuthTokens` deixaria o `id_token` (um JWT com e-mail,
+ * nome e foto) em texto. Vale na criação e em toda atualização da conta, o que também
+ * limpa tokens gravados antes desta regra quando a pessoa entra de novo.
+ */
+export async function discardOAuthTokens() {
+  return { data: { accessToken: null, refreshToken: null, idToken: null } };
 }
 
 function createAuth() {
@@ -141,8 +153,10 @@ function createAuth() {
     databaseHooks: {
       account: {
         create: {
+          before: discardOAuthTokens,
           after: async (account) => provisionEnterpriseForSocialAccount(account),
         },
+        update: { before: discardOAuthTokens },
       },
     },
     trustedOrigins: buildTrustedOrigins(),

@@ -7,6 +7,7 @@
  * 2. O telefone do gestor fica na tabela `user`, nunca na tabela `session`.
  * 3. CPF/CNPJ foi eliminado do modelo de dados (tabela enterprise) e de schemas.
  * 4. Formulários de feedback público não coletam documento/CPF do cliente.
+ * 5. Entrar com Google não guarda os tokens do Google (access, refresh e id_token).
  */
 import { describe, it, expect } from 'vitest';
 import { getTableColumns } from 'drizzle-orm';
@@ -49,6 +50,36 @@ describe('[Segurança & LGPD] Minimização de Dados e Higienização de Sessão
     it('telefone fica na tabela user, fora da tabela session', () => {
       expect(Object.keys(getTableColumns(user))).toContain('phone');
       expect(Object.keys(getTableColumns(session))).not.toContain('phone');
+    });
+  });
+
+  describe('Tokens do Google (tabela account)', () => {
+    const googleTokens = {
+      accessToken: 'ya29.token-de-acesso',
+      refreshToken: '1//token-de-renovacao',
+      idToken: 'eyJ.jwt-com-email-nome-e-foto.sig',
+    };
+    const discardedTokens = { accessToken: null, refreshToken: null, idToken: null };
+
+    it('a conta criada pelo login com Google é gravada sem os tokens', async () => {
+      const options: BetterAuthOptions = getAuth().options;
+      const before = options.databaseHooks?.account?.create?.before;
+
+      const result = await before?.(
+        { id: 'a1', userId: 'u1', providerId: 'google', accountId: 'g1', ...googleTokens } as never,
+        null,
+      );
+
+      expect(result).toEqual({ data: discardedTokens });
+    });
+
+    it('a atualização da conta (nova entrada com Google) também apaga os tokens', async () => {
+      const options: BetterAuthOptions = getAuth().options;
+      const before = options.databaseHooks?.account?.update?.before;
+
+      const result = await before?.({ providerId: 'google', ...googleTokens }, null);
+
+      expect(result).toEqual({ data: discardedTokens });
     });
   });
 
