@@ -157,6 +157,8 @@ A senha segue a regra do cadastro: pelo menos 10 caracteres, `confirmPassword` i
 { "ok": true, "message": "Senha redefinida com sucesso." }
 ```
 
+A nova senha encerra **todas as sessões** da pessoa (`revokeSessionsOnPasswordReset`): quem estava dentro com a senha antiga precisa entrar de novo.
+
 **Erros Possíveis**
 
 | Status | Código | Descrição |
@@ -1361,6 +1363,17 @@ Autentica e cria a sessão (cookie).
 { "ok": true, "user": { "id": "uuid", "email": "gestor@empresa.com" } }
 ```
 
+A sessão criada guarda o IP e o navegador de quem entrou (o controller repassa os cabeçalhos do pedido ao Better Auth).
+
+**Limite de tentativas** (tabela `auth_rate_limit`, com IP e e-mail guardados como HMAC). O limite do Better Auth não vale aqui: ele roda só no handler de `/api/auth/*`, e esta rota chama a API dele por dentro. Contam só as tentativas que falham: o login certo devolve a vaga.
+
+| Limite | Padrão | Variável |
+|---|---|---|
+| Por e-mail | 10 a cada 15 min | `LOGIN_EMAIL_MAX` / `LOGIN_EMAIL_WINDOW_SECONDS` |
+| Por IP | 100 a cada 15 min | `LOGIN_IP_MAX` / `LOGIN_IP_WINDOW_SECONDS` |
+
+O limite por IP é largo porque, em produção, o login passa pelo repasse da Vercel na Web, e vários usuários podem chegar com o mesmo IP.
+
 **Erros Possíveis**
 
 | Status | Código | Descrição |
@@ -1368,7 +1381,7 @@ Autentica e cria a sessão (cookie).
 | `400` | `invalid_payload` | Dados de login inválidos |
 | `401` | `invalid_credentials` | E-mail ou senha incorretos **— também retornado quando o e-mail não foi confirmado (RNE-014, anti-enumeração)** |
 | `401` | `login_failed` | Falha genérica de login (fallback) |
-| `429` | `rate_limited` | Muitas tentativas em pouco tempo |
+| `429` | `rate_limited` | Limite de tentativas atingido; vem com `retryAfterSeconds` no corpo e o header `Retry-After` |
 | `503` | `service_unavailable` | Serviço de login indisponível |
 | `500` | `internal_error` | Exceção não tratada |
 
@@ -1417,11 +1430,19 @@ Cria uma nova conta. Por segurança (RNE-014), e-mail já cadastrado **não** é
 | `400` | `database_error` | Falha ao salvar o novo usuário |
 | `409` | `phone_taken` | Telefone já cadastrado |
 | `400` | `signup_failed` | Falha de cadastro (e-mail/senha inválidos, captcha ou erro genérico) |
-| `429` | `signup_failed` | Muitas tentativas (rate limit) |
+| `429` | `rate_limited` | Limite de cadastros atingido (abaixo); vem com `retryAfterSeconds` no corpo e o header `Retry-After` |
+| `429` | `signup_failed` | O Better Auth respondeu 429 |
 | `503` | `signup_failed` | Cadastro temporariamente indisponível — Better Auth respondeu 5xx (inclui falha ao enviar o e-mail de confirmação) |
 | `500` | `internal_error` | Exceção não tratada |
 
 > O e-mail duplicado **não** gera erro — retorna `200 confirmation_required` (anti-enumeração).
+
+**Limite de cadastros** (tabela `auth_rate_limit`, com IP e e-mail como HMAC): cada cadastro manda um e-mail de confirmação, então todo pedido com o body válido conta, inclusive o de e-mail já cadastrado.
+
+| Limite | Padrão | Variável |
+|---|---|---|
+| Por e-mail | 5 por hora | `REGISTER_EMAIL_MAX` / `REGISTER_EMAIL_WINDOW_SECONDS` |
+| Por IP | 20 a cada 15 min | `REGISTER_IP_MAX` / `REGISTER_IP_WINDOW_SECONDS` |
 
 **Ordem de escrita no cadastro.** A força da senha é conferida primeiro; as pré-checagens (telefone, e-mail) são apenas leitura. Em caso de sucesso, as tabelas são preenchidas nesta ordem:
 
@@ -1450,6 +1471,21 @@ Solicita o e-mail de redefinição de senha. A resposta é sempre genérica (nã
 ```
 
 > A resposta é genérica quanto à **existência** do e-mail (anti-enumeração). Ainda assim, um body malformado retorna **`400 invalid_payload`** — o `email` precisa ser um e-mail válido.
+
+**Limite de pedidos** (tabela `auth_rate_limit`, com IP e e-mail como HMAC). Conta todo pedido, exista o e-mail ou não, então o `429` também não revela quem tem conta.
+
+| Limite | Padrão | Variável |
+|---|---|---|
+| Por e-mail | 5 por hora | `FORGOT_PASSWORD_EMAIL_MAX` / `FORGOT_PASSWORD_EMAIL_WINDOW_SECONDS` |
+| Por IP | 20 a cada 15 min | `FORGOT_PASSWORD_IP_MAX` / `FORGOT_PASSWORD_IP_WINDOW_SECONDS` |
+
+**Erros Possíveis**
+
+| Status | Código | Descrição |
+|---|---|---|
+| `400` | `invalid_payload` | E-mail ausente ou inválido no body |
+| `429` | `rate_limited` | Limite de pedidos atingido; vem com `retryAfterSeconds` no corpo e o header `Retry-After` |
+| `503` | `service_unavailable` | Controle de pedidos indisponível (banco, IP do cliente ou segredo do HMAC) |
 
 ---
 

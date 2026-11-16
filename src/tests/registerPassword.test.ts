@@ -15,6 +15,10 @@ const { signUpEmail, resetPassword, execute } = vi.hoisted(() => ({
 vi.mock('../auth/auth.js', () => ({ getAuth: vi.fn(() => ({ api: { signUpEmail, resetPassword } })) }));
 vi.mock('../db/client.js', () => ({ getDb: vi.fn(() => ({ execute })), closeDb: vi.fn() }));
 vi.mock('../auth/enterpriseOnSignup.js', () => ({ provisionEnterpriseForUser: vi.fn() }));
+vi.mock('../libs/authRateLimit.js', () => ({
+  authClientIp: vi.fn(() => '203.0.113.7'),
+  reserveAuthAttempt: vi.fn(async () => ({ allowed: true, retryAfterSeconds: 0 })),
+}));
 
 type MockRes = Response & { statusCode: number; body: unknown };
 
