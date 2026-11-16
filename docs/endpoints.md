@@ -146,7 +146,7 @@ O telefone é validado pelo `phoneStartSchema` do `@feedback/lib-shared`: format
 
 ### `PATCH /api/protected/user/password`
 
-Redefine a senha do usuário. Usado na etapa final do fluxo "Esqueci minha senha". Não usa a sessão: o token de redefinição vem do cookie HttpOnly `ba_reset`, que o `GET /public/auth/callback` grava (vale 1 h e só é enviado para esta rota). Sem o cookie, mesmo com sessão aberta, a resposta é `401 reset_password_invalid_token`. Com sucesso, o cookie é apagado.
+Redefine a senha do usuário. Usado na etapa final do fluxo "Esqueci minha senha". Não usa a sessão: o token de redefinição vem do cookie HttpOnly `ba_reset`, que o `GET /public/auth/callback` grava (vale 1 h e só é enviado para esta rota). O `requireAuth` lê o cookie antes da sessão, então a troca funciona também para quem abre o link no navegador em que já está logado. Sem o cookie, mesmo com sessão aberta, a resposta é `401 reset_password_invalid_token`. Com sucesso, o cookie é apagado e todas as sessões da conta são encerradas.
 
 **Body**
 ```json
@@ -1355,6 +1355,8 @@ Drena a fila de análise (etapa 03): processa um lote de jobs e volta. **Não** 
 
 Endpoints sem autenticação. A sessão é gerenciada por **cookie HttpOnly** (use `credentials: 'include'`).
 
+> **Rotas nativas do Better Auth desligadas:** `/api/auth/sign-in/email`, `/api/auth/sign-up/email`, `/api/auth/request-password-reset`, `/api/auth/reset-password`, `/api/auth/change-password` e `/api/auth/verify-password` respondem `404` (`disabledPaths`, em `src/auth/auth.ts`). O login, o cadastro, o pedido de recuperação e a nova senha passam pelas rotas deste gateway, que contam as tentativas no banco; a porta nativa deixaria contornar esse limite. Continuam abertas as rotas que a Web e os e-mails usam: `sign-in/social`, `callback/google`, `verify-email`, `reset-password/:token`, `list-accounts` e `delete-user`.
+
 ### `POST /api/public/auth/login`
 
 Autentica e cria a sessão (cookie).
@@ -1371,7 +1373,7 @@ Autentica e cria a sessão (cookie).
 
 A sessão criada guarda o IP e o navegador de quem entrou (o controller repassa os cabeçalhos do pedido ao Better Auth).
 
-**Limite de tentativas** (tabela `auth_rate_limit`, com IP e e-mail guardados como HMAC). O limite do Better Auth não vale aqui: ele roda só no handler de `/api/auth/*`, e esta rota chama a API dele por dentro. Contam só as tentativas que falham: o login certo devolve a vaga.
+**Limite de tentativas** (tabela `auth_rate_limit`, com IP e e-mail guardados como HMAC). O limite do Better Auth não vale aqui: ele roda só no handler de `/api/auth/*`, e esta rota chama a API dele por dentro. A rota nativa de login por e-mail responde `404`, então não há outra porta para tentar senhas. Contam só as tentativas que falham: o login certo devolve a vaga.
 
 | Limite | Padrão | Variável |
 |---|---|---|
