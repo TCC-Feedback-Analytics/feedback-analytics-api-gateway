@@ -39,7 +39,7 @@ Há também pastas de apoio estrutural, como a `libs/`, com a lógica de domíni
 | Pasta | O que tem |
 |---|---|
 | `index.ts` (raiz) | Só reexporta o app de `src/index.ts`; é a entrada do bundle esbuild (`_bundle.cjs`) |
-| `src/index.ts` | Monta o Express: CORS, handler do Better Auth em `/api/auth/*`, rotas sob `/api` e, fora da Vercel, o servidor e o worker local |
+| `src/index.ts` | Monta o Express: desliga o `X-Powered-By`, aplica o CORS, monta o handler do Better Auth em `/api/auth/*` e as rotas sob `/api`. Fora da Vercel, sobe o servidor e o worker local |
 | `src/routes/` | Rotas por superfície: `public/`, `protected/` e `internal/` |
 | `src/middlewares/` | `requireAuth` (sessão do Better Auth) |
 | `src/controllers/` | Um controller por fluxo, nas mesmas três superfícies das rotas |
@@ -49,8 +49,8 @@ Há também pastas de apoio estrutural, como a `libs/`, com a lógica de domíni
 | `src/libs/` | Lógica de domínio: estatística, métricas, lotes da IA, worker (`iaJob/`), chave de IA (`iaConfig/`), avaliação do classificador (`eval/`) |
 | `src/auth/` | Instância do Better Auth, e-mails, mapa de erros e os ganchos de criação (`enterpriseOnSignup.ts`) e exclusão (`enterpriseOnDelete.ts`) da empresa |
 | `src/db/` | Cliente Drizzle e os filtros de tenant (`tenantScope.ts`) |
-| `src/config/` | Códigos de erro e as perguntas padrão da empresa |
-| `src/utils/` | Cifra da chave (`crypto.ts`), `sendTypedError` e a checagem do token do worker |
+| `src/config/` | Códigos de erro, as perguntas padrão da empresa e as origens locais da Web (`localWebOrigins.ts`), que só valem fora de produção |
+| `src/utils/` | Cifra da chave (`crypto.ts`), `sendTypedError`, a resposta 429 com `Retry-After` (`sendRateLimited.ts`), a checagem do token do worker e helpers de erro |
 | `src/types/` | Tipos locais e a extensão do `Request` do Express |
 | `drizzle/` | Schema (`schema.ts` + `schema/`) e as migrations SQL, a fonte única do banco ([ADR-0001](adr/0001-fonte-unica-de-schema.md)) |
 

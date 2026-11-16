@@ -18,7 +18,7 @@ Variáveis de ambiente **obrigatórias** (Settings → Environment Variables →
 | Var | O que é |
 |---|---|
 | `DATABASE_URL` | connection string do Postgres (Supabase → Settings → Database → **pooler**, porta 6543, transação). Todo o app (dados + auth) usa isto. Hoje o app pode entrar com o papel `feedback_app` em vez do `postgres` ([banco com o mínimo de privilégio](../../docs/banco-menor-privilegio.md)). |
-| `BETTER_AUTH_SECRET` | segredo aleatório forte: `openssl rand -base64 32`. **Sem ele o `getAuth()` quebra no boot e TODA requisição trava** ("carregando pra sempre"). |
+| `BETTER_AUTH_SECRET` | segredo aleatório forte: `openssl rand -base64 32`. Obrigatório em produção: sem ele, o Better Auth recusa o segredo padrão, e o login, o cadastro e as rotas protegidas falham. |
 | `BETTER_AUTH_URL` | No cutover, a URL pública do **gateway**. Hoje, em prod, é a URL da **Web**, que repassa `/api/*` ao gateway (ver `.env.example`). |
 | `PUBLIC_SITE_URL` | URL pública do **web** (usada em callbacks/redirects). |
 | `CORS_ALLOWED_ORIGINS` | origens do web permitidas (CSV). |

@@ -6,11 +6,12 @@
 - [Migrations (Drizzle)](migrations-drizzle.md) — a convenção do schema único e como criar e aplicar migrations.
 - [Banco com o mínimo de privilégio](banco-menor-privilegio.md) — o papel `feedback_app`, a migration `0013` e o passo a passo da troca.
 - [Operação do worker assíncrono (etapa 03)](etapa-03-operacao-worker.md) — como a fila de IA roda no local e na Vercel, e as variáveis do worker.
-- [Handoff da etapa 04 para o frontend](etapa-04-frontend-handoff.md) — contrato e UX da tela de chave OpenRouter por empresa (BYO-key).
+- [Handoff da etapa 04 para o frontend](etapa-04-frontend-handoff.md) — registro do plano de 31/08/2026 da tela de chave OpenRouter por empresa (BYO-key). O contrato atual está em [Endpoints](endpoints.md).
 - [Guia do sistema: integração do frontend](onboarding-api.md) — como a Web consulta e conclui o guia do sistema (`/user/onboarding/system-guide`).
 - Decisões de arquitetura (ADR):
   - [ADR-0001: fonte única de schema](adr/0001-fonte-unica-de-schema.md) — por que o schema vive só em `drizzle/schema.ts` + migrations.
-  - [Plano da Fase 2 do ADR-0001](adr/0001-plano-fase2-rebaseline.md) — o runbook do re-baseline para a fonte única.
+- Runbooks:
+  - [Plano da Fase 2 do ADR-0001](runbooks/plano-fase2-rebaseline.md) — o runbook do re-baseline para a fonte única, executado em 2026-07-08.
 
 Como rodar: [README do repositório](../README.md). Variáveis de ambiente: [`.env.example`](../.env.example). Banco local (Docker): [`db/local/README.md`](../db/local/README.md). CI/CD e deploy: [`.github/CI_SETUP.md`](../.github/CI_SETUP.md).
 
