@@ -173,12 +173,25 @@ describe('worker sempre assíncrono e retomável', () => {
     expect(runInsightsBatch).toHaveBeenCalledTimes(4);
     expect(prepareInsightsJob).toHaveBeenCalledOnce();
   });
-  it('retentativas de timeout têm limite; mantém checkpoint para diagnóstico', async () => {
+  it('retentativas de timeout têm limite; a falha final apaga os comentários do job e guarda a fase', async () => {
     saved.jobType = 'regenerate_insights';
     vi.mocked(runInsightsBatch).mockRejectedValue(new IaAnalyzeServiceError('timeout', 502, 'failed_remote_ia_analyze_request'));
     await tick(); await tick(); await tick();
     expect(saved.status).toBe('failed');
     expect(saved.done).toBe(0);
+    expect(saved.options.checkpoint).toBeUndefined();
+    expect(saved.options).toMatchObject({ phase: 'generating', failures: 3 });
+  });
+  it('análise que falha de vez não deixa os comentários no job', async () => {
+    vi.mocked(runOneBatch).mockRejectedValue(new IaAnalyzeServiceError('invalid', 502, 'invalid_ai_response'));
+    expect(await tick()).toMatchObject({ status: 'failed', errorCode: 'invalid_ai_response' });
+    expect(saved.options.checkpoint).toBeUndefined();
+    expect(saved.options.phase).toBe('analyzing');
+  });
+  it('falha que ainda vai tentar de novo mantém o checkpoint para retomar', async () => {
+    vi.mocked(runOneBatch).mockRejectedValueOnce(new IaAnalyzeServiceError('timeout', 502, 'failed_remote_ia_analyze_request'));
+    expect(await tick()).toMatchObject({ status: 'requeued' });
+    expect((saved.options.checkpoint as IaJobCheckpoint).cursor).toBe(0);
   });
   it('falha ao publicar não repete chamadas dos lotes já concluídos', async () => {
     saved.jobType = 'regenerate_insights';
