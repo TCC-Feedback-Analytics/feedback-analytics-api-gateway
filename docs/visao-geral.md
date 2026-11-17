@@ -21,7 +21,7 @@ Centralizar o backend permite:
 
 ## Funcionalidades
 
-- **Conta:** cadastro com senha (cria a empresa e as 3 perguntas padrão), entrada com o Google (a empresa nasce na primeira entrada e a pessoa completa o cadastro com nome, telefone e aceite dos termos), confirmação de e-mail, recuperação de senha e **exclusão da conta** (`src/auth/enterpriseOnDelete.ts` apaga a empresa e tudo dela antes de o Better Auth apagar o usuário).
+- **Conta:** cadastro com senha (cria a empresa e as 3 perguntas padrão), entrada com o Google (a empresa nasce na primeira entrada e a pessoa completa o cadastro com nome, telefone e aceite dos termos), confirmação de e-mail, recuperação de senha (a nova senha encerra todas as sessões), limite de tentativas no login, no cadastro e no esqueci a senha e **exclusão da conta** (`src/auth/enterpriseOnDelete.ts` apaga a empresa e tudo dela antes de o Better Auth apagar o usuário).
 - **Empresa e coleta:** dados da empresa, perguntas do feedback geral e dos itens do catálogo (produto, serviço, departamento), ativação do QR Code da empresa e de cada item, e o **campo de comentário por escopo** (padrão, texto próprio ou oculto).
 - **Formulário público:** dados da empresa e perguntas do escopo, envio do feedback com o **canal de coleta** (QR Code, link ou NFC; o "Testar o formulário" fica fora das métricas).
 - **Métricas do escopo:** estatísticas, perguntas, movimento no tempo, dias e horários de pico, clientes que voltam, avaliações por canal e participação nos comentários.
@@ -42,7 +42,7 @@ Todas as rotas ficam sob `/api`. A referência completa, rota a rota, está em [
 
 ## Tecnologias
 
-- **Runtime:** Node.js 20+ com TypeScript (ESM)
+- **Runtime:** Node.js 20 ou mais novo, com TypeScript (ESM). Os testes pedem Node 22.12 ou mais novo.
 - **Framework:** Express 5
 - **Auth:** **Better Auth** (único provedor), com e-mail e senha e Google — sessão em cookie httpOnly, validada por `getAuth().api.getSession()` em `requireAuth`; não há `Authorization: Bearer`
 - **Dados:** **Drizzle ORM** (`DATABASE_URL`) como único caminho — o app entra com o papel `feedback_app`, que só lê e escreve dados ([banco com o mínimo de privilégio](./banco-menor-privilegio.md)); a RLS deixa esse papel ver todas as linhas, então o isolamento por `enterprise_id` fica na aplicação. O Supabase permanece apenas como **provedor do Postgres**

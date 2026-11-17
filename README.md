@@ -2,8 +2,8 @@
 
 **Backend-for-Frontend (BFF)** do [Feedback Analytics](https://github.com/TCC-Feedback-Analytics/feedback-analytics) — o **único ponto de entrada** do backend. O frontend nunca acessa o banco ou o serviço de IA diretamente: tudo passa por aqui (autenticação, sessão, regras de negócio, estatísticas e orquestração da IA).
 
-- **Runtime:** Node.js 20+ · TypeScript (ESM) · Express 5
-- **Auth:** **Better Auth** (único provedor) — e-mail e senha ou **Google** · sessão em **cookie httpOnly** (sem `Authorization: Bearer`), sobre o Postgres via Drizzle
+- **Runtime:** Node.js 20 ou mais novo para rodar o app · TypeScript (ESM) · Express 5. Os testes pedem Node 22.12 ou mais novo, por causa do Vitest 5.
+- **Auth:** **Better Auth** (único provedor) — e-mail e senha ou **Google** · sessão em **cookie httpOnly** (sem `Authorization: Bearer`), sobre o Postgres via Drizzle. O login, o cadastro e o esqueci a senha têm limite de tentativas por IP e por e-mail, contado no banco. A nova senha encerra todas as sessões.
 - **Dados:** **Drizzle ORM** (via `DATABASE_URL`) como único caminho de acesso — o app entra com o papel `feedback_app`, que só lê e escreve dados ([banco com o mínimo de privilégio](docs/banco-menor-privilegio.md)); a policy da RLS deixa esse papel ver todas as linhas, então o isolamento por `enterprise_id` é forçado na aplicação (`src/db/tenantScope.ts`)
 - **Contratos:** tipos e schemas Zod de [`@feedback/lib-shared`](https://github.com/TCC-Feedback-Analytics/feedback-analytics-contracts) (git tag `v1.8.0`)
 - **Deploy:** Vercel serverless (bundle esbuild `index.ts → _bundle.cjs`, `maxDuration` 300s)
@@ -19,7 +19,7 @@ npm install
 cp .env.example .env    # p/ dev local, use DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5433/feedback
 
 npm run db:local:up     # sobe Postgres (:5433) + Mailpit (:8025) via Docker
-npm run db:reset        # cria o schema + seed determinístico (exige DATABASE_URL local)
+npm run db:reset        # cria o schema e o seed. Exige no .env a DATABASE_URL local, o BETTER_AUTH_SECRET e as E2E_TEST_*
 npm run dev             # http://localhost:3000
 
 npm run db:local:down   # ao terminar: derruba os containers (os dados ficam no volume)
@@ -43,7 +43,7 @@ Todas as rotas são montadas sob **`/api`** (`app.use('/api', ...)` em `index.ts
 ## Arquitetura BFF em camadas
 
 1. **Endpoints HTTP (`routes/`)** — expõem rotas públicas e protegidas para o frontend.
-2. **Middlewares e segurança** — o CORS (allowlist manual) fica em `src/index.ts`; a autenticação fica em `middlewares/`: `requireAuth` valida a sessão do cookie via Better Auth (`getAuth().api.getSession()`) e injeta `req.user`/`req.enterpriseId` nas rotas protegidas (os endpoints públicos não passam por `requireAuth`). A configuração do Better Auth vive em `auth/`: e-mail e senha, Google, envio dos e-mails, criação da empresa no cadastro e exclusão da empresa antes de apagar a conta (`enterpriseOnDelete.ts`).
+2. **Middlewares e segurança** — o CORS (allowlist manual) fica em `src/index.ts`. As origens `localhost:5173` e `localhost:4173` só entram fora de produção, e o app não manda o cabeçalho `X-Powered-By`; a autenticação fica em `middlewares/`: `requireAuth` valida a sessão do cookie via Better Auth (`getAuth().api.getSession()`) e injeta `req.user`/`req.enterpriseId` nas rotas protegidas (os endpoints públicos não passam por `requireAuth`). A configuração do Better Auth vive em `auth/`: e-mail e senha, Google, envio dos e-mails, criação da empresa no cadastro e exclusão da empresa antes de apagar a conta (`enterpriseOnDelete.ts`).
 3. **Orquestração / regras de negócio (`controllers/`)** — coordenam o caso de uso; nos fluxos mais complexos delegam para:
    - **Services (`services/`)** — regras de negócio e orquestração. Exemplos:
      - a **análise de IA** (`iaAnalyze.service.ts`): monta lotes por escopo, aplica regras e persiste;

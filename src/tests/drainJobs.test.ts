@@ -4,7 +4,8 @@ import { drainJobs } from '../libs/iaJob/drainJobs.js';
 import { claimNextIaJob, saveClaimedIaJob, IaJobLeaseLostError, type ClaimedIaJob } from '../repositories/iaJob.repository.js';
 import { fetchAlreadyAnalyzedFeedbackIds, upsertFeedbackInsightsReports } from '../repositories/iaAnalyze.repository.js';
 import { prepareAnalyzeRawJob, runOneBatch } from '../services/iaAnalyze.service.js';
-import { prepareInsightsJob, runInsightsBatch, runInsightsSynthesis, type IaJobCheckpoint } from '../services/insightsJob.service.js';
+import { prepareInsightsJob, runInsightsBatch, type IaJobCheckpoint } from '../services/insightsJob.service.js';
+import { runIaInsightsSynthesis } from '../providers/iaAnalyze.provider.js';
 import { reserveIaBudget } from '../libs/iaJob/rateBudget.js';
 
 vi.mock('../repositories/iaJob.repository.js', () => ({
@@ -18,8 +19,10 @@ vi.mock('../services/iaAnalyze.service.js', () => ({
 }));
 vi.mock('../services/insightsJob.service.js', async importOriginal => ({
   ...await importOriginal<typeof import('../services/insightsJob.service.js')>(),
-  prepareInsightsJob: vi.fn(), runInsightsBatch: vi.fn(), runInsightsSynthesis: vi.fn(),
+  prepareInsightsJob: vi.fn(), runInsightsBatch: vi.fn(),
 }));
+// A síntese em rodadas roda de verdade; só a chamada HTTP ao IA Analyze é simulada.
+vi.mock('../providers/iaAnalyze.provider.js', () => ({ runIaAnalyzeAnalysis: vi.fn(), runIaInsightsSynthesis: vi.fn() }));
 vi.mock('../libs/iaJob/rateBudget.js', () => ({ reserveIaBudget: vi.fn() }));
 
 let saved: ClaimedIaJob & { status: string; errorCode?: string | null };
@@ -59,13 +62,8 @@ beforeEach(() => {
     analyzedCount: checkpoint.batches[checkpoint.cursor].feedbacks.length,
     globalInsights: { summary: 'Lote ' + checkpoint.cursor, recommendations: ['Melhorar atendimento'] },
   }]);
-  vi.mocked(runInsightsSynthesis).mockImplementation(async checkpoint => {
-    const target = checkpoint.synthesisTargets![checkpoint.cursor];
-    return {
-      scope_type: target.scopeType, catalog_item_id: target.catalogItemId,
-      catalog_item_name: target.catalogItemName, analyzedCount: target.analyzedCount,
-      globalInsights: { summary: 'Relatório final consolidado', recommendations: ['Melhorar atendimento'] },
-    };
+  vi.mocked(runIaInsightsSynthesis).mockResolvedValue({
+    global_insights: { summary: 'Relatório final consolidado', recommendations: ['Melhorar atendimento'] },
   });
   vi.mocked(upsertFeedbackInsightsReports).mockImplementation(async ({ contexts }) => contexts);
   vi.mocked(reserveIaBudget).mockResolvedValue({ ok: true });
@@ -135,7 +133,7 @@ describe('worker sempre assíncrono e retomável', () => {
     expect(report.enterpriseId).toBe('tenant-A');
     expect(report.contexts[0].analyzedCount).toBe(42);
     expect(report.contexts[0].globalInsights?.summary).toBe('Relatório final consolidado');
-    expect(runInsightsSynthesis).toHaveBeenCalledOnce();
+    expect(runIaInsightsSynthesis).toHaveBeenCalledOnce();
   });
   it('erro na análise do job unificado nunca inicia síntese', async () => {
     saved.jobType = 'regenerate_insights'; saved.options.analyzePending = true;
@@ -151,9 +149,23 @@ describe('worker sempre assíncrono e retomável', () => {
     for (let i = 0; i < 7; i++) await tick();
     expect(runOneBatch).not.toHaveBeenCalled();
     expect(runInsightsBatch).toHaveBeenCalledTimes(6);
-    expect(runInsightsSynthesis).toHaveBeenCalledOnce();
+    expect(runIaInsightsSynthesis).toHaveBeenCalledOnce();
     expect(upsertFeedbackInsightsReports).toHaveBeenCalledWith(expect.objectContaining({
       contexts: [expect.objectContaining({ analyzedCount: 105 })],
+    }));
+  });
+  it('2.050 feedbacks: a síntese anda em rodadas de até 100 parciais e o progresso fecha no total', async () => {
+    saved.jobType = 'regenerate_insights';
+    vi.mocked(prepareInsightsJob).mockResolvedValue(snapshot('generating', 2050));
+    for (let i = 0; i < 106; i++) await tick();
+    expect(saved.status).toBe('completed');
+    expect(runInsightsBatch).toHaveBeenCalledTimes(103);
+    const calls = vi.mocked(runIaInsightsSynthesis).mock.calls.map(([request]) => request.partial_insights.length);
+    expect(calls).toEqual([52, 51, 2]);
+    expect(saved.done).toBe(106);
+    expect(saved.total).toBe(106);
+    expect(upsertFeedbackInsightsReports).toHaveBeenCalledWith(expect.objectContaining({
+      contexts: [expect.objectContaining({ analyzedCount: 2050 })],
     }));
   });
   it('cache hit conclui sem reservar cota nem chamar provedor', async () => {
@@ -173,18 +185,31 @@ describe('worker sempre assíncrono e retomável', () => {
     expect(runInsightsBatch).toHaveBeenCalledTimes(4);
     expect(prepareInsightsJob).toHaveBeenCalledOnce();
   });
-  it('retentativas de timeout têm limite; mantém checkpoint para diagnóstico', async () => {
+  it('retentativas de timeout têm limite; a falha final apaga os comentários do job e guarda a fase', async () => {
     saved.jobType = 'regenerate_insights';
     vi.mocked(runInsightsBatch).mockRejectedValue(new IaAnalyzeServiceError('timeout', 502, 'failed_remote_ia_analyze_request'));
     await tick(); await tick(); await tick();
     expect(saved.status).toBe('failed');
     expect(saved.done).toBe(0);
+    expect(saved.options.checkpoint).toBeUndefined();
+    expect(saved.options).toMatchObject({ phase: 'generating', failures: 3 });
+  });
+  it('análise que falha de vez não deixa os comentários no job', async () => {
+    vi.mocked(runOneBatch).mockRejectedValue(new IaAnalyzeServiceError('invalid', 502, 'invalid_ai_response'));
+    expect(await tick()).toMatchObject({ status: 'failed', errorCode: 'invalid_ai_response' });
+    expect(saved.options.checkpoint).toBeUndefined();
+    expect(saved.options.phase).toBe('analyzing');
+  });
+  it('falha que ainda vai tentar de novo mantém o checkpoint para retomar', async () => {
+    vi.mocked(runOneBatch).mockRejectedValueOnce(new IaAnalyzeServiceError('timeout', 502, 'failed_remote_ia_analyze_request'));
+    expect(await tick()).toMatchObject({ status: 'requeued' });
+    expect((saved.options.checkpoint as IaJobCheckpoint).cursor).toBe(0);
   });
   it('falha ao publicar não repete chamadas dos lotes já concluídos', async () => {
     saved.jobType = 'regenerate_insights';
     saved.options.checkpoint = { ...snapshot('synthesizing', 20), cursor: 1,
       synthesisTargets: [{ scopeType: 'COMPANY', catalogItemId: null, catalogItemName: null, analyzedCount: 20,
-        partialInsights: [{ summary: 'Parcial', recommendations: [] }] }],
+        pendingPartials: [], nextRoundPartials: [] }],
       synthesizedContexts: [{ scope_type: 'COMPANY', catalog_item_id: null, catalog_item_name: null,
         analyzedCount: 20, globalInsights: { summary: 'Pronto', recommendations: [] } }] };
     saved.total = saved.done = 2;
@@ -198,16 +223,17 @@ describe('worker sempre assíncrono e retomável', () => {
       contexts: [{ scope_type: 'COMPANY', catalog_item_id: null, catalog_item_name: null,
         analyzedCount: 105, globalInsights: { summary: 'Parcial', recommendations: [] } }],
       synthesisTargets: [{ scopeType: 'COMPANY', catalogItemId: null, catalogItemName: null,
-        analyzedCount: 105, partialInsights: [{ summary: 'Parcial', recommendations: [] }] }],
+        analyzedCount: 105, nextRoundPartials: [],
+        pendingPartials: [{ insights: { summary: 'Parcial', recommendations: [] }, analyzedCount: 105 }] }],
       synthesizedContexts: [] };
     saved.total = 7; saved.done = 6;
-    vi.mocked(runInsightsSynthesis).mockRejectedValueOnce(
+    vi.mocked(runIaInsightsSynthesis).mockRejectedValueOnce(
       new IaAnalyzeServiceError('timeout', 502, 'failed_remote_ia_analyze_request'),
     );
     expect(await tick()).toMatchObject({ status: 'requeued', done: 6 });
     expect(await tick()).toMatchObject({ status: 'completed', done: 7 });
     expect(runInsightsBatch).not.toHaveBeenCalled();
-    expect(runInsightsSynthesis).toHaveBeenCalledTimes(2);
+    expect(runIaInsightsSynthesis).toHaveBeenCalledTimes(2);
     expect(upsertFeedbackInsightsReports).toHaveBeenCalledOnce();
   });
   it('worker que perdeu posse não conclui nem falha o job do novo worker', async () => {

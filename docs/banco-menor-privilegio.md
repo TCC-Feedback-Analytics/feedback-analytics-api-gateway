@@ -10,7 +10,7 @@ Item da etapa 07 (Segurança e LGPD). Vem da lacuna nº 1 do [mapa de ameaças](
 
 1. **Liga a RLS nas nove tabelas que estavam sem ela:** `user`, `session`, `account`, `verification`, `user_onboarding`, `enterprise_ia_config`, `ia_analysis_job`, `ia_rate_budget` e `scope_diagnosis`. Agora as 24 tabelas criadas pelas migrations `0000` a `0013` têm RLS.
 2. **Cria o papel `feedback_app` sem login.** A senha **não fica no repositório**: o dono a define no Supabase (passo a passo abaixo).
-3. **Dá ao `feedback_app` só leitura e escrita de dados** (`SELECT`, `INSERT`, `UPDATE`, `DELETE`), nas tabelas de hoje e nas que as próximas migrations criarem (`ALTER DEFAULT PRIVILEGES`).
+3. **Dá ao `feedback_app` só leitura e escrita de dados** (`SELECT`, `INSERT`, `UPDATE`, `DELETE`), nas tabelas de hoje e nas que as próximas migrations criarem (`ALTER DEFAULT PRIVILEGES`). Também dá `USAGE` e `SELECT` nas sequências.
 4. **Cria a policy `feedback_app_all` em cada tabela.** Com a RLS ligada e sem policy, o banco barra todo papel que não é dono da tabela. A policy deixa passar só o `feedback_app`. O isolamento entre empresas continua na aplicação (`src/db/tenantScope.ts`). Os outros papéis, como o `anon` e o `authenticated` do Supabase, seguem sem acesso.
 
 As migrations continuam rodando como `postgres`, pelo secret `DATABASE_URL` do GitHub (`.github/workflows/deploy-api.yml`). Só o app, na Vercel, troca de usuário.

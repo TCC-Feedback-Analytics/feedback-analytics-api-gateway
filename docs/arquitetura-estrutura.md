@@ -32,14 +32,14 @@ Internamente, o API Gateway adota uma **Arquitetura em Camadas** como padrão de
 
 > **Estado atual da implementação:** o padrão **completo** Controller → Service → Repository existe nos fluxos de IA e de métricas: **análise e relatório** (`iaAnalyze.service.ts` + `insightsJob.service.ts`), **diagnóstico do escopo** (`scopeDiagnosis.service.ts`), **perguntas da empresa geradas pela IA** (`companyQuestionSuggestions.service.ts` + `companyQuestionsAutoGenerate.service.ts`), **configuração de IA** (`iaConfig.service.ts`) e **métricas do escopo** (`scopeMetrics.service.ts` + `questionMetrics.service.ts`, usados pelas rotas de feedbacks e pelo diagnóstico). Vários fluxos usam **Controller → Repository** (sem Service): os **pontos de coleta/QR** (`collectionPointsQr.repository.ts`), o **campo de comentário** (`commentField.repository.ts`), o **formulário público** (`publicEnterprise`, `publicQuestions` e `qrFeedback`), a **empresa e a coleta** (`collectingData.repository.ts` + `enterprise.repository.ts`) e o **guia do sistema** (`onboarding.repository.ts`). **Usuário/autenticação/cadastro** usam o **Better Auth** (`getAuth().api.*`), mas ainda há SQL direto no controller em três pontos: nome e telefone (`user.controller.ts`), as checagens de telefone e e-mail do cadastro (`register.controller.ts`) e o completar cadastro de quem entra com o Google (`completeSignup.controller.ts`). Migrar esses pontos para o padrão em camadas é um trabalho em aberto.
 
-Há também pastas de apoio estrutural, como a `libs/`, com a lógica de domínio que não é rota nem acesso a dados. A maior parte é pura (estatística, período, movimento no tempo, pico, clientes, canal, participação nos comentários, montagem dos lotes e do pacote do diagnóstico); as exceções são `libs/iaJob/` (o worker e o limitador de ritmo, que usam o banco), `libs/iaConfig/` (resolve e decifra a chave da empresa e fala com a API do OpenRouter) e `libs/resendRateLimit.ts`. Os `providers/` fazem a comunicação HTTP com o `ia-analyze`.
+Há também pastas de apoio estrutural, como a `libs/`, com a lógica de domínio que não é rota nem acesso a dados. A maior parte é pura (estatística, período, movimento no tempo, pico, clientes, canal, participação nos comentários, montagem dos lotes e do pacote do diagnóstico); as exceções são `libs/iaJob/` (o worker e o limitador de ritmo, que usam o banco), `libs/iaConfig/` (resolve e decifra a chave da empresa e fala com a API do OpenRouter) e `libs/authRateLimit.ts` com `libs/resendRateLimit.ts` (o limite das rotas públicas de autenticação, contado no banco). Os `providers/` fazem a comunicação HTTP com o `ia-analyze`.
 
 ### Mapa das pastas
 
 | Pasta | O que tem |
 |---|---|
 | `index.ts` (raiz) | Só reexporta o app de `src/index.ts`; é a entrada do bundle esbuild (`_bundle.cjs`) |
-| `src/index.ts` | Monta o Express: CORS, handler do Better Auth em `/api/auth/*`, rotas sob `/api` e, fora da Vercel, o servidor e o worker local |
+| `src/index.ts` | Monta o Express: desliga o `X-Powered-By`, aplica o CORS, monta o handler do Better Auth em `/api/auth/*` e as rotas sob `/api`. Fora da Vercel, sobe o servidor e o worker local |
 | `src/routes/` | Rotas por superfície: `public/`, `protected/` e `internal/` |
 | `src/middlewares/` | `requireAuth` (sessão do Better Auth) |
 | `src/controllers/` | Um controller por fluxo, nas mesmas três superfícies das rotas |
@@ -49,8 +49,8 @@ Há também pastas de apoio estrutural, como a `libs/`, com a lógica de domíni
 | `src/libs/` | Lógica de domínio: estatística, métricas, lotes da IA, worker (`iaJob/`), chave de IA (`iaConfig/`), avaliação do classificador (`eval/`) |
 | `src/auth/` | Instância do Better Auth, e-mails, mapa de erros e os ganchos de criação (`enterpriseOnSignup.ts`) e exclusão (`enterpriseOnDelete.ts`) da empresa |
 | `src/db/` | Cliente Drizzle e os filtros de tenant (`tenantScope.ts`) |
-| `src/config/` | Códigos de erro e as perguntas padrão da empresa |
-| `src/utils/` | Cifra da chave (`crypto.ts`), `sendTypedError` e a checagem do token do worker |
+| `src/config/` | Códigos de erro, as perguntas padrão da empresa e as origens locais da Web (`localWebOrigins.ts`), que só valem fora de produção |
+| `src/utils/` | Cifra da chave (`crypto.ts`), `sendTypedError`, a resposta 429 com `Retry-After` (`sendRateLimited.ts`), a checagem do token do worker e helpers de erro |
 | `src/types/` | Tipos locais e a extensão do `Request` do Express |
 | `drizzle/` | Schema (`schema.ts` + `schema/`) e as migrations SQL, a fonte única do banco ([ADR-0001](adr/0001-fonte-unica-de-schema.md)) |
 

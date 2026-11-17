@@ -6,7 +6,7 @@ Relacionado: [ORM × RLS: nossa decisão](https://github.com/TCC-Feedback-Analyt
 
 ## Fonte da verdade: uma só representação
 
-> **Decisão:** [ADR-0001](adr/0001-fonte-unica-de-schema.md), consolidada na [Fase 2](adr/0001-plano-fase2-rebaseline.md) — `drizzle/schema.ts` + as migrations em `drizzle/*.sql` são a **fonte única** do schema. Não há mais duas representações mantidas à mão.
+> **Decisão:** [ADR-0001](adr/0001-fonte-unica-de-schema.md), consolidada na [Fase 2](runbooks/plano-fase2-rebaseline.md) — `drizzle/schema.ts` + as migrations em `drizzle/*.sql` são a **fonte única** do schema. Não há mais duas representações mantidas à mão.
 
 Antes da Fase 2 o schema vivia em **dois lugares** que precisavam ser espelhados a cada mudança (`drizzle/` para produção/tipos e `db/schema/*.sql` para o banco local), e um **guard-rail golden** (`db/schema/.drift-snapshot.sql` + `scripts/schema-drift.mjs` + workflow `schema-drift.yml` + scripts `db:drift:*`) mantinha as duas trilhas honestas. **Isso foi aposentado.** Hoje:
 
@@ -28,7 +28,7 @@ Antes da Fase 2 o schema vivia em **dois lugares** que precisavam ser espelhados
 | `0002_fat_chronomancer.sql` | **Etapa 03 (análise assíncrona):** tabelas `ia_analysis_job` (fila + status de progresso) e `ia_rate_budget` (token bucket do rate limiter); `unique(feedback_id)` em `feedback_analysis` (idempotência). Índice parcial único de dedup (`COALESCE` no `catalog_item_id`) e trigger `set_updated_at` entram como **SQL manual** no fim da migration. |
 | `0003_amusing_radioactive_man.sql` | **Etapa 04 (BYO-key):** tabela `enterprise_ia_config` (chave OpenRouter por empresa, **cifrada** — ciphertext/iv/authTag + `key_hint`) + trigger `set_updated_at` (SQL manual). |
 | `0004_user_onboarding.sql` | Tabela `user_onboarding` (tours concluídos ou pulados por usuário), FK para `public.user`. |
-| `0005_auth_resend_rate_limit.sql` | Tabela `auth_rate_limit` (limite de reenvio de e-mail de autenticação), com RLS. |
+| `0005_auth_resend_rate_limit.sql` | Tabela `auth_rate_limit` (limites das rotas públicas de autenticação: reenvio, login, nova senha e cadastro), com RLS. |
 | `0006_company_question_suggestions.sql` | Novo `job_type` `generate_company_questions` em `ia_analysis_job`. |
 | `0007_feedback_enterprise_created_at.sql` | Índice `idx_feedback_enterprise_created_at` em `feedback`. |
 | `0008_scope_diagnosis.sql` | Tabela `scope_diagnosis` e `job_type` `generate_scope_diagnosis`. |
@@ -38,6 +38,7 @@ Antes da Fase 2 o schema vivia em **dois lugares** que precisavam ser espelhados
 | `0012_feedback_channel.sql` | Coluna `feedback.channel` (`QR`, `LINK`, `NFC`, `TEST`). |
 | `0013_banco_menor_privilegio.sql` | Migration **custom** — RLS em todas as tabelas, papel `feedback_app` e policy `feedback_app_all` ([Banco com o mínimo de privilégio](banco-menor-privilegio.md)). |
 | `0014_insights_report_nulls_not_distinct.sql` | Gerada e completada à mão — apaga os relatórios de insights duplicados, troca o índice único por uma constraint `NULLS NOT DISTINCT` (o escopo da empresa, com `catalog_item_id` nulo, voltava a gravar uma linha por geração) e cria o trigger `set_updated_at` do `feedback_comment_field`. |
+| `0015_apagar_tokens_google.sql` | Migration **custom** — apaga `access_token`, `refresh_token` e `id_token` das contas Google criadas antes do hook `discardOAuthTokens` (`src/auth/auth.ts`). |
 | `meta/_journal.json` + `meta/*_snapshot.json` | Histórico e snapshots usados pelo `generate` para fazer o diff. |
 
 ## Scripts (`package.json` da raiz)
@@ -84,4 +85,4 @@ Originalmente o Drizzle foi adotado sobre um banco **já populado** (Supabase), 
 
 - **Migrations versionadas** com histórico e diff automático (declarativo), em vez de SQL escrito à mão.
 - **Fonte única de schema** — uma só representação (`schema.ts` + migrations), com o banco local montado pelas mesmas migrations que vão para produção.
-- **Adoção de ORM sobre banco existente** — o problema real de *baseline* e o re-baseline consciente na Fase 2 ([ADR-0001](adr/0001-fonte-unica-de-schema.md) · [plano da Fase 2](adr/0001-plano-fase2-rebaseline.md)).
+- **Adoção de ORM sobre banco existente** — o problema real de *baseline* e o re-baseline consciente na Fase 2 ([ADR-0001](adr/0001-fonte-unica-de-schema.md) · [plano da Fase 2](runbooks/plano-fase2-rebaseline.md)).

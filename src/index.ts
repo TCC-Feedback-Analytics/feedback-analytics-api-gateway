@@ -18,6 +18,7 @@ import { resendConfirmationController } from './controllers/public/resendConfirm
 import forgotPasswordRoutes from './routes/public/forgotPassword.routes.js';
 import { toNodeHandler } from 'better-auth/node';
 import { getAuth } from './auth/auth.js';
+import { localWebOrigins } from './config/localWebOrigins.js';
 
 function normalizeOrigin(rawValue: string): string | null {
   const value = String(rawValue ?? '').trim();
@@ -103,7 +104,7 @@ function readVercelPairConfig() {
 }
 
 function readAllowedOrigins(): Set<string> {
-  const defaults = ['http://localhost:5173', 'http://localhost:4173']
+  const defaults = localWebOrigins()
     .map((value) => normalizeOrigin(value))
     .filter((value): value is string => value !== null);
 
@@ -245,6 +246,8 @@ function corsMiddleware(
 
 // Criando o servidor.
 const app = express();
+// Não anuncia "Express" no cabeçalho X-Powered-By.
+app.disable('x-powered-by');
 
 // CORS precisa vir antes dos endpoints
 app.use(corsMiddleware);

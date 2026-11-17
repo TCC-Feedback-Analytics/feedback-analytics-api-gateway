@@ -13,7 +13,7 @@
 
 ## 1. O que já existe no backend
 
-O gateway expõe **3 endpoints** para a empresa gerenciar a própria config OpenRouter. A chave é **cifrada** (AES-256-GCM) no banco; o GET **nunca** devolve a chave — só se existe, o provedor, o modelo e um "hint" (últimos 4 caracteres). Sem chave configurada, as análises respondem `ia_config_required` por padrão.
+O gateway expõe **3 endpoints** para a empresa gerenciar a própria config OpenRouter. *Hoje:* são 6 endpoints, listados em [endpoints.md](endpoints.md). A chave é **cifrada** (AES-256-GCM) no banco; o GET **nunca** devolve a chave — só se existe, o provedor, o modelo e um "hint" (últimos 4 caracteres). Sem chave configurada, as análises respondem `ia_config_required` por padrão.
 
 ---
 
@@ -80,7 +80,7 @@ Estrutura: `pages/`, `components/`, `layouts/` na **raiz**; `services/`, `routes
 | **[NOVO]** `components/user/pages/profile/editIaSettings/formIaSettings.tsx` | O form: `useForm` + `zodResolver` (molde `components/user/pages/profile/editUser/forms/formEmailUser.tsx`) + `useFetcher`/`useToast`; campo de chave mascarado, select de modelo curado + custom, badge de status, botões Salvar/Remover, link para openrouter. |
 | **[NOVO]** `src/routes/actions/actionIaSettings.ts` | Lê o `formData`, chama o service, retorna `ActionData` (`lib/interfaces/contracts/action-data.contract`). Molde: `src/routes/actions/actionCollectingData.ts`. |
 | **[MODIFY]** `src/routes/user.tsx` | Registrar a rota (ex.: `path="edit/ia-settings"` com `action={ActionIaSettings}`). Molde: as rotas de `edit/*` já existentes. |
-| **[MODIFY]** `src/lib/mock/menu.ts` | Adicionar o item "Configuração de IA" (nav é data-driven; só este arquivo muda). |
+| **[MODIFY]** `src/lib/mock/menu.ts` | Adicionar o item "Configuração de IA" (nav é data-driven; só este arquivo muda). *Hoje:* o item fica em `src/lib/constants/menu.ts`. |
 
 **Tipos:** defina o shape da config (`{ hasKey, provider, model, keyHint }`) e do payload localmente no web — **não** precisa mexer no pacote `@feedback/lib-shared`.
 
@@ -115,7 +115,7 @@ O `PUT` pode voltar erro tipado em `{ error }`. Mapeie para mensagens claras (pa
 - [ ] A tela mostra o **status** (com/sem chave) e, se houver, **modelo + hint** ao abrir.
 - [ ] Campo da chave é **mascarado** com mostrar/ocultar e **nunca** vem pré-preenchido.
 - [ ] Salvar com chave válida → badge "Configurada"; chave inválida → toast de erro tratado.
-- [ ] Select de modelo com a lista curada + opção "personalizado".
+- [ ] Select de modelo com a lista curada + opção "personalizado". *Hoje:* o select usa o catálogo de `/user/ia-models`, com busca.
 - [ ] Remover chave → volta para "Sem chave".
 - [ ] Link para `https://openrouter.ai/keys`.
 - [ ] Item "Configuração de IA" no menu.

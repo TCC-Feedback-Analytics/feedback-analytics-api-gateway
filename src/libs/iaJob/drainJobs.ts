@@ -5,6 +5,7 @@ import { prepareAnalyzeRawJob, resolveIaCredsOrThrow, runOneBatch } from '../../
 import {
   beginInsightsSynthesis,
   countInsightsJobSteps,
+  countRemainingSynthesisSteps,
   prepareInsightsJob,
   runInsightsBatch,
   runInsightsSynthesis,
@@ -204,12 +205,12 @@ async function processJob(job: ClaimedIaJob): Promise<DrainJobResult> {
       }
       const creds = await resolveIaCredsOrThrow(job.enterpriseId);
       batchesRun = 1;
-      checkpoint.synthesizedContexts ??= [];
-      checkpoint.synthesizedContexts.push(await runInsightsSynthesis(checkpoint, creds));
-      checkpoint.cursor += 1;
+      checkpoint = await runInsightsSynthesis(checkpoint, creds);
       job.done += 1;
+      // Acima de 100 parciais a síntese anda em rodadas; o total acompanha o que ainda falta.
+      job.total = job.done + countRemainingSynthesisSteps(checkpoint);
       job.options = { ...job.options, checkpoint, failures: 0 };
-      await save({ options: job.options, done: job.done });
+      await save({ options: job.options, done: job.done, total: job.total });
       confirmedOptions = structuredClone(job.options);
     }
 
@@ -242,6 +243,11 @@ async function processJob(job: ClaimedIaJob): Promise<DrainJobResult> {
     // Falhou de vez: o pacote (com textos de comentários) não fica guardado no job.
     if (!retry && job.jobType === 'generate_scope_diagnosis') {
       confirmedOptions = { dataHash: confirmedOptions.dataHash, phase: 'diagnosing' };
+    }
+    // O checkpoint guarda os lotes com os comentários; a fase fica para o polling final.
+    if (!retry && (job.jobType === 'analyze_raw' || job.jobType === 'regenerate_insights')) {
+      const { checkpoint: failedCheckpoint, ...rest } = confirmedOptions;
+      confirmedOptions = { ...rest, phase: (failedCheckpoint as IaJobCheckpoint | undefined)?.phase ?? rest.phase };
     }
     const delaySeconds = questionsRateLimited
       ? Math.min(QUESTIONS_RATE_LIMIT_MAX_DELAY_SECONDS, QUESTIONS_RATE_LIMIT_BASE_DELAY_SECONDS * 2 ** failures)

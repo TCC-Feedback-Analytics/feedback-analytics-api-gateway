@@ -15,6 +15,10 @@ const { signUpEmail, resetPassword, execute } = vi.hoisted(() => ({
 vi.mock('../auth/auth.js', () => ({ getAuth: vi.fn(() => ({ api: { signUpEmail, resetPassword } })) }));
 vi.mock('../db/client.js', () => ({ getDb: vi.fn(() => ({ execute })), closeDb: vi.fn() }));
 vi.mock('../auth/enterpriseOnSignup.js', () => ({ provisionEnterpriseForUser: vi.fn() }));
+vi.mock('../libs/authRateLimit.js', () => ({
+  authClientIp: vi.fn(() => '203.0.113.7'),
+  reserveAuthAttempt: vi.fn(async () => ({ allowed: true, retryAfterSeconds: 0 })),
+}));
 
 type MockRes = Response & { statusCode: number; body: unknown };
 
@@ -69,7 +73,7 @@ describe('cadastro sem CPF/CNPJ e com senha forte', () => {
     vi.mocked(getAuth).mockReturnValue({ api: { signUpEmail, resetPassword } } as never);
     vi.mocked(getDb).mockReturnValue({ execute } as never);
     execute.mockResolvedValue([]);
-    signUpEmail.mockResolvedValue({ user: { id: '11111111-1111-1111-1111-111111111111' } });
+    signUpEmail.mockResolvedValue({ user: { id: '11111111-1111-4111-8111-111111111111' } });
   });
 
   it('senha fraca volta 400 password_too_weak sem criar o usuário', async () => {
@@ -93,7 +97,7 @@ describe('cadastro sem CPF/CNPJ e com senha forte', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({ ok: true, message: 'confirmation_required' });
     expect(signUpEmail).toHaveBeenCalledWith({ body: expect.objectContaining({ name: 'Padaria Bom Pão', password: STRONG }) });
-    expect(provisionEnterpriseForUser).toHaveBeenCalledWith('11111111-1111-1111-1111-111111111111', {
+    expect(provisionEnterpriseForUser).toHaveBeenCalledWith('11111111-1111-4111-8111-111111111111', {
       termsVersion: 'v1',
       termsAcceptedAt: expect.any(String),
     });

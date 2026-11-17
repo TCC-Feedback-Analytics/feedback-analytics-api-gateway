@@ -10,6 +10,7 @@
  * - E-mail (verificação/reset) via provider próprio (Mailpit local / Brevo por SMTP em produção).
  * - `autoSignIn:false` + `requireEmailVerification:true`: anti-enumeração no signup
  *   e login só após confirmação (paridade com RNE-014).
+ * - Entrar com Google não guarda os tokens do Google em `account` (discardOAuthTokens).
  *
  * Lazy (getAuth): só instancia no primeiro uso, pois exige DATABASE_URL/
  * BETTER_AUTH_SECRET.
@@ -23,16 +24,17 @@ import { user, session, account, verification } from '../../drizzle/schema.js';
 import { sendChangeEmailVerification, sendResetPasswordEmail, sendVerificationEmail } from './email.js';
 import { provisionEnterpriseForUser } from './enterpriseOnSignup.js';
 import { deleteEnterpriseOfUser } from './enterpriseOnDelete.js';
+import { localWebOrigins } from '../config/localWebOrigins.js';
 
 export function hashBetterAuthPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 10);
 }
 
-function buildTrustedOrigins(): string[] {
-  const origins = new Set<string>(['http://localhost:5173', 'http://localhost:4173']);
-  const siteUrl = process.env.PUBLIC_SITE_URL?.trim();
+export function buildTrustedOrigins(env: NodeJS.ProcessEnv = process.env): string[] {
+  const origins = new Set<string>(localWebOrigins(env));
+  const siteUrl = env.PUBLIC_SITE_URL?.trim();
   if (siteUrl) origins.add(siteUrl);
-  const csv = process.env.CORS_ALLOWED_ORIGINS?.trim();
+  const csv = env.CORS_ALLOWED_ORIGINS?.trim();
   if (csv) {
     for (const o of csv.split(',')) {
       const v = o.trim();
@@ -68,6 +70,35 @@ export async function provisionEnterpriseForSocialAccount(account: { userId: str
   }
 }
 
+/**
+ * Tokens do Google fora da tabela `account`: o Better Auth lê o perfil com eles antes
+ * de gravar a conta, e o sistema não chama o Google depois do login. Não guardar é
+ * melhor que cifrar: o `encryptOAuthTokens` deixaria o `id_token` (um JWT com e-mail,
+ * nome e foto) em texto. Vale na criação e em toda atualização da conta, o que também
+ * limpa tokens gravados antes desta regra quando a pessoa entra de novo.
+ */
+export async function discardOAuthTokens() {
+  return { data: { accessToken: null, refreshToken: null, idToken: null } };
+}
+
+/**
+ * Rotas HTTP nativas de e-mail e senha que respondem 404. O login, o cadastro, o
+ * pedido de recuperação e a nova senha passam pelas rotas do gateway, que contam as
+ * tentativas no banco (libs/authRateLimit.ts) e chamam o Better Auth por dentro do
+ * servidor; a porta nativa deixaria contornar esse limite. A Web não chama nenhuma
+ * delas, nem a troca e a conferência de senha com sessão aberta.
+ * Continuam abertas as rotas que a Web e os e-mails usam: sign-in/social,
+ * callback/google, verify-email, reset-password/:token, list-accounts e delete-user.
+ */
+export const DISABLED_NATIVE_AUTH_PATHS = [
+  '/sign-in/email',
+  '/sign-up/email',
+  '/request-password-reset',
+  '/reset-password',
+  '/change-password',
+  '/verify-password',
+];
+
 function createAuth() {
   const isProd = process.env.NODE_ENV === 'production';
   const crossSite = String(process.env.COOKIE_CROSS_SITE ?? '').trim() === 'true';
@@ -78,6 +109,7 @@ function createAuth() {
     secret: process.env.BETTER_AUTH_SECRET,
     baseURL: process.env.BETTER_AUTH_URL ?? 'http://localhost:3000',
     basePath: '/api/auth',
+    disabledPaths: DISABLED_NATIVE_AUTH_PATHS,
     database: drizzleAdapter(getDb(), { provider: 'pg', schema: { user, session, account, verification } }),
     advanced: {
       // Deixa o Postgres gerar o id (uuid) → preserva os UUIDs migrados.
@@ -103,6 +135,8 @@ function createAuth() {
       sendResetPassword: async ({ user, url }) => {
         sendResetPasswordEmail(user.email, url);
       },
+      // Nova senha encerra todas as sessões: quem tinha a senha antiga não continua dentro.
+      revokeSessionsOnPasswordReset: true,
     },
     emailVerification: {
       sendOnSignUp: true,
@@ -141,8 +175,10 @@ function createAuth() {
     databaseHooks: {
       account: {
         create: {
+          before: discardOAuthTokens,
           after: async (account) => provisionEnterpriseForSocialAccount(account),
         },
+        update: { before: discardOAuthTokens },
       },
     },
     trustedOrigins: buildTrustedOrigins(),
