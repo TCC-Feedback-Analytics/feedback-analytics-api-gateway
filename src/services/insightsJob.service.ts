@@ -1,5 +1,6 @@
 import type { IaAnalyzeContext, IaAnalyzeInsights } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/analysis.contract';
 import type { IaAnalyzeRegenerateInsightsRequest } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/run.contract';
+import type { IaInsightsSynthesisRequest } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/insights-synthesis.contract';
 import { buildAnalysisBatches, buildEnterpriseContext } from '../libs/iaAnalyze/build.js';
 import { IaAnalyzeServiceError } from '../libs/iaAnalyze/errors.js';
 import { MIN_FEEDBACKS_FOR_RELEVANT_ANALYSIS, hasRequiredEnterpriseInfoForAnalysis } from '../libs/iaAnalyze/rules.js';
@@ -8,7 +9,6 @@ import { assertCompleteAnalyses } from '../libs/iaAnalyze/validateCompletion.js'
 import { fetchAlreadyAnalyzedFeedbacks, fetchEnterpriseContextForAnalysis,
   fetchFeedbackInsightsReports, latestAnalysisForFeedbacks } from '../repositories/iaAnalyze.repository.js';
 import { runIaAnalyzeAnalysis, runIaInsightsSynthesis, type IaCreds } from '../providers/iaAnalyze.provider.js';
-import type { IaInsightsSynthesisRequest } from '../../types/insightsSynthesis.types.js';
 
 export type PartialInsight = { insights: IaAnalyzeInsights; analyzedCount: number };
 
