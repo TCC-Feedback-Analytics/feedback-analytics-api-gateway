@@ -4,12 +4,12 @@ import type {
   IaAnalyzeRemoteRunRequest,
   IaAnalyzeRemoteRunResponse,
 } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/remote.contract';
+import type { IaInsightsSynthesisRequest, IaInsightsSynthesisResponse } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/insights-synthesis.contract';
 import { buildRemoteEndpoint, buildRemoteSynthesisEndpoint } from '../libs/iaAnalyze/build.js';
 import { readFallbackEnabled, readRemoteTimeoutMs, readRemoteToken } from '../libs/iaAnalyze/readEnvs.js';
 import { parseJsonSafe } from '../libs/iaAnalyze/parse.js';
 import { normalizeIaAnalyzeServiceError } from '../libs/iaAnalyze/normalize.js';
 import { resolvePrimaryBaseUrl } from '../libs/iaAnalyze/resolvePrimaryBaseUrl.js';
-import type { IaInsightsSynthesisRequest, IaInsightsSynthesisResponse } from '../../types/insightsSynthesis.types.js';
 
 // URL padrão do serviço IA local, usada como fallback quando o serviço remoto está indisponível.
 const DEFAULT_LOCAL_IA_ANALYZE_URL = 'http://localhost:4100';
