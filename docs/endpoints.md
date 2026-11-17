@@ -1073,11 +1073,12 @@ o id e acompanhá-lo por `GET /jobs/:id`.
 
 Retorna o objeto de status acima, incluindo jobs terminados.
 
-- `phase`: analyzing, generating, synthesizing (a síntese final do relatório, um passo
-  por relatório), generating_questions ou diagnosing (diagnóstico do escopo).
+- `phase`: analyzing, generating, synthesizing (a síntese do relatório: um passo
+  por relatório até 100 parciais; acima disso, um passo por bloco de cada rodada),
+  generating_questions ou diagnosing (diagnóstico do escopo).
 - `diagnosisId`: no job do diagnóstico do escopo concluído, o id do resultado; `null` nos demais.
 - `done/total`: feedbacks na fase analyzing; nas fases generating e synthesizing,
-  passos, com `total` = lotes + uma síntese por relatório.
+  passos, com `total` = lotes + as chamadas de síntese de cada relatório.
   Os contadores passam a representar a nova fase quando o job unificado avança.
 - `status`: queued, running, waiting_budget, completed ou failed.
 - `waiting_budget`: espera automática pela próxima janela de cota.
