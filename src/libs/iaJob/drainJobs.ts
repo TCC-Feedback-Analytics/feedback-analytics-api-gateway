@@ -5,6 +5,7 @@ import { prepareAnalyzeRawJob, resolveIaCredsOrThrow, runOneBatch } from '../../
 import {
   beginInsightsSynthesis,
   countInsightsJobSteps,
+  countRemainingSynthesisSteps,
   prepareInsightsJob,
   runInsightsBatch,
   runInsightsSynthesis,
@@ -204,12 +205,12 @@ async function processJob(job: ClaimedIaJob): Promise<DrainJobResult> {
       }
       const creds = await resolveIaCredsOrThrow(job.enterpriseId);
       batchesRun = 1;
-      checkpoint.synthesizedContexts ??= [];
-      checkpoint.synthesizedContexts.push(await runInsightsSynthesis(checkpoint, creds));
-      checkpoint.cursor += 1;
+      checkpoint = await runInsightsSynthesis(checkpoint, creds);
       job.done += 1;
+      // Acima de 100 parciais a síntese anda em rodadas; o total acompanha o que ainda falta.
+      job.total = job.done + countRemainingSynthesisSteps(checkpoint);
       job.options = { ...job.options, checkpoint, failures: 0 };
-      await save({ options: job.options, done: job.done });
+      await save({ options: job.options, done: job.done, total: job.total });
       confirmedOptions = structuredClone(job.options);
     }
 
