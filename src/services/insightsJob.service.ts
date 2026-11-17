@@ -8,7 +8,7 @@ import { assertCompleteAnalyses } from '../libs/iaAnalyze/validateCompletion.js'
 import { fetchAlreadyAnalyzedFeedbacks, fetchEnterpriseContextForAnalysis,
   fetchFeedbackInsightsReports, latestAnalysisForFeedbacks } from '../repositories/iaAnalyze.repository.js';
 import { runIaAnalyzeAnalysis, runIaInsightsSynthesis, type IaCreds } from '../providers/iaAnalyze.provider.js';
-import type { IaInsightsSynthesisRequest } from '../../types/insightsSynthesis.types.js';
+import type { IaInsightsSynthesisRequest } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/insights-synthesis.contract';
 
 export type PartialInsight = { insights: IaAnalyzeInsights; analyzedCount: number };
 
