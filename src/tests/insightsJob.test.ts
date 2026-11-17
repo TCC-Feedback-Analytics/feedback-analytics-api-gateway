@@ -10,7 +10,7 @@ import {
   runInsightsSynthesis,
   type IaJobCheckpoint,
 } from '../services/insightsJob.service.js';
-import type { IaInsightsSynthesisRequest } from '../../types/insightsSynthesis.types.js';
+import type { IaInsightsSynthesisRequest } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/insights-synthesis.contract';
 import * as repo from '../repositories/iaAnalyze.repository.js';
 import { runIaAnalyzeAnalysis, runIaInsightsSynthesis } from '../providers/iaAnalyze.provider.js';
 vi.mock('../repositories/iaAnalyze.repository.js', () => ({
