@@ -64,6 +64,12 @@ dados, rode `npm run db:migrate`; não rode `db:reset` nele, porque ele apaga tu
   recomendações semanticamente equivalentes antes da publicação.
 - A síntese final é um passo separado e checkpointado. Se ela falhar, o worker
   retoma somente o reduce; os lotes anteriores não são enviados novamente.
+- O IA Analyze aceita até 100 parciais e 100 kB por chamada de síntese. Acima de
+  100 parciais, ou de 90 kB no corpo, a síntese anda em rodadas: os parciais são
+  divididos em blocos de tamanho parecido, cada bloco vira um parcial da rodada
+  seguinte, e a rodada que cabe numa chamada só gera o relatório final. Cada
+  chamada é um passo do worker, com checkpoint. Com o lote padrão de 20, isso
+  começa acima de 2.000 feedbacks analisados no escopo.
 - Cache considera a data das análises, não apenas a data de coleta. O relatório
   usa a data do snapshot para não esconder análises que chegaram durante a execução.
 - Cada claim usa `SKIP LOCKED`, incrementa uma revisão de posse e ganha lease
