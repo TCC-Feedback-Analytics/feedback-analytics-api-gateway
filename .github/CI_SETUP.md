@@ -1,7 +1,7 @@
 # CI / Deploy — API Gateway
 
 Consome os contratos de `@feedback/lib-shared` (repositório **público**
-`feedback-analytics-contracts`, via git tag `v1.8.0` no `package.json`). O `npm ci` clona **sem token**;
+`feedback-analytics-contracts`, via git tag `v1.10.0` no `package.json`). O `npm ci` clona **sem token**;
 os workflows só reescrevem `ssh→https` antes do install (o npm canonicaliza a
 dep do GitHub para `git+ssh`, e os runners não têm chave SSH):
 

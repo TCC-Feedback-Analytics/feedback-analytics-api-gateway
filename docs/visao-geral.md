@@ -47,7 +47,7 @@ Todas as rotas ficam sob `/api`. A referência completa, rota a rota, está em [
 - **Auth:** **Better Auth** (único provedor), com e-mail e senha e Google — sessão em cookie httpOnly, validada por `getAuth().api.getSession()` em `requireAuth`; não há `Authorization: Bearer`
 - **Dados:** **Drizzle ORM** (`DATABASE_URL`) como único caminho — o app entra com o papel `feedback_app`, que só lê e escreve dados ([banco com o mínimo de privilégio](./banco-menor-privilegio.md)); a RLS deixa esse papel ver todas as linhas, então o isolamento por `enterprise_id` fica na aplicação. O Supabase permanece apenas como **provedor do Postgres**
 - **E-mail:** nodemailer via SMTP (Mailpit no local, Brevo em produção)
-- **Contratos:** `@feedback/lib-shared` (tag `v1.8.0`)
+- **Contratos:** `@feedback/lib-shared` (tag `v1.10.0`)
 - **Deploy:** Vercel (serverless)
 
 ## Veja Também

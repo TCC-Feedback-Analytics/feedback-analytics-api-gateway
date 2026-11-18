@@ -5,7 +5,7 @@
 - **Runtime:** Node.js 20 ou mais novo para rodar o app · TypeScript (ESM) · Express 5. Os testes pedem Node 22.12 ou mais novo, por causa do Vitest 5.
 - **Auth:** **Better Auth** (único provedor) — e-mail e senha ou **Google** · sessão em **cookie httpOnly** (sem `Authorization: Bearer`), sobre o Postgres via Drizzle. O login, o cadastro e o esqueci a senha têm limite de tentativas por IP e por e-mail, contado no banco. A nova senha encerra todas as sessões.
 - **Dados:** **Drizzle ORM** (via `DATABASE_URL`) como único caminho de acesso — o app entra com o papel `feedback_app`, que só lê e escreve dados ([banco com o mínimo de privilégio](docs/banco-menor-privilegio.md)); a policy da RLS deixa esse papel ver todas as linhas, então o isolamento por `enterprise_id` é forçado na aplicação (`src/db/tenantScope.ts`)
-- **Contratos:** tipos e schemas Zod de [`@feedback/lib-shared`](https://github.com/TCC-Feedback-Analytics/feedback-analytics-contracts) (git tag `v1.8.0`)
+- **Contratos:** tipos e schemas Zod de [`@feedback/lib-shared`](https://github.com/TCC-Feedback-Analytics/feedback-analytics-contracts) (git tag `v1.10.0`)
 - **Deploy:** Vercel serverless (bundle esbuild `index.ts → _bundle.cjs`, `maxDuration` 300s)
 
 ## Rodar localmente
