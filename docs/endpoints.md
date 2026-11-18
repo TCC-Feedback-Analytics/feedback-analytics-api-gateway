@@ -1166,7 +1166,7 @@ Query: `scope_type` e `catalog_item_id`. Devolve o diagnóstico mais recente do 
 
 - `newFeedbacksSince`: avaliações que chegaram no período do diagnóstico depois que ele foi gerado. A Web usa esse número para mostrar quando o diagnóstico ficou velho.
 - `job`: o mesmo objeto de `GET /jobs/:id`.
-- Os tipos estão em `@feedback/lib-shared` desde a `v1.2.0` (`scope-diagnosis.contract.ts`); o gateway usa a `v1.8.0`.
+- Os tipos estão em `@feedback/lib-shared` desde a `v1.2.0` (`scope-diagnosis.contract.ts`); o gateway usa a `v1.10.0`.
 
 ### `GET /api/protected/ia-analyze/scope-diagnosis`
 
