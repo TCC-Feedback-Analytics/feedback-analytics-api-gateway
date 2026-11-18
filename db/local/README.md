@@ -1,6 +1,6 @@
 # Banco local (dev/testes)
 
-Sobe um **Postgres próprio** (+ Mailpit para e-mail) via Docker, sem depender do Supabase — para desenvolver, semear dados e rodar testes de integração/e2e **offline**.
+Sobe um **Postgres próprio** (+ Mailpit para e-mail) via Docker, sem depender do Supabase — para desenvolver, semear dados e seguir os roteiros de teste manual **offline** (os testes automatizados do CI usam banco e rede simulados e não precisam dele).
 
 ## Pré-requisitos
 - Docker Desktop rodando.
