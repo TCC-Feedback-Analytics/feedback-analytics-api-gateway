@@ -1013,7 +1013,7 @@ relatório após o job concluir.
 
 ### `GET /api/protected/ia-analyze/jobs`
 
-Recupera jobs ativos da empresa autenticada, inclusive após reload/outro dispositivo:
+Recupera jobs ativos da empresa autenticada, inclusive após reload/outro dispositivo. Só traz os de análise (`analyze_raw`) e de resumo (`regenerate_insights`): o das perguntas da empresa sai em `GET /jobs/company-questions/latest`, e o do diagnóstico do escopo, no campo `job` de `GET /scope-diagnosis/latest`.
 
 ```json
 { "jobs": [{ "id": "uuid", "jobType": "regenerate_insights", "scopeType": "COMPANY", "catalogItemId": null, "phase": "generating", "status": "running", "total": 6, "done": 2, "errorCode": null, "diagnosisId": null, "updatedAt": "2026-09-04T12:00:00Z" }] }
@@ -1074,7 +1074,8 @@ o id e acompanhá-lo por `GET /jobs/:id`.
 Retorna o objeto de status acima, incluindo jobs terminados.
 
 - `phase`: analyzing, generating, synthesizing (a síntese do relatório: um passo
-  por relatório até 100 parciais; acima disso, um passo por bloco de cada rodada),
+  por relatório até 100 parciais e 90 kB por chamada; acima disso, um passo por bloco
+  de cada rodada),
   generating_questions ou diagnosing (diagnóstico do escopo).
 - `diagnosisId`: no job do diagnóstico do escopo concluído, o id do resultado; `null` nos demais.
 - `done/total`: feedbacks na fase analyzing; nas fases generating e synthesizing,
@@ -1401,6 +1402,8 @@ O limite por IP é largo porque, em produção, o login passa pelo repasse da Ve
 Invalida a sessão no servidor (limpa o cookie).
 
 **Response 204** — sem corpo.
+
+**Response 500** `{ "ok": false }` — falha ao encerrar a sessão.
 
 ---
 
