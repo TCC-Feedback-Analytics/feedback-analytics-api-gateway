@@ -77,7 +77,7 @@ Estrutura: `pages/`, `components/`, `layouts/` na **raiz**; `services/`, `routes
 |---|---|
 | **[NOVO]** `src/services/serviceIaConfig.ts` | `getIaConfig()`, `updateIaConfig(payload)`, `deleteIaConfig()` usando os helpers de `src/lib/utils/http.ts` (`getJson`/`putJson`/`deleteJson`, que já injetam `credentials:'include'`). Molde: `src/services/serviceEnterprise.ts`. |
 | **[NOVO]** `pages/user/edit/editIaSettings.tsx` | Wrapper fino (PageHeader + Card + form). Molde: `pages/user/edit/editCompanyData.tsx`. |
-| **[NOVO]** `components/user/pages/profile/editIaSettings/formIaSettings.tsx` | O form: `useForm` + `zodResolver` (molde `components/user/pages/profile/editUser/forms/formEmailUser.tsx`) + `useFetcher`/`useToast`; campo de chave mascarado, select de modelo curado + custom, badge de status, botões Salvar/Remover, link para openrouter. |
+| **[NOVO]** `components/user/pages/profile/editIaSettings/formIaSettings.tsx` | O form: `useForm` + `zodResolver` (molde `components/user/pages/profile/editUser/forms/formEmailUser.tsx`, que não existe mais na Web) + `useFetcher`/`useToast`; campo de chave mascarado, select de modelo curado + custom, badge de status, botões Salvar/Remover, link para openrouter. |
 | **[NOVO]** `src/routes/actions/actionIaSettings.ts` | Lê o `formData`, chama o service, retorna `ActionData` (`lib/interfaces/contracts/action-data.contract`). Molde: `src/routes/actions/actionCollectingData.ts`. |
 | **[MODIFY]** `src/routes/user.tsx` | Registrar a rota (ex.: `path="edit/ia-settings"` com `action={ActionIaSettings}`). Molde: as rotas de `edit/*` já existentes. |
 | **[MODIFY]** `src/lib/mock/menu.ts` | Adicionar o item "Configuração de IA" (nav é data-driven; só este arquivo muda). *Hoje:* o item fica em `src/lib/constants/menu.ts`. |
@@ -112,13 +112,13 @@ O `PUT` pode voltar erro tipado em `{ error }`. Mapeie para mensagens claras (pa
 
 ## 7. Checklist de aceite
 
-- [ ] A tela mostra o **status** (com/sem chave) e, se houver, **modelo + hint** ao abrir.
-- [ ] Campo da chave é **mascarado** com mostrar/ocultar e **nunca** vem pré-preenchido.
-- [ ] Salvar com chave válida → badge "Configurada"; chave inválida → toast de erro tratado.
-- [ ] Select de modelo com a lista curada + opção "personalizado". *Hoje:* o select usa o catálogo de `/user/ia-models`, com busca.
-- [ ] Remover chave → volta para "Sem chave".
-- [ ] Link para `https://openrouter.ai/keys`.
-- [ ] Item "Configuração de IA" no menu.
+- [x] A tela mostra o **status** (com/sem chave) e, se houver, **modelo + hint** ao abrir.
+- [x] Campo da chave é **mascarado** com mostrar/ocultar e **nunca** vem pré-preenchido.
+- [x] Salvar com chave válida → badge "Configurada"; chave inválida → toast de erro tratado.
+- [x] Select de modelo com a lista curada + opção "personalizado". *Hoje:* o select usa o catálogo de `/user/ia-models`, com busca.
+- [x] Remover chave → volta para "Sem chave". *Hoje:* o selo com chave diz "Chave configurada" e, sem chave, "Configuração obrigatória".
+- [x] Link para `https://openrouter.ai/keys`.
+- [x] Item "Configuração de IA" no menu.
 
 ---
 

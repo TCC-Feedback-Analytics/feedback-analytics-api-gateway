@@ -472,7 +472,7 @@ O endpoint expõe **duas lentes** complementares, ambas segmentadas pelo escopo 
 
 `channelBreakdown` diz por onde chegaram as avaliações no recorte: `[{ channel: "QR" | "LINK" | "NFC" | null, count, mean, ci }]`, na ordem QR, link, NFC e sem marca (`null`, os feedbacks de antes da etapa 06 e QR Codes antigos). Canal sem avaliação no recorte não aparece. O `TEST` não entra, como em todas as métricas.
 
-`commentParticipation` diz quantos escreveram comentário: `total`, `withComment`, `pct` com o IC em `ci`, `confidenceTier`, a média das estrelas de quem comentou e de quem não comentou (`withCommentRating` / `withoutCommentRating`, `{ n, mean, ci }` ou `null`) e quantos desses comentários são curtos, com menos de 20 caracteres (`shortComments`). `commentField` diz como está o campo de comentário nos pontos de coleta do recorte: `hidden` ∈ `all` · `some` · `none` e `prompt` (a pergunta própria, quando o recorte é um ponto só). A Web usa os dois para sugerir mudar o campo, pela mesma regra que vai ao diagnóstico da IA.
+`commentParticipation` diz quantos escreveram comentário: `total`, `withComment`, `pct` com o IC em `ci`, `confidenceTier`, a média das estrelas de quem comentou e de quem não comentou (`withCommentRating` / `withoutCommentRating`, `{ n, mean, ci }` ou `null`) e quantos desses comentários são curtos, com até 20 caracteres (`shortComments`). `commentField` diz como está o campo de comentário nos pontos de coleta do recorte: `hidden` ∈ `all` · `some` · `none` e `prompt` (a pergunta própria, quando o recorte é um ponto só). A Web usa os dois para sugerir mudar o campo, pela mesma regra que vai ao diagnóstico da IA.
 
 `totalAnalyzed`/`pendingCount` indicam quantos feedbacks do escopo já têm análise da IA e quantos faltam. Como o comentário é opcional, só quem escreveu espera pela IA: `pendingCount = max(0, commentParticipation.withComment − totalAnalyzed)`. `latestAnalysisAt` é o timestamp ISO da análise mais recente (ou `null`).
 
@@ -615,7 +615,7 @@ Clientes que voltam: quantas avaliações vieram de quem já tinha avaliado a em
 
 ### `GET /api/protected/user/feedbacks/questions`
 
-Retorna métricas agregadas **por pergunta e subpergunta** no escopo selecionado, na escala 1–5. São métricas **determinísticas** — calculadas só sobre as respostas estruturadas (nota por rótulo), **não dependem da IA**. Usado pela aba "Perguntas".
+Retorna métricas agregadas **por pergunta e subpergunta** no escopo selecionado, na escala 1–5. São métricas **determinísticas** — calculadas só sobre as respostas estruturadas (nota por rótulo), **não dependem da IA**. Usado pela seção "Perguntas do formulário" do Dashboard e pela página de cada pergunta.
 
 **Query Params**
 
@@ -717,7 +717,7 @@ Retorna o relatório de insights armazenado no banco (leitura — não dispara n
 
 ### `GET /api/protected/user/feedbacks/analysis`
 
-Retorna os feedbacks já analisados pela IA com sentimento, categorias e keywords por item. Usado pelo painel de analytics.
+Retorna os feedbacks já analisados pela IA com sentimento, categorias e keywords por item. Usado pela Análise dos comentários (Resumo e Comentários).
 
 **Query Params**
 
@@ -1013,7 +1013,7 @@ relatório após o job concluir.
 
 ### `GET /api/protected/ia-analyze/jobs`
 
-Recupera jobs ativos da empresa autenticada, inclusive após reload/outro dispositivo:
+Recupera jobs ativos da empresa autenticada, inclusive após reload/outro dispositivo. Só traz os de análise (`analyze_raw`) e de resumo (`regenerate_insights`): o das perguntas da empresa sai em `GET /jobs/company-questions/latest`, e o do diagnóstico do escopo, no campo `job` de `GET /scope-diagnosis/latest`.
 
 ```json
 { "jobs": [{ "id": "uuid", "jobType": "regenerate_insights", "scopeType": "COMPANY", "catalogItemId": null, "phase": "generating", "status": "running", "total": 6, "done": 2, "errorCode": null, "diagnosisId": null, "updatedAt": "2026-09-04T12:00:00Z" }] }
@@ -1074,7 +1074,8 @@ o id e acompanhá-lo por `GET /jobs/:id`.
 Retorna o objeto de status acima, incluindo jobs terminados.
 
 - `phase`: analyzing, generating, synthesizing (a síntese do relatório: um passo
-  por relatório até 100 parciais; acima disso, um passo por bloco de cada rodada),
+  por relatório até 100 parciais e 90 kB por chamada; acima disso, um passo por bloco
+  de cada rodada),
   generating_questions ou diagnosing (diagnóstico do escopo).
 - `diagnosisId`: no job do diagnóstico do escopo concluído, o id do resultado; `null` nos demais.
 - `done/total`: feedbacks na fase analyzing; nas fases generating e synthesizing,
@@ -1166,7 +1167,7 @@ Query: `scope_type` e `catalog_item_id`. Devolve o diagnóstico mais recente do 
 
 - `newFeedbacksSince`: avaliações que chegaram no período do diagnóstico depois que ele foi gerado. A Web usa esse número para mostrar quando o diagnóstico ficou velho.
 - `job`: o mesmo objeto de `GET /jobs/:id`.
-- Os tipos estão em `@feedback/lib-shared` desde a `v1.2.0` (`scope-diagnosis.contract.ts`); o gateway usa a `v1.8.0`.
+- Os tipos estão em `@feedback/lib-shared` desde a `v1.2.0` (`scope-diagnosis.contract.ts`); o gateway usa a `v1.10.0`.
 
 ### `GET /api/protected/ia-analyze/scope-diagnosis`
 
@@ -1401,6 +1402,8 @@ O limite por IP é largo porque, em produção, o login passa pelo repasse da Ve
 Invalida a sessão no servidor (limpa o cookie).
 
 **Response 204** — sem corpo.
+
+**Response 500** `{ "ok": false }` — falha ao encerrar a sessão.
 
 ---
 
@@ -1651,7 +1654,7 @@ Submete um feedback via formulário público. Não requer autenticação. O `dev
 
 **Response 403** `DEVICE_BLOCKED` — o registro do aparelho na empresa está com `is_blocked = true`. O bloqueio vale até ser desfeito, porque o fingerprint não muda de um dia para outro.
 
-**Response 500** `collection_point_error` · `device_check_failed` · `device_creation_failed` · `feedback_insert_failed` — falha de banco; nada é gravado.
+**Response 500** `collection_point_error` · `device_check_failed` · `device_creation_failed` · `feedback_insert_failed` — falha de banco. O aparelho, o feedback e as respostas não são gravados (ficam numa transação), mas o cadastro do cliente, criado antes e fora dela, pode ficar.
 
 ---
 
