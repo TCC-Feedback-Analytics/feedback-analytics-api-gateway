@@ -472,7 +472,7 @@ O endpoint expõe **duas lentes** complementares, ambas segmentadas pelo escopo 
 
 `channelBreakdown` diz por onde chegaram as avaliações no recorte: `[{ channel: "QR" | "LINK" | "NFC" | null, count, mean, ci }]`, na ordem QR, link, NFC e sem marca (`null`, os feedbacks de antes da etapa 06 e QR Codes antigos). Canal sem avaliação no recorte não aparece. O `TEST` não entra, como em todas as métricas.
 
-`commentParticipation` diz quantos escreveram comentário: `total`, `withComment`, `pct` com o IC em `ci`, `confidenceTier`, a média das estrelas de quem comentou e de quem não comentou (`withCommentRating` / `withoutCommentRating`, `{ n, mean, ci }` ou `null`) e quantos desses comentários são curtos, com menos de 20 caracteres (`shortComments`). `commentField` diz como está o campo de comentário nos pontos de coleta do recorte: `hidden` ∈ `all` · `some` · `none` e `prompt` (a pergunta própria, quando o recorte é um ponto só). A Web usa os dois para sugerir mudar o campo, pela mesma regra que vai ao diagnóstico da IA.
+`commentParticipation` diz quantos escreveram comentário: `total`, `withComment`, `pct` com o IC em `ci`, `confidenceTier`, a média das estrelas de quem comentou e de quem não comentou (`withCommentRating` / `withoutCommentRating`, `{ n, mean, ci }` ou `null`) e quantos desses comentários são curtos, com até 20 caracteres (`shortComments`). `commentField` diz como está o campo de comentário nos pontos de coleta do recorte: `hidden` ∈ `all` · `some` · `none` e `prompt` (a pergunta própria, quando o recorte é um ponto só). A Web usa os dois para sugerir mudar o campo, pela mesma regra que vai ao diagnóstico da IA.
 
 `totalAnalyzed`/`pendingCount` indicam quantos feedbacks do escopo já têm análise da IA e quantos faltam. Como o comentário é opcional, só quem escreveu espera pela IA: `pendingCount = max(0, commentParticipation.withComment − totalAnalyzed)`. `latestAnalysisAt` é o timestamp ISO da análise mais recente (ou `null`).
 
@@ -615,7 +615,7 @@ Clientes que voltam: quantas avaliações vieram de quem já tinha avaliado a em
 
 ### `GET /api/protected/user/feedbacks/questions`
 
-Retorna métricas agregadas **por pergunta e subpergunta** no escopo selecionado, na escala 1–5. São métricas **determinísticas** — calculadas só sobre as respostas estruturadas (nota por rótulo), **não dependem da IA**. Usado pela aba "Perguntas".
+Retorna métricas agregadas **por pergunta e subpergunta** no escopo selecionado, na escala 1–5. São métricas **determinísticas** — calculadas só sobre as respostas estruturadas (nota por rótulo), **não dependem da IA**. Usado pela seção "Perguntas do formulário" do Dashboard e pela página de cada pergunta.
 
 **Query Params**
 
@@ -717,7 +717,7 @@ Retorna o relatório de insights armazenado no banco (leitura — não dispara n
 
 ### `GET /api/protected/user/feedbacks/analysis`
 
-Retorna os feedbacks já analisados pela IA com sentimento, categorias e keywords por item. Usado pelo painel de analytics.
+Retorna os feedbacks já analisados pela IA com sentimento, categorias e keywords por item. Usado pela Análise dos comentários (Resumo e Comentários).
 
 **Query Params**
 
@@ -1651,7 +1651,7 @@ Submete um feedback via formulário público. Não requer autenticação. O `dev
 
 **Response 403** `DEVICE_BLOCKED` — o registro do aparelho na empresa está com `is_blocked = true`. O bloqueio vale até ser desfeito, porque o fingerprint não muda de um dia para outro.
 
-**Response 500** `collection_point_error` · `device_check_failed` · `device_creation_failed` · `feedback_insert_failed` — falha de banco; nada é gravado.
+**Response 500** `collection_point_error` · `device_check_failed` · `device_creation_failed` · `feedback_insert_failed` — falha de banco. O aparelho, o feedback e as respostas não são gravados (ficam numa transação), mas o cadastro do cliente, criado antes e fora dela, pode ficar.
 
 ---
 
