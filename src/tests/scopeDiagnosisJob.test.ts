@@ -67,8 +67,8 @@ describe('job do diagnóstico do escopo', () => {
   });
 
   it('falha de vez sem guardar os comentários no job', async () => {
-    vi.mocked(executeScopeDiagnosisJob).mockRejectedValue(new IaAnalyzeServiceError('schema', 502, 'invalid_ai_response_schema'));
-    expect(await tick()).toMatchObject({ status: 'failed', errorCode: 'invalid_ai_response_schema' });
+    vi.mocked(executeScopeDiagnosisJob).mockRejectedValue(new IaAnalyzeServiceError('chave', 401, 'ia_provider_auth_error'));
+    expect(await tick()).toMatchObject({ status: 'failed', errorCode: 'ia_provider_auth_error' });
     expect(saved.status).toBe('failed');
     expect(saved.options).toEqual({ dataHash: 'hash-1', phase: 'diagnosing', failures: 1 });
   });
