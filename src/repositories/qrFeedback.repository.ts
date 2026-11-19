@@ -259,6 +259,20 @@ export async function linkTrackedDeviceCustomer(params: {
 }
 
 /**
+ * Troca a identificação gravada do aparelho (formato antigo em MD5) pela atual, para
+ * o aparelho manter o histórico, o bloqueio e a contagem de "Clientes que voltam".
+ */
+export async function updateTrackedDeviceFingerprint(params: {
+  id: string;
+  deviceFingerprint: string;
+}): Promise<void> {
+  await getDb()
+    .update(trackedDevices)
+    .set({ deviceFingerprint: params.deviceFingerprint })
+    .where(eq(trackedDevices.id, params.id));
+}
+
+/**
  * Atualização best-effort dos contadores do dispositivo após o feedback. Falha
  * aqui NÃO invalida o feedback já persistido — o chamador engole o erro.
  */
