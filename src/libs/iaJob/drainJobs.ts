@@ -26,7 +26,13 @@ export type DrainJobResult = {
   done: number; total: number; errorCode?: string; batchesRun: number;
 };
 export type DrainResult = { processed: number; results: DrainJobResult[] };
-const RETRYABLE = new Set(['failed_remote_ia_analyze_request', 'ia_provider_unavailable', 'ia_provider_rate_limited', 'ia_provider_error']);
+// Além das falhas de rede e do provedor, as respostas fora do formato também ganham novas
+// tentativas: o modelo (sobretudo os gratuitos) varia de uma chamada para outra, e a mesma
+// pergunta costuma vir certa na seguinte. A validação continua barrando o que vier errado.
+const RETRYABLE = new Set([
+  'failed_remote_ia_analyze_request', 'ia_provider_unavailable', 'ia_provider_rate_limited', 'ia_provider_error',
+  'invalid_ai_response', 'invalid_ai_response_schema', 'truncated_ai_response', 'empty_ai_response',
+]);
 const MAX_FAILURES = 3;
 // A geração das perguntas na configuração inicial é uma chamada só e roda sem
 // ninguém clicar: um 429 do provedor ganha mais tentativas e esperas maiores
