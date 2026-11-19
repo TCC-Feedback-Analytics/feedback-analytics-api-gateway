@@ -19,6 +19,7 @@ import forgotPasswordRoutes from './routes/public/forgotPassword.routes.js';
 import { toNodeHandler } from 'better-auth/node';
 import { getAuth } from './auth/auth.js';
 import { localWebOrigins } from './config/localWebOrigins.js';
+import { securityHeaders } from './middlewares/securityHeaders.js';
 
 function normalizeOrigin(rawValue: string): string | null {
   const value = String(rawValue ?? '').trim();
@@ -248,6 +249,8 @@ function corsMiddleware(
 const app = express();
 // Não anuncia "Express" no cabeçalho X-Powered-By.
 app.disable('x-powered-by');
+// Cabeçalhos de segurança (CSP, X-Frame-Options e outros) em todas as respostas.
+app.use(securityHeaders);
 
 // CORS precisa vir antes dos endpoints
 app.use(corsMiddleware);

@@ -29,10 +29,17 @@ import {
   linkTrackedDeviceCustomer,
   persistQrFeedback,
   updateTrackedDeviceCounters,
+  updateTrackedDeviceFingerprint,
   type NewQuestionAnswer,
   type NewSubquestionAnswer,
 } from '../../repositories/qrFeedback.repository.js';
 import { describeError } from '../../utils/describeError.js';
+import { sendRateLimited } from '../../utils/sendRateLimited.js';
+import { authClientIp } from '../../libs/authRateLimit.js';
+import { deviceFingerprint, legacyDeviceFingerprint } from '../../libs/deviceFingerprint.js';
+import { reservePublicFeedbackSubmission } from '../../libs/publicFeedbackRateLimit.js';
+
+const PUBLIC_FEEDBACK_LIMITED_MESSAGE = 'Muitos envios a partir desta rede. Aguarde alguns minutos e tente novamente.';
 
 function mapAnswerScore(answerValue: string): number {
   switch (answerValue) {
@@ -74,19 +81,34 @@ export async function submitQrCodeFeedbackController(req: Request, res: Response
 
   const payload = parsed.data;
 
+  // 0. Limite de envios por IP: segura o script que troca o navegador a cada envio
+  // para fugir do limite por aparelho. Na Vercel o IP vem sempre do cabeçalho que ela
+  // mesma preenche. Sem um IP válido o envio segue (o limite por aparelho continua),
+  // para o formulário do cliente não cair por causa do proxy, mas o caso fica no log.
+  let limitIp: string | null = null;
+  try {
+    limitIp = authClientIp(req);
+  } catch (err) {
+    console.warn('[public-feedback-rate-limit] IP do cliente indisponível:', describeError(err));
+  }
+  if (limitIp) {
+    const reservation = await reservePublicFeedbackSubmission(limitIp);
+    if (!reservation.allowed) {
+      return sendRateLimited(res, reservation.retryAfterSeconds, PUBLIC_FEEDBACK_LIMITED_MESSAGE);
+    }
+  }
+
   // 1. Empresa existe? (view enterprise_public)
   const enterprise = await getPublicEnterpriseById(payload.enterprise_id);
   if (!enterprise) {
     return sendTypedError(res, 404, API_ERROR_ENTERPRISE_NOT_FOUND);
   }
 
-  // 2. Fingerprint do dispositivo: navegador + IP, sem o dia, para "Clientes que
+  // 2. Identificação do aparelho: navegador + IP, sem o dia, para "Clientes que
   // voltam" e o bloqueio valerem entre dias. O limite diário fica no passo 8.
   const userAgent = req.get('user-agent') || '';
   const clientIP = req.ip || req.socket?.remoteAddress || '127.0.0.1';
-
-  const fingerprintData = `${userAgent}|${clientIP}`;
-  const deviceFingerprint = crypto.createHash('md5').update(fingerprintData).digest('hex');
+  const fingerprint = deviceFingerprint(userAgent, clientIP);
 
   // 3. Ponto de coleta QR ATIVO do escopo (por id / catalog_item / "geral").
   let collectionPoint;
@@ -193,13 +215,23 @@ export async function submitQrCodeFeedbackController(req: Request, res: Response
     return sendTypedError(res, 400, API_ERROR_INVALID_PAYLOAD);
   }
 
-  // 7. Dispositivo rastreado (bloqueio → 403).
+  // 7. Dispositivo rastreado (bloqueio → 403). Um aparelho gravado com a
+  // identificação antiga (MD5) passa para a atual e mantém o histórico.
   let trackedDevice;
   try {
     trackedDevice = await findTrackedDevice({
       enterpriseId: payload.enterprise_id,
-      deviceFingerprint,
+      deviceFingerprint: fingerprint,
     });
+    if (!trackedDevice) {
+      trackedDevice = await findTrackedDevice({
+        enterpriseId: payload.enterprise_id,
+        deviceFingerprint: legacyDeviceFingerprint(userAgent, clientIP),
+      });
+      if (trackedDevice) {
+        await updateTrackedDeviceFingerprint({ id: trackedDevice.id, deviceFingerprint: fingerprint });
+      }
+    }
   } catch (err) {
     console.error('Erro ao verificar dispositivo:', describeError(err));
     return sendTypedError(res, 500, API_ERROR_DEVICE_CHECK_FAILED);
@@ -284,7 +316,7 @@ export async function submitQrCodeFeedbackController(req: Request, res: Response
       rating: payload.rating,
       trackedDevice,
       customerId,
-      deviceFingerprint,
+      deviceFingerprint: fingerprint,
       userAgent,
       clientIP,
       answerRows,

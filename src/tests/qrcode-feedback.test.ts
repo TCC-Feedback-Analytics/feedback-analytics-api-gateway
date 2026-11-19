@@ -14,7 +14,9 @@ import {
   insertCustomer,
   persistQrFeedback,
   updateTrackedDeviceCounters,
+  updateTrackedDeviceFingerprint,
 } from '../repositories/qrFeedback.repository.js';
+import { reservePublicFeedbackSubmission } from '../libs/publicFeedbackRateLimit.js';
 import { fetchCommentField } from '../repositories/commentField.repository.js';
 
 // fetchActiveQuestionsForScope virou Drizzle (coberto por integração) — mockado.
@@ -41,8 +43,14 @@ vi.mock('../repositories/qrFeedback.repository.js', async (importActual) => {
     insertCustomer: vi.fn(),
     persistQrFeedback: vi.fn(),
     updateTrackedDeviceCounters: vi.fn(),
+    updateTrackedDeviceFingerprint: vi.fn(),
   };
 });
+
+// O limite por IP conta no banco (coberto pelo teste do authRateLimit); aqui é mockado.
+vi.mock('../libs/publicFeedbackRateLimit.js', () => ({
+  reservePublicFeedbackSubmission: vi.fn(),
+}));
 
 // Campo de comentário por escopo (Drizzle): padrão, salvo onde o teste muda.
 vi.mock('../repositories/commentField.repository.js', () => ({
@@ -59,6 +67,8 @@ const mockFindCustomerByEmail = vi.mocked(findCustomerByEmail);
 const mockInsertCustomer = vi.mocked(insertCustomer);
 const mockPersistQrFeedback = vi.mocked(persistQrFeedback);
 const mockUpdateCounters = vi.mocked(updateTrackedDeviceCounters);
+const mockUpdateFingerprint = vi.mocked(updateTrackedDeviceFingerprint);
+const mockReserveSubmission = vi.mocked(reservePublicFeedbackSubmission);
 
 const ENTERPRISE_ID = '550e8400-e29b-41d4-a716-446655440001';
 const COLLECTION_POINT_ID = '550e8400-e29b-41d4-a716-446655440002';
@@ -117,6 +127,43 @@ describe('[Integração] POST /api/public/qrcode/feedback', () => {
     mockPersistQrFeedback.mockResolvedValue({ trackedDeviceId: 'new-device-id', priorFeedbackCount: 0 });
     mockUpdateCounters.mockResolvedValue(undefined);
     mockFetchCommentField.mockResolvedValue({ mode: 'DEFAULT', prompt: null });
+    mockReserveSubmission.mockResolvedValue({ allowed: true, retryAfterSeconds: 0 });
+    mockUpdateFingerprint.mockResolvedValue(undefined);
+  });
+
+  it('retorna 429 com Retry-After quando o IP passa do limite de envios, sem tocar no banco', async () => {
+    mockReserveSubmission.mockResolvedValueOnce({ allowed: false, retryAfterSeconds: 120 });
+
+    const res = await request(app).post('/api/public/qrcode/feedback').set('X-Forwarded-For', '203.0.113.7').send(VALID_PAYLOAD);
+
+    expect(mockReserveSubmission).toHaveBeenCalledWith('203.0.113.7');
+    expect(res.status).toBe(429);
+    expect(res.headers['retry-after']).toBe('120');
+    expect(mockGetPublicEnterprise).not.toHaveBeenCalled();
+    expect(mockPersistQrFeedback).not.toHaveBeenCalled();
+  });
+
+  it('identifica o aparelho por HMAC-SHA-256 (64 caracteres), não pelo MD5 antigo', async () => {
+    mockFetchQuestions.mockResolvedValue({ data: VALID_QUESTIONS, error: null } as never);
+
+    await request(app).post('/api/public/qrcode/feedback').set('User-Agent', 'Teste/1.0').send(VALID_PAYLOAD);
+
+    const fingerprint = mockFindTrackedDevice.mock.calls[0][0].deviceFingerprint;
+    expect(fingerprint).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('aparelho gravado com o MD5 antigo passa para a identificação nova e mantém o bloqueio', async () => {
+    mockFetchQuestions.mockResolvedValue({ data: VALID_QUESTIONS, error: null } as never);
+    mockFindTrackedDevice
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 'old-device', lastFeedbackAt: null, isBlocked: true, feedbackCount: 3, customerId: null });
+
+    const res = await request(app).post('/api/public/qrcode/feedback').set('User-Agent', 'Teste/1.0').send(VALID_PAYLOAD);
+
+    const [atual, antigo] = mockFindTrackedDevice.mock.calls.map((call) => call[0].deviceFingerprint);
+    expect(antigo).toMatch(/^[a-f0-9]{32}$/);
+    expect(mockUpdateFingerprint).toHaveBeenCalledWith({ id: 'old-device', deviceFingerprint: atual });
+    expect(res.status).toBe(403);
   });
 
   it('grava o canal da marca da URL e trata o antigo QRCODE e valores estranhos como não identificado', async () => {
