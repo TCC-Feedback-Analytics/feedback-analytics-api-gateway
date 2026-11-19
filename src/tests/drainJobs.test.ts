@@ -138,8 +138,9 @@ describe('worker sempre assíncrono e retomável', () => {
   it('erro na análise do job unificado nunca inicia síntese', async () => {
     saved.jobType = 'regenerate_insights'; saved.options.analyzePending = true;
     vi.mocked(runOneBatch).mockRejectedValue(new IaAnalyzeServiceError('invalid', 502, 'invalid_ai_response'));
-    await tick();
+    await tick(); await tick(); await tick();
     expect(saved.status).toBe('failed');
+    expect(runOneBatch).toHaveBeenCalledTimes(3);
     expect(prepareInsightsJob).not.toHaveBeenCalled();
   });
   it('105 já analisados: pula análise e gera seis lotes sem perder os cinco finais', async () => {
@@ -195,10 +196,29 @@ describe('worker sempre assíncrono e retomável', () => {
     expect(saved.options).toMatchObject({ phase: 'generating', failures: 3 });
   });
   it('análise que falha de vez não deixa os comentários no job', async () => {
-    vi.mocked(runOneBatch).mockRejectedValue(new IaAnalyzeServiceError('invalid', 502, 'invalid_ai_response'));
-    expect(await tick()).toMatchObject({ status: 'failed', errorCode: 'invalid_ai_response' });
+    vi.mocked(runOneBatch).mockRejectedValue(new IaAnalyzeServiceError('auth', 401, 'ia_provider_auth_error'));
+    expect(await tick()).toMatchObject({ status: 'failed', errorCode: 'ia_provider_auth_error' });
     expect(saved.options.checkpoint).toBeUndefined();
     expect(saved.options.phase).toBe('analyzing');
+  });
+  it('resumo fora do formato tenta de novo e conclui quando a IA acerta', async () => {
+    saved.jobType = 'regenerate_insights';
+    vi.mocked(runInsightsBatch).mockRejectedValueOnce(new IaAnalyzeServiceError('schema', 502, 'invalid_ai_response_schema'));
+    expect(await tick()).toMatchObject({ status: 'requeued', errorCode: 'invalid_ai_response_schema' });
+    expect(saved.status).toBe('queued');
+    expect(saved.options).toMatchObject({ failures: 1 });
+    expect(saved.options.checkpoint).toBeDefined();
+    for (let n = 0; n < 6 && saved.status !== 'completed'; n += 1) await tick();
+    expect(saved.status).toBe('completed');
+    expect(upsertFeedbackInsightsReports).toHaveBeenCalledOnce();
+  });
+  it('resposta fora do formato também tem limite de tentativas', async () => {
+    vi.mocked(runOneBatch).mockRejectedValue(new IaAnalyzeServiceError('truncada', 502, 'truncated_ai_response'));
+    await tick(); await tick();
+    expect(saved.status).toBe('queued');
+    expect(await tick()).toMatchObject({ status: 'failed', errorCode: 'truncated_ai_response' });
+    expect(runOneBatch).toHaveBeenCalledTimes(3);
+    expect(saved.options.checkpoint).toBeUndefined();
   });
   it('falha que ainda vai tentar de novo mantém o checkpoint para retomar', async () => {
     vi.mocked(runOneBatch).mockRejectedValueOnce(new IaAnalyzeServiceError('timeout', 502, 'failed_remote_ia_analyze_request'));
