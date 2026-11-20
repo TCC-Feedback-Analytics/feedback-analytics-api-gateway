@@ -19,6 +19,29 @@ let dbInstance: PostgresJsDatabase<typeof schema> | null = null;
 let sqlClient: ReturnType<typeof postgres> | null = null;
 
 /**
+ * Opções do postgres-js para o pooler do Supabase (Supavisor, porta 6543, modo transação).
+ *
+ * - `prepare: false`: o modo transação não suporta prepared statements.
+ * - `max` baixo: o gateway serverless não deve abrir muitas conexões (o teto do
+ *   Supabase free é baixo).
+ * - `max_pipeline: 1`: com as conexões ocupadas, o postgres-js v4 manda as
+ *   consultas seguintes na mesma conexão antes da resposta da anterior. O
+ *   Supavisor antes da 2.10 recebe essas consultas e nunca responde, e as
+ *   conexões presas seguram todas as rotas da instância até ela cair. Foi o que
+ *   travou o painel ao gerar o diagnóstico, que dispara várias consultas juntas.
+ *   Uma consulta por conexão faz o excesso esperar na fila do próprio pool.
+ * - `query_timeout` (segundos, fila + execução): se o pooler parar de responder
+ *   por outro motivo, a consulta falha com `QUERY_TIMEOUT` e o pool reconecta,
+ *   em vez de esperar o TCP perceber (minutos).
+ */
+export const SQL_CLIENT_OPTIONS = {
+  prepare: false,
+  max: 3,
+  max_pipeline: 1,
+  query_timeout: 15,
+} as const;
+
+/**
  * Retorna o cliente Drizzle (singleton). Lança erro claro se `DATABASE_URL` não
  * estiver configurada — assim a falha é diagnosticável, não um crash opaco.
  */
@@ -34,11 +57,7 @@ export function getDb(): PostgresJsDatabase<typeof schema> {
     );
   }
 
-  // `prepare: false` é obrigatório com o pooler do Supabase em modo transação
-  // (PgBouncer, porta 6543), que não suporta prepared statements.
-  // `max` baixo: o gateway serverless/efêmero não deve abrir muitas conexões
-  // (o teto de conexões do Supabase free é baixo).
-  sqlClient = postgres(connectionString, { prepare: false, max: 3 });
+  sqlClient = postgres(connectionString, SQL_CLIENT_OPTIONS);
   dbInstance = drizzle(sqlClient, { schema });
   return dbInstance;
 }
