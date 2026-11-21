@@ -153,8 +153,6 @@ export async function persistQrFeedback(params: {
   trackedDevice: TrackedDeviceRow | null;
   customerId: string | null;
   deviceFingerprint: string;
-  userAgent: string;
-  clientIP: string;
   answerRows: NewQuestionAnswer[];
   subanswerRows: NewSubquestionAnswer[];
 }): Promise<{ trackedDeviceId: string; priorFeedbackCount: number }> {
@@ -173,8 +171,6 @@ export async function persistQrFeedback(params: {
             enterpriseId: params.enterpriseId,
             customerId: params.customerId,
             deviceFingerprint: params.deviceFingerprint,
-            userAgent: params.userAgent,
-            ipAddress: params.clientIP,
             lastFeedbackAt: nowIso,
             feedbackCount: 0,
             isBlocked: false,
@@ -279,16 +275,12 @@ export async function updateTrackedDeviceFingerprint(params: {
 export async function updateTrackedDeviceCounters(params: {
   id: string;
   feedbackCount: number;
-  userAgent: string;
-  clientIP: string;
 }): Promise<void> {
   await getDb()
     .update(trackedDevices)
     .set({
       lastFeedbackAt: new Date().toISOString(),
       feedbackCount: params.feedbackCount,
-      userAgent: params.userAgent,
-      ipAddress: params.clientIP,
     })
     .where(eq(trackedDevices.id, params.id));
 }

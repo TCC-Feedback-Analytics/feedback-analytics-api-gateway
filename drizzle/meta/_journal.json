@@ -120,6 +120,13 @@
       "when": 1795268009454,
       "tag": "0016_exclusao_com_carencia",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1795279195381,
+      "tag": "0017_aparelho_sem_ip_navegador",
+      "breakpoints": true
     }
   ]
 }

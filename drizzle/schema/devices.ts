@@ -1,5 +1,5 @@
 // Schema Drizzle — Clientes e dispositivos rastreados (anti-spam).
-import { pgTable, foreignKey, uuid, text, integer, timestamp, boolean, inet } from "drizzle-orm/pg-core";
+import { pgTable, foreignKey, uuid, text, integer, timestamp, boolean } from "drizzle-orm/pg-core";
 import { enterprise } from "./enterprise.js";
 
 export const customer = pgTable("customer", {
@@ -23,8 +23,7 @@ export const trackedDevices = pgTable("tracked_devices", {
 	isBlocked: boolean("is_blocked").default(false),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow(),
-	userAgent: text("user_agent"),
-	ipAddress: inet("ip_address"),
+	// Sem navegador nem IP (migration 0017): o aparelho é só o HMAC em device_fingerprint.
 	lastFeedbackAt: timestamp("last_feedback_at", { withTimezone: true, mode: 'string' }),
 	feedbackCount: integer("feedback_count").default(0),
 }, (table) => [
