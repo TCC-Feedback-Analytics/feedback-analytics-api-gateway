@@ -60,6 +60,18 @@ export const API_ERROR_RESET_PASSWORD_WEAK = 'reset_password_weak' as const;
 export const API_ERROR_RESET_PASSWORD_INVALID_TOKEN = 'reset_password_invalid_token' as const;
 export const API_ERROR_DATABASE_ERROR = 'database_error' as const;
 
+/** "Excluir minha conta": quem tem senha precisa mandá-la. */
+export const API_ERROR_PASSWORD_REQUIRED = 'password_required' as const;
+export const API_ERROR_INVALID_PASSWORD = 'invalid_password' as const;
+/** Quem só entra pelo Google precisa de uma entrada recente (24 h) para pedir a exclusão. */
+export const API_ERROR_LOGIN_AGAIN = 'login_again' as const;
+/** Link de confirmação da exclusão usado, vencido ou de outra conta. */
+export const API_ERROR_INVALID_DELETION_LINK = 'invalid_deletion_link' as const;
+export const API_ERROR_DELETION_ALREADY_SCHEDULED = 'deletion_already_scheduled' as const;
+export const API_ERROR_NO_DELETION_SCHEDULED = 'no_deletion_scheduled' as const;
+/** Conta com exclusão agendada: só entra para desistir ou sair. */
+export const API_ERROR_ACCOUNT_DELETION_PENDING = 'account_deletion_pending' as const;
+
 export type ApiRegisterErrorCode =
 	| typeof API_ERROR_SIGNUP_FAILED
 	| typeof API_ERROR_EMAIL_TAKEN

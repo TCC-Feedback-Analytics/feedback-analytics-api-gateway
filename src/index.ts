@@ -13,6 +13,7 @@ import userRoutes from './routes/protected/user.routes.js';
 import iaAnalyzeRoutes from './routes/protected/iaAnalyze.routes.js';
 import iaConfigRoutes from './routes/protected/iaConfig.routes.js';
 import workerInternalRoutes from './routes/internal/worker.routes.js';
+import accountDeletionInternalRoutes from './routes/internal/accountDeletion.routes.js';
 import resendConfirmationRoutes from './routes/public/resendConfirmation.routes.js';
 import { resendConfirmationController } from './controllers/public/resendConfirmation.controller.js';
 import forgotPasswordRoutes from './routes/public/forgotPassword.routes.js';
@@ -288,8 +289,10 @@ app.use('/api', userRoutes);
 app.use('/api', iaAnalyzeRoutes);
 app.use('/api', iaConfigRoutes);
 
-// Endpoint interno do worker (protegido por token, não por auth de usuário).
+// Endpoints internos do worker e da rotina diária de exclusão de contas
+// (protegidos por token, não por auth de usuário).
 app.use('/api', workerInternalRoutes);
+app.use('/api', accountDeletionInternalRoutes);
 
 if (process.env.VERCEL !== '1' && process.env.NODE_ENV !== 'test') {
   const port = Number(process.env.PORT ?? 3000);

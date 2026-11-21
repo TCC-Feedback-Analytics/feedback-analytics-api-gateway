@@ -31,20 +31,25 @@ curl http://localhost:3000/api/health
 
 ### `GET /api/protected/user/auth_user`
 
-Retorna o usuário autenticado, extraído da sessão (injetado por `requireAuth`).
+Retorna o usuário autenticado, extraído da sessão (injetado por `requireAuth`). Responde também com a exclusão agendada (`allowPendingDeletion`), para a Web mostrar o aviso.
 
 **Response 200**
 ```json
-{ "user": { "id": "uuid", "email": "gestor@empresa.com", "phone": "+5511999990000", "user_metadata": { "full_name": "Maria" } } }
+{ "user": { "id": "uuid", "email": "gestor@empresa.com", "phone": "+5511999990000", "user_metadata": { "full_name": "Maria" } }, "deletion_scheduled_for": null }
 ```
 
-> `phone` está sempre presente (valor ou `null`).
+> `phone` está sempre presente (valor ou `null`). `deletion_scheduled_for` é a data em que a conta será apagada (ISO) ou `null`.
 
 ---
 
 ### `PATCH /api/protected/user/email`
 
-Inicia a troca de e-mail pelo `changeEmail` do Better Auth (`user.changeEmail.enabled` em `src/auth/auth.ts`), com retorno para `<web>/auth/success`. O e-mail "Confirme seu novo e-mail" vai para o endereço novo, e a conta só muda depois do clique. O link passa pelo `/api/auth/verify-email` do Better Auth, não pelo `GET /public/auth/callback`.
+Inicia a troca de e-mail pelo `changeEmail` do Better Auth (`src/auth/auth.ts`), em dois passos:
+
+1. O e-mail "Aprove a troca do e-mail da sua conta" vai para o endereço **atual** (`sendChangeEmailConfirmation`). Com a sessão roubada, ninguém leva a conta para um e-mail dele.
+2. Depois da aprovação, "Confirme seu novo e-mail" vai para o endereço novo, e a conta só muda depois desse segundo clique.
+
+Os dois links passam pelo `/api/auth/verify-email` do Better Auth e voltam para `<web>/auth/success?tipo=troca-aprovada` e `?tipo=email-trocado`. A rota nativa `POST /api/auth/change-email` fica desligada: a troca só passa por aqui, onde o `requireAuth` barra a conta com exclusão agendada.
 
 Se o endereço novo já for de outra conta, a rota responde `200` do mesmo jeito, mas nenhum e-mail sai e a conta não muda: o Better Auth não revela que o endereço existe.
 
@@ -175,35 +180,78 @@ A nova senha encerra **todas as sessões** da pessoa (`revokeSessionsOnPasswordR
 
 ---
 
-### `POST /api/auth/delete-user`
+### `POST /api/protected/user/account-deletion`
 
-"Excluir minha conta" (etapa 07, LGPD art. 18). Handler nativo do Better Auth (`user.deleteUser` em `src/auth/auth.ts`), com a sessão do cookie.
+"Excluir minha conta" (LGPD art. 18), passo 1 de 3 (`src/services/accountDeletion.service.ts`). Confere quem pede e manda ao e-mail da conta o link "Confirme a exclusão da sua conta", que vale 1 hora e só funciona no navegador logado. Nada é apagado aqui.
 
-Apaga **tudo**, sem volta. Antes de apagar o usuário, `deleteEnterpriseOfUser` (`src/auth/enterpriseOnDelete.ts`) apaga, numa transação, a empresa (feedbacks, análises, catálogo, perguntas, pontos de coleta, aparelhos, configuração de IA, jobs e diagnósticos vão em cascata) e as tabelas sem chave estrangeira para ela: `customer`, `collecting_data_enterprise`, `ia_rate_budget` e os links de nova senha. Depois o Better Auth apaga o usuário, e `session`, `account` e `user_onboarding` vão em cascata. O cookie de sessão é limpo.
+- Quem tem senha precisa mandá-la, mesmo com a sessão recente.
+- Quem só entra pelo Google precisa de uma entrada nas últimas 24 h.
+- No máximo 5 pedidos por conta por hora (tabela `auth_rate_limit`), o que também segura quem tenta adivinhar a senha com uma sessão roubada.
+- O link é aleatório (32 bytes) e o banco guarda só o hash SHA-256 dele, na `verification` (`identifier = account-deletion:<hash>`).
+
+A exclusão nativa do Better Auth (`POST /api/auth/delete-user`) fica desligada: ela apagaria na hora, sem a confirmação pelo e-mail e sem a carência.
 
 **Body**
 ```json
 { "password": "senhaAtual" }
 ```
 
-Com `password`, o Better Auth confere a senha (a Web sempre pede a senha a quem tem uma). Sem `password`, como quem só entra pelo Google, ele exige uma sessão recente (entrada nas últimas 24 h).
-
-**Response 200**
+**Response 202**
 ```json
-{ "success": true, "message": "User deleted" }
+{ "status": "email_sent" }
 ```
 
-**Erros Possíveis** (códigos do Better Auth)
+**Erros Possíveis**
 
 | Status | Código | Descrição |
 |---|---|---|
-| `400` | `INVALID_PASSWORD` | Senha errada |
-| `400` | `CREDENTIAL_ACCOUNT_NOT_FOUND` | Mandou senha, mas a conta só entra pelo Google |
-| `400` | `SESSION_EXPIRED` | Sem senha e com a sessão aberta há mais de 24 h: entrar de novo |
-| `401` | — | Sem sessão |
+| `400` | `password_required` | A conta tem senha e ela não veio |
+| `400` | `invalid_password` | Senha errada |
+| `403` | `login_again` | Só entra pelo Google e a sessão tem mais de 24 h |
+| `429` | `rate_limited` | Mais de 5 pedidos na hora (com `Retry-After`) |
 
 ---
 
+### `POST /api/protected/user/account-deletion/confirm`
+
+Passo 2 de 3: a página `/conta/excluir` da Web manda o `token` do link. O gateway gasta o link (uso único, no prazo e só para o dono da sessão), marca `user.deletion_scheduled_for` para daqui a **15 dias** e apaga todas as sessões da conta, numa transação. Sai o e-mail "Sua conta será excluída em dd/mm/aaaa", com o caminho para desistir.
+
+Durante os 15 dias a conta fica parada:
+- as rotas protegidas respondem `403 account_deletion_pending`, com a data, menos `GET /protected/user/auth_user` e `POST /protected/user/account-deletion/cancel` (marcadas com `allowPendingDeletion`);
+- o formulário público (QR Code, link e NFC) responde `404 enterprise_not_found` na leitura e no envio (`getPublicEnterpriseById`);
+- quem entrar de novo, com a senha ou o Google, vê o aviso e pode desistir.
+
+**Body**
+```json
+{ "token": "valor-do-link" }
+```
+
+**Response 200**
+```json
+{ "deletion_scheduled_for": "2026-12-06T12:00:00.000Z" }
+```
+
+**Erros Possíveis**
+
+| Status | Código | Descrição |
+|---|---|---|
+| `400` | `invalid_deletion_link` | Link usado, vencido ou de outra conta |
+| `409` | `deletion_already_scheduled` | A conta já tinha exclusão marcada |
+
+---
+
+### `POST /api/protected/user/account-deletion/cancel`
+
+Desistência, dentro dos 15 dias, depois de entrar de novo. Limpa `user.deletion_scheduled_for`, tudo volta a funcionar e sai o e-mail "A exclusão da sua conta foi cancelada".
+
+**Response 200**
+```json
+{ "ok": true }
+```
+
+**Response 409** `no_deletion_scheduled` — não havia exclusão marcada.
+
+---
 ## Onboarding (guia do sistema)
 
 O guia é do **usuário**, não da empresa: a leitura e a gravação usam o id da sessão. As respostas usam `Cache-Control: no-store`.
@@ -1353,11 +1401,25 @@ Drena a fila de análise (etapa 03): processa um lote de jobs e volta. **Não** 
 
 ---
 
+### `POST /api/internal/account-deletions/purge`
+
+Passo 3 de "Excluir minha conta": apaga as contas cujos 15 dias venceram, até 50 por chamada, uma transação por conta (`purgeAccount` em `src/repositories/accountDeletion.repository.ts`). Chamado uma vez por dia pelo workflow `exclusao-de-contas.yml`, com o header `x-worker-token` (o mesmo `WORKER_TICK_TOKEN` do worker).
+
+Em cada conta, a linha do usuário é travada e conferida de novo: quem desistiu no último instante não é apagado. Saem a empresa (feedbacks, análises, catálogo, perguntas, pontos de coleta, aparelhos, configuração de IA, jobs e diagnósticos vão em cascata), as tabelas sem chave estrangeira para ela (`customer`, `collecting_data_enterprise`, `ia_rate_budget`), os links pendentes na `verification` e por último o usuário, com `session`, `account` e `user_onboarding` em cascata. Depois sai o e-mail "Sua conta foi excluída".
+
+**Response 200**
+```json
+{ "deleted": 1, "failed": 0 }
+```
+
+**Response 401** `unauthorized_worker_request` · **Response 500** `internal_server_error`.
+
+---
 ## Autenticação (Pública)
 
 Endpoints sem autenticação. A sessão é gerenciada por **cookie HttpOnly** (use `credentials: 'include'`).
 
-> **Rotas nativas do Better Auth desligadas:** `/api/auth/sign-in/email`, `/api/auth/sign-up/email`, `/api/auth/request-password-reset`, `/api/auth/reset-password`, `/api/auth/change-password` e `/api/auth/verify-password` respondem `404` (`disabledPaths`, em `src/auth/auth.ts`). O login, o cadastro, o pedido de recuperação e a nova senha passam pelas rotas deste gateway, que contam as tentativas no banco; a porta nativa deixaria contornar esse limite. Continuam abertas as rotas que a Web e os e-mails usam: `sign-in/social`, `callback/google`, `verify-email`, `reset-password/:token`, `list-accounts` e `delete-user`.
+> **Rotas nativas do Better Auth desligadas:** `/api/auth/sign-in/email`, `/api/auth/sign-up/email`, `/api/auth/request-password-reset`, `/api/auth/reset-password`, `/api/auth/change-password`, `/api/auth/verify-password` e `/api/auth/change-email` respondem `404` (`disabledPaths`, em `src/auth/auth.ts`). O login, o cadastro, o pedido de recuperação e a nova senha passam pelas rotas deste gateway, que contam as tentativas no banco; a porta nativa deixaria contornar esse limite. Continuam abertas as rotas que a Web e os e-mails usam: `sign-in/social`, `callback/google`, `verify-email`, `reset-password/:token` e `list-accounts`. A exclusão nativa (`delete-user`) fica desligada: ver `POST /api/protected/user/account-deletion`.
 
 ### `POST /api/public/auth/login`
 

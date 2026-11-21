@@ -82,6 +82,88 @@ export function sendVerificationEmail(to: string, url: string): void {
   );
 }
 
+/** O endereço novo é digitado por quem pediu a troca: entra no HTML só escapado. */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/** Data no fuso de Brasília, como o gestor lê: 05/12/2026. */
+export function formatDateBr(date: Date): string {
+  return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo' }).format(date);
+}
+
+/**
+ * Troca de e-mail, primeiro passo: vai para o endereço ATUAL. Só depois da aprovação
+ * o link de confirmação segue para o endereço novo. Assim, quem tem só a sessão
+ * roubada não consegue levar a conta para um e-mail dele.
+ */
+export function sendChangeEmailApproval(to: string, newEmail: string, url: string): void {
+  send(
+    to,
+    'Aprove a troca do e-mail da sua conta',
+    `Pediram para trocar o e-mail da sua conta para ${newEmail}. Para aprovar, acesse: ${url}. Se não foi você, ignore este e-mail e troque a sua senha.`,
+    `<p>Pediram para trocar o e-mail da sua conta para <strong>${escapeHtml(newEmail)}</strong>.</p>
+     <p><a href="${url}">Aprovar a troca</a></p>
+     <p>Depois da aprovação, enviamos um link para o endereço novo, e a troca só vale quando ele for confirmado.</p>
+     <p>Se não foi você, ignore este e-mail e troque a sua senha: a conta continua com este endereço.</p>`,
+  );
+}
+
+/** Exclusão da conta, primeiro passo: o link que confirma o pedido feito no Perfil. */
+export function sendAccountDeletionConfirmation(to: string, url: string): void {
+  send(
+    to,
+    'Confirme a exclusão da sua conta',
+    `Recebemos um pedido para excluir a sua conta. Para confirmar, acesse: ${url}. O link vale 1 hora e precisa ser aberto no navegador em que você está logado. Se não foi você, ignore este e-mail e troque a sua senha.`,
+    `<p>Recebemos um pedido para excluir a sua conta no Feedback Analytics.</p>
+     <p><a href="${url}">Confirmar a exclusão</a></p>
+     <p>O link vale 1 hora e precisa ser aberto no navegador em que você está logado.
+        Depois da confirmação, a conta fica parada por 15 dias e só então é apagada.</p>
+     <p>Se não foi você, ignore este e-mail e troque a sua senha: nada será apagado.</p>`,
+  );
+}
+
+/** Exclusão confirmada: a data em que tudo será apagado e como desistir. */
+export function sendAccountDeletionScheduled(to: string, deletionDate: Date, loginUrl: string): void {
+  const day = formatDateBr(deletionDate);
+  send(
+    to,
+    `Sua conta será excluída em ${day}`,
+    `A exclusão da sua conta foi confirmada. Ela está parada e será apagada em ${day}, com todos os dados. Para desistir, entre na conta até lá: ${loginUrl}`,
+    `<p>A exclusão da sua conta foi confirmada.</p>
+     <p>A conta está parada: o painel fica fechado e os QR Codes, links e etiquetas NFC não recebem respostas.
+        Em <strong>${day}</strong>, a conta, a empresa e todos os dados dela serão apagados.</p>
+     <p>Mudou de ideia? <a href="${loginUrl}">Entre na sua conta</a> até lá e escolha "Cancelar exclusão".</p>`,
+  );
+}
+
+/** Exclusão cancelada pelo gestor, depois de entrar de novo. */
+export function sendAccountDeletionCancelled(to: string): void {
+  send(
+    to,
+    'A exclusão da sua conta foi cancelada',
+    'A exclusão da sua conta foi cancelada. Tudo voltou a funcionar como antes. Se não foi você, troque a sua senha.',
+    `<p>A exclusão da sua conta foi cancelada. O painel, os QR Codes, os links e as etiquetas NFC voltaram a funcionar.</p>
+     <p>Se não foi você, troque a sua senha.</p>`,
+  );
+}
+
+/** Fim do prazo: a conta e os dados foram apagados. */
+export function sendAccountDeleted(to: string): void {
+  send(
+    to,
+    'Sua conta foi excluída',
+    'Como pedido, a sua conta, a empresa e todos os dados dela foram apagados do Feedback Analytics.',
+    `<p>Como pedido, a sua conta, a empresa e todos os dados dela foram apagados do Feedback Analytics.</p>
+     <p>Obrigado por ter usado o sistema.</p>`,
+  );
+}
+
 /** E-mail de confirmação do endereço novo, na troca de e-mail do Perfil (link do Better Auth). */
 export function sendChangeEmailVerification(to: string, url: string): void {
   send(

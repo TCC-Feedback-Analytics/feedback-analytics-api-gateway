@@ -1,5 +1,6 @@
 // Schema Drizzle — Better Auth (user/session/account/verification) — consumidas pelo drizzleAdapter (timestamps mode:date).
-import { pgTable, foreignKey, uuid, text, timestamp, boolean, unique } from "drizzle-orm/pg-core";
+import { pgTable, foreignKey, uuid, text, timestamp, boolean, unique, index } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const user = pgTable("user", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
@@ -10,9 +11,13 @@ export const user = pgTable("user", {
 	phone: text(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+	// "Excluir minha conta": data em que a conta será apagada. Até lá, a conta fica
+	// parada e o gestor pode desistir entrando de novo (services/accountDeletion.service.ts).
+	deletionScheduledFor: timestamp("deletion_scheduled_for", { withTimezone: true, mode: 'date' }),
 }, (table) => [
 	unique("user_email_key").on(table.email),
 	unique("user_phone_key").on(table.phone),
+	index("user_deletion_scheduled_for_idx").on(table.deletionScheduledFor).where(sql`deletion_scheduled_for IS NOT NULL`),
 ]);
 
 export const session = pgTable("session", {
