@@ -106,6 +106,8 @@ export async function submitQrCodeFeedbackController(req: Request, res: Response
 
   // 2. Identificação do aparelho: navegador + IP, sem o dia, para "Clientes que
   // voltam" e o bloqueio valerem entre dias. O limite diário fica no passo 8.
+  // O navegador e o IP só servem para calcular o HMAC aqui: não são gravados
+  // (LGPD, art. 6º, III), e o banco guarda apenas o identificador.
   const userAgent = req.get('user-agent') || '';
   const clientIP = req.ip || req.socket?.remoteAddress || '127.0.0.1';
   const fingerprint = deviceFingerprint(userAgent, clientIP);
@@ -317,8 +319,6 @@ export async function submitQrCodeFeedbackController(req: Request, res: Response
       trackedDevice,
       customerId,
       deviceFingerprint: fingerprint,
-      userAgent,
-      clientIP,
       answerRows,
       subanswerRows,
     });
@@ -346,8 +346,6 @@ export async function submitQrCodeFeedbackController(req: Request, res: Response
     await updateTrackedDeviceCounters({
       id: persisted.trackedDeviceId,
       feedbackCount: persisted.priorFeedbackCount + 1,
-      userAgent,
-      clientIP,
     });
   } catch (err) {
     console.error('Erro ao atualizar dispositivo:', describeError(err));
