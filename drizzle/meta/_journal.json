@@ -113,6 +113,13 @@
       "when": 1794857349830,
       "tag": "0015_apagar_tokens_google",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1795268009454,
+      "tag": "0016_exclusao_com_carencia",
+      "breakpoints": true
     }
   ]
 }
