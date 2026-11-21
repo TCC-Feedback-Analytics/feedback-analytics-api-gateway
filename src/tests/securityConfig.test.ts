@@ -102,7 +102,6 @@ describe('rotas nativas de e-mail e senha do Better Auth', () => {
       '/verify-email',
       '/reset-password/:token',
       '/list-accounts',
-      '/delete-user',
       '/sign-out',
       '/get-session',
     ];
@@ -111,5 +110,13 @@ describe('rotas nativas de e-mail e senha do Better Auth', () => {
     const app = await loadApp();
     const res = await request(app).get('/api/auth/ok');
     expect(res.status).toBe(200);
+  });
+
+  it('a exclusão nativa, que apagaria na hora sem os 15 dias de carência, fica desligada', () => {
+    expect(getAuth().options.user).not.toHaveProperty('deleteUser');
+  });
+
+  it('a troca de e-mail pede aprovação no endereço atual antes do link ir para o novo', () => {
+    expect(getAuth().options.user?.changeEmail?.sendChangeEmailConfirmation).toBeTypeOf('function');
   });
 });

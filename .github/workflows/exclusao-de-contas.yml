@@ -1,0 +1,37 @@
+name: Apagar contas com a exclusão vencida
+
+# "Excluir minha conta" deixa a conta parada por 15 dias. Uma vez por dia, esta rotina
+# pede ao gateway que apague as contas cujo prazo venceu (src/services/accountDeletion.service.ts).
+
+on:
+  schedule:
+    # 06:17 em Brasília (09:17 UTC), longe do minuto zero.
+    - cron: "17 9 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: exclusao-de-contas-production
+  cancel-in-progress: false
+
+jobs:
+  purge:
+    name: Apagar contas vencidas
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+
+    steps:
+      - name: Apagar as contas com o prazo vencido
+        env:
+          WORKER_TICK_TOKEN: ${{ secrets.WORKER_TICK_TOKEN }}
+          # Endereço do gateway na variável API_GATEWAY_URL do repositório; sem ela, o de produção.
+          API_GATEWAY_URL: ${{ vars.API_GATEWAY_URL || 'https://feedback-analytics-api-gateway.vercel.app' }}
+        run: |
+          curl \
+            --silent \
+            --show-error \
+            --fail-with-body \
+            --request POST \
+            --header "Content-Type: application/json" \
+            --header "x-worker-token: ${WORKER_TICK_TOKEN}" \
+            --data '{}' \
+            "${API_GATEWAY_URL}/api/internal/account-deletions/purge"

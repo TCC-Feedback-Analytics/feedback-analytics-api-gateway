@@ -6,6 +6,7 @@ import { fromNodeHeaders } from 'better-auth/node';
 import { sql } from 'drizzle-orm';
 import { getAuth } from '../auth/auth.js';
 import { getDb } from '../db/client.js';
+import { API_ERROR_ACCOUNT_DELETION_PENDING } from '../config/errors.js';
 
 type RequestUser = {
   id: string;
@@ -23,6 +24,11 @@ declare module 'express-serve-static-core' {
     // Token de redefinição de senha (fluxo de recuperação), lido do cookie ba_reset
     // apenas na rota /password, com ou sem sessão. Consumido pelo resetPasswordController.
     resetToken?: string;
+    // Quando a sessão nasceu: quem só entra pelo Google precisa de uma entrada
+    // recente para pedir a exclusão da conta.
+    sessionCreatedAt?: Date;
+    // Data em que a conta será apagada, ou null se ela está ativa.
+    deletionScheduledFor?: Date | null;
   }
 }
 
@@ -47,7 +53,13 @@ function readResetTokenOnPasswordRoute(req: Request): string | undefined {
   return readCookie(req, 'ba_reset');
 }
 
-// Valida a sessão via cookie (Better Auth) e resolve a empresa do usuário.
+/**
+ * Valida a sessão via cookie (Better Auth) e resolve a empresa do usuário.
+ *
+ * Conta com exclusão agendada fica parada: recebe 403 `account_deletion_pending`,
+ * com a data, em todas as rotas, menos nas marcadas com `allowPendingDeletion`
+ * (as que a Web usa para mostrar o aviso e desistir da exclusão).
+ */
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   try {
     // Lido antes da sessão: o gestor que abre o link de recuperação no navegador em
@@ -72,12 +84,25 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
         name: user.name ?? null,
       };
 
-      // Resolve a empresa do usuário (isolamento por tenant na aplicação).
-      const rows = await getDb().execute(
-        sql`SELECT id FROM public.enterprise WHERE auth_user_id = ${user.id} LIMIT 1`,
-      );
-      req.enterpriseId = (rows[0] as { id?: string } | undefined)?.id;
+      req.sessionCreatedAt = result.session?.createdAt ? new Date(result.session.createdAt) : undefined;
 
+      // Resolve a empresa do usuário (isolamento por tenant na aplicação) e se a
+      // conta tem exclusão agendada.
+      const rows = await getDb().execute(
+        sql`SELECT e.id, u.deletion_scheduled_for
+            FROM public."user" u LEFT JOIN public.enterprise e ON e.auth_user_id = u.id
+            WHERE u.id = ${user.id} LIMIT 1`,
+      );
+      const row = rows[0] as { id?: string | null; deletion_scheduled_for?: Date | string | null } | undefined;
+      req.enterpriseId = row?.id ?? undefined;
+      req.deletionScheduledFor = row?.deletion_scheduled_for ? new Date(row.deletion_scheduled_for) : null;
+
+      if (req.deletionScheduledFor && !req.allowPendingDeletion) {
+        return res.status(403).json({
+          error: API_ERROR_ACCOUNT_DELETION_PENDING,
+          deletion_scheduled_for: req.deletionScheduledFor.toISOString(),
+        });
+      }
       return next();
     }
 

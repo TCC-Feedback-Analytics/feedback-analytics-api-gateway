@@ -31,6 +31,8 @@ export async function getAuthUserController(req: Request, res: Response) {
           user_metadata: { full_name: u.name ?? null },
         }
       : null,
+    // Data em que a conta será apagada (ISO), ou null: a Web mostra o aviso para desistir.
+    deletion_scheduled_for: req.deletionScheduledFor?.toISOString() ?? null,
   });
 }
 

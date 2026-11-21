@@ -47,7 +47,7 @@ Há também pastas de apoio estrutural, como a `libs/`, com a lógica de domíni
 | `src/repositories/` | Queries Drizzle; as de dados da empresa exigem o `enterprise_id` (`tenantScope.ts`) |
 | `src/providers/` | Chamadas HTTP ao `ia-analyze` |
 | `src/libs/` | Lógica de domínio: estatística, métricas, lotes da IA, worker (`iaJob/`), chave de IA (`iaConfig/`), avaliação do classificador (`eval/`) |
-| `src/auth/` | Instância do Better Auth, e-mails, mapa de erros e os ganchos de criação (`enterpriseOnSignup.ts`) e exclusão (`enterpriseOnDelete.ts`) da empresa |
+| `src/auth/` | Instância do Better Auth, e-mails, mapa de erros e o gancho de criação da empresa (`enterpriseOnSignup.ts`). A exclusão da conta fica em `services/accountDeletion.service.ts` e `repositories/accountDeletion.repository.ts` |
 | `src/db/` | Cliente Drizzle e os filtros de tenant (`tenantScope.ts`) |
 | `src/config/` | Códigos de erro, as perguntas padrão da empresa e as origens locais da Web (`localWebOrigins.ts`), que só valem fora de produção |
 | `src/utils/` | Cifra da chave (`crypto.ts`), `sendTypedError`, a resposta 429 com `Retry-After` (`sendRateLimited.ts`), a checagem do token do worker e helpers de erro |

@@ -13,8 +13,16 @@ export interface PublicEnterprise {
  * A view resolve o nome por public.user.
  */
 export async function getPublicEnterpriseById(id: string): Promise<PublicEnterprise | null> {
+  // Conta com exclusão agendada fica parada: o QR Code, o link e o NFC não abrem o
+  // formulário nem gravam respostas (os dois caminhos passam por aqui).
   const rows = await getDb().execute(
-    sql`SELECT id, name FROM public.enterprise_public WHERE id = ${id} LIMIT 1`,
+    sql`SELECT ep.id, ep.name FROM public.enterprise_public ep
+        WHERE ep.id = ${id}
+          AND NOT EXISTS (
+            SELECT 1 FROM public.enterprise e JOIN public."user" u ON u.id = e.auth_user_id
+            WHERE e.id = ep.id AND u.deletion_scheduled_for IS NOT NULL
+          )
+        LIMIT 1`,
   );
   const row = rows[0] as { id?: string; name?: string | null } | undefined;
   return row?.id ? { id: row.id, name: row.name ?? null } : null;

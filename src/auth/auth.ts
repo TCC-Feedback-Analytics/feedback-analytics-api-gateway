@@ -21,13 +21,21 @@ import bcrypt from 'bcryptjs';
 import { getDb } from '../db/client.js';
 // Tabelas do Better Auth vêm da FONTE ÚNICA (drizzle/schema.ts) — ADR-0001 Fase 2.
 import { user, session, account, verification } from '../../drizzle/schema.js';
-import { sendChangeEmailVerification, sendResetPasswordEmail, sendVerificationEmail } from './email.js';
+import {
+  sendChangeEmailApproval,
+  sendChangeEmailVerification,
+  sendResetPasswordEmail,
+  sendVerificationEmail,
+} from './email.js';
 import { provisionEnterpriseForUser } from './enterpriseOnSignup.js';
-import { deleteEnterpriseOfUser } from './enterpriseOnDelete.js';
 import { localWebOrigins } from '../config/localWebOrigins.js';
 
 export function hashBetterAuthPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 10);
+}
+
+export function verifyBetterAuthPassword(hash: string, password: string): Promise<boolean> {
+  return bcrypt.compare(password, hash);
 }
 
 export function buildTrustedOrigins(env: NodeJS.ProcessEnv = process.env): string[] {
@@ -87,8 +95,10 @@ export async function discardOAuthTokens() {
  * tentativas no banco (libs/authRateLimit.ts) e chamam o Better Auth por dentro do
  * servidor; a porta nativa deixaria contornar esse limite. A Web não chama nenhuma
  * delas, nem a troca e a conferência de senha com sessão aberta.
+ * A troca de e-mail também só passa pelo gateway (PATCH /api/protected/user/email):
+ * lá o requireAuth barra a conta com exclusão agendada.
  * Continuam abertas as rotas que a Web e os e-mails usam: sign-in/social,
- * callback/google, verify-email, reset-password/:token, list-accounts e delete-user.
+ * callback/google, verify-email, reset-password/:token e list-accounts.
  */
 export const DISABLED_NATIVE_AUTH_PATHS = [
   '/sign-in/email',
@@ -97,7 +107,24 @@ export const DISABLED_NATIVE_AUTH_PATHS = [
   '/reset-password',
   '/change-password',
   '/verify-password',
+  '/change-email',
 ];
+
+export type ChangeEmailStep = 'troca-aprovada' | 'email-trocado';
+
+/**
+ * Os dois links da troca de e-mail voltam para a mesma página da Web. O `tipo` no
+ * destino diz em que passo a pessoa está: aprovou no endereço atual ou confirmou o novo.
+ */
+export function withChangeEmailStep(url: string, step: ChangeEmailStep): string {
+  const link = new URL(url);
+  const callback = link.searchParams.get('callbackURL');
+  if (!callback || !URL.canParse(callback)) return url;
+  const destination = new URL(callback);
+  destination.searchParams.set('tipo', step);
+  link.searchParams.set('callbackURL', destination.toString());
+  return link.toString();
+}
 
 function createAuth() {
   const isProd = process.env.NODE_ENV === 'production';
@@ -130,7 +157,7 @@ function createAuth() {
       password: {
         hash: hashBetterAuthPassword,
         verify: ({ hash, password }: { hash: string; password: string }) =>
-          bcrypt.compare(password, hash),
+          verifyBetterAuthPassword(hash, password),
       },
       sendResetPassword: async ({ user, url }) => {
         sendResetPasswordEmail(user.email, url);
@@ -145,7 +172,7 @@ function createAuth() {
       // confirmação do cadastro não sai para quem já confirmou.
       sendVerificationEmail: async ({ user, url }) => {
         if (user.emailVerified) {
-          sendChangeEmailVerification(user.email, url);
+          sendChangeEmailVerification(user.email, withChangeEmailStep(url, 'email-trocado'));
           return;
         }
         sendVerificationEmail(user.email, url);
@@ -156,16 +183,18 @@ function createAuth() {
         // Telefone do gestor (UNIQUE em `user.phone`); enviado no signUpEmail.
         phone: { type: 'string', required: false, input: true },
       },
-      // Troca de e-mail (PATCH /api/protected/user/email): o link vai para o endereço
-      // novo pelo sendVerificationEmail, e a troca só vale depois do clique.
-      changeEmail: { enabled: true },
-      // "Excluir minha conta" (POST /api/auth/delete-user): pede a senha de quem tem
-      // uma, ou uma sessão recente (entrada nas últimas 24 h) de quem só entra pelo
-      // Google. Antes de apagar o usuário, apaga a empresa e tudo dela.
-      deleteUser: {
+      // Troca de e-mail (PATCH /api/protected/user/email), em dois passos: o endereço
+      // atual aprova, e só então o link de confirmação vai para o endereço novo (pelo
+      // sendVerificationEmail). Com a sessão roubada, ninguém leva a conta para outro e-mail.
+      changeEmail: {
         enabled: true,
-        beforeDelete: async (deleted) => deleteEnterpriseOfUser(deleted.id),
+        sendChangeEmailConfirmation: async ({ user, newEmail, url }) => {
+          sendChangeEmailApproval(user.email, newEmail, withChangeEmailStep(url, 'troca-aprovada'));
+        },
       },
+      // "Excluir minha conta" não usa o deleteUser do Better Auth, que apaga na hora:
+      // o pedido, a confirmação pelo e-mail e os 15 dias de carência ficam em
+      // services/accountDeletion.service.ts.
     },
     socialProviders: googleProviderConfig(),
     account: {
